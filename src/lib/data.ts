@@ -11,6 +11,23 @@ export type QualityBucket =
   | "Diragukan"
   | "Macet";
 export type ProductType = "PUMK" | "Kupedes" | "Kupedes Rakyat" | "KUR Mikro" | "Lainnya";
+export type MissingLoanStatus = "PH" | "Lunas";
+export type MissingLoanDisplayStatus = MissingLoanStatus | "Perlu Konfirmasi";
+
+export interface NominativeCkpnRecord {
+  period: MonthKey;
+  accountNumber: string;
+  debtorName: string;
+  outstanding: number;
+  collectibility: string;
+  formedCkpn: number;
+}
+
+export interface MissingLoanResolution {
+  period: MonthKey;
+  accountNumber: string;
+  status: MissingLoanStatus;
+}
 export type MenuKey =
   | "dashboard"
   | "mantri"
@@ -552,6 +569,12 @@ export let months: { value: MonthKey; label: string }[] = [...mockMonths];
 export let loanSnapshots: LoanSnapshot[] = [...mockLoanSnapshots];
 let snapshotsByMonth = new Map<MonthKey, LoanSnapshot[]>();
 let snapshotsByMonthAndAccount = new Map<MonthKey, Map<string, LoanSnapshot>>();
+let nominativeCkpnByPeriodAndAccount = new Map<MonthKey, Map<string, NominativeCkpnRecord>>();
+let missingLoanResolutionByPeriodAndAccount = new Map<MonthKey, Map<string, MissingLoanStatus>>();
+
+function normalizeAccountKey(value: string) {
+  return value.replace(/\D/g, "") || value.trim().toUpperCase();
+}
 
 function rebuildLoanIndexes() {
   snapshotsByMonth = new Map();
@@ -581,9 +604,37 @@ export function applyUploadedLoanData(rows: LoanSnapshot[], periods: string[]) {
   });
 }
 
+export function applySupplementalCkpnData(records: NominativeCkpnRecord[], resolutions: MissingLoanResolution[]) {
+  nominativeCkpnByPeriodAndAccount = new Map();
+  missingLoanResolutionByPeriodAndAccount = new Map();
+  for (const item of records) {
+    const periodRows = nominativeCkpnByPeriodAndAccount.get(item.period) ?? new Map<string, NominativeCkpnRecord>();
+    periodRows.set(normalizeAccountKey(item.accountNumber), item);
+    nominativeCkpnByPeriodAndAccount.set(item.period, periodRows);
+  }
+  for (const item of resolutions) {
+    const periodRows = missingLoanResolutionByPeriodAndAccount.get(item.period) ?? new Map<string, MissingLoanStatus>();
+    periodRows.set(normalizeAccountKey(item.accountNumber), item.status);
+    missingLoanResolutionByPeriodAndAccount.set(item.period, periodRows);
+  }
+}
+
+export function setMissingLoanResolution(period: MonthKey, accountNumber: string, status: MissingLoanStatus) {
+  const periodRows = missingLoanResolutionByPeriodAndAccount.get(period) ?? new Map<string, MissingLoanStatus>();
+  periodRows.set(normalizeAccountKey(accountNumber), status);
+  missingLoanResolutionByPeriodAndAccount.set(period, periodRows);
+}
+
+export function getMissingLoanDisplayStatus(period: MonthKey, previous: LoanSnapshot): MissingLoanDisplayStatus {
+  const saved = missingLoanResolutionByPeriodAndAccount.get(period)?.get(normalizeAccountKey(previous.accountNumber));
+  if (saved) return saved;
+  return classifyQuality(previous, getPreviousMonth(period) ?? period) === "Macet" ? "Perlu Konfirmasi" : "Lunas";
+}
+
 export function restoreMockLoanData() {
   loanSnapshots = [...mockLoanSnapshots];
   rebuildLoanIndexes();
+  applySupplementalCkpnData([], []);
   months = [...mockMonths];
 }
 
@@ -681,15 +732,15 @@ export function getCkpnBucket(item: LoanSnapshot, month: MonthKey): QualityBucke
   return bucket;
 }
 
-export function isSml(bucket: QualityBucket) {
+export function isSml(bucket: QualityBucket | string) {
   return bucket === "SML1" || bucket === "SML2" || bucket === "SML3";
 }
 
-export function isNpl(bucket: QualityBucket) {
+export function isNpl(bucket: QualityBucket | string) {
   return bucket === "KL" || bucket === "Diragukan" || bucket === "Macet";
 }
 
-export function isPl(bucket: QualityBucket) {
+export function isPl(bucket: QualityBucket | string) {
   return bucket === "Lancar" || bucket === "LR" || isSml(bucket);
 }
 
@@ -771,7 +822,7 @@ export function getCkpnRows(month: MonthKey) {
   const previousMonth = getPreviousMonth(month);
   if (!previousMonth) return [];
 
-  return getCreditSnapshots(month)
+  const activeRows = getCreditSnapshots(month)
     .map((latest) => {
       const previous = getCompareSnapshot(previousMonth, latest.accountNumber);
       if (!previous) return undefined;
@@ -803,9 +854,58 @@ export function getCkpnRows(month: MonthKey) {
           getCollectibilityRank(latestBucket) > getCollectibilityRank(previousBucket)
             ? "Memburuk"
             : "Membaik",
+        missingLatest: false as const,
+        resolutionStatus: undefined,
+        formedCkpn: undefined,
+        ckpnBasisSource: "Loss rate internal" as const,
       };
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  const latestAccounts = new Set(getCreditSnapshots(month).map((item) => normalizeAccountKey(item.accountNumber)));
+  const missingRows = getCreditSnapshots(previousMonth)
+    .filter((previous) => !latestAccounts.has(normalizeAccountKey(previous.accountNumber)))
+    .map((previous) => {
+      const productType = getProductType(previous.description, previous.loanType);
+      const group = getCkpnGroup(productType);
+      if (!group) return undefined;
+
+      const previousBucket = getCkpnBucket(previous, previousMonth);
+      const previousRate = getLossRate(previous, previousMonth);
+      if (previousRate === undefined) return undefined;
+
+      const nominative = nominativeCkpnByPeriodAndAccount.get(previousMonth)?.get(normalizeAccountKey(previous.accountNumber));
+      const formedCkpn = nominative?.formedCkpn ?? previous.outstanding * previousRate;
+      const savedResolution = missingLoanResolutionByPeriodAndAccount.get(month)?.get(normalizeAccountKey(previous.accountNumber));
+      const resolutionStatus: MissingLoanStatus | undefined = savedResolution ?? (previousBucket === "Macet" ? undefined : "Lunas");
+      const latestBucket: MissingLoanDisplayStatus = resolutionStatus ?? "Perlu Konfirmasi";
+      const latestRate = resolutionStatus === "PH" ? 1 : resolutionStatus === "Lunas" ? 0 : previousRate;
+      const ckpnImpact = resolutionStatus === "PH"
+        ? previous.outstanding - formedCkpn
+        : resolutionStatus === "Lunas"
+          ? -formedCkpn
+          : 0;
+
+      return {
+        ...previous,
+        month,
+        productType,
+        previousBucket,
+        latestBucket,
+        previousRate,
+        latestRate,
+        rateDelta: latestRate - previousRate,
+        ckpnImpact,
+        movement: resolutionStatus === "PH" ? "Memburuk" as const : resolutionStatus === "Lunas" ? "Membaik" as const : "Perlu Konfirmasi" as const,
+        missingLatest: true as const,
+        resolutionStatus,
+        formedCkpn,
+        ckpnBasisSource: nominative ? "Nominatif Per Rekening" as const : "Estimasi loss rate internal" as const,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return [...activeRows, ...missingRows];
 }
 
 export function getNewRows(month: MonthKey, target: "SML" | "NPL") {

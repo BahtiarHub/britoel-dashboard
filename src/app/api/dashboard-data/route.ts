@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { depositRecords, loanRecords, uploadRecords } from "@/db/schema";
+import { depositRecords, loanRecords, missingLoanResolutions, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
@@ -17,6 +17,8 @@ export async function GET(request: Request) {
 
   const rows = await db.select().from(loanRecords).where(eq(loanRecords.branchCode, branchCode)).orderBy(loanRecords.period, loanRecords.accountNumber);
   const deposits = await db.select().from(depositRecords).where(eq(depositRecords.branchCode, branchCode)).orderBy(depositRecords.period, depositRecords.loanAccountNumber);
+  const nominativeCkpn = await db.select().from(nominativeCkpnRecords).where(eq(nominativeCkpnRecords.branchCode, branchCode)).orderBy(nominativeCkpnRecords.period, nominativeCkpnRecords.accountNumber);
+  const loanResolutions = await db.select().from(missingLoanResolutions).where(eq(missingLoanResolutions.branchCode, branchCode)).orderBy(missingLoanResolutions.period, missingLoanResolutions.accountNumber);
   const latestUploads = await db.select({
     id: uploadRecords.id,
     sourceKey: uploadRecords.sourceKey,
@@ -61,6 +63,19 @@ export async function GET(request: Request) {
       currentBlocked: item.currentBlocked,
       installmentFromBlocked: item.installmentFromBlocked,
       mutationDate: item.mutationDate,
+      status: item.status,
+    })),
+    nominativeCkpn: nominativeCkpn.map((item) => ({
+      period: item.period,
+      accountNumber: item.accountNumber,
+      debtorName: item.debtorName,
+      outstanding: item.outstanding,
+      collectibility: item.collectibility,
+      formedCkpn: item.formedCkpn,
+    })),
+    missingLoanResolutions: loanResolutions.map((item) => ({
+      period: item.period,
+      accountNumber: item.accountNumber,
       status: item.status,
     })),
     uploads: latestUploads,

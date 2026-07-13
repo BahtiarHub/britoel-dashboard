@@ -101,6 +101,35 @@ export const loanRecords = sqliteTable("loan_records", {
   index("loan_records_branch_mantri_idx").on(table.branchCode, table.mantri),
 ]);
 
+export const nominativeCkpnRecords = sqliteTable("nominative_ckpn_records", {
+  id: text("id").primaryKey(),
+  uploadId: text("upload_id").notNull().references(() => uploadRecords.id, { onDelete: "cascade" }),
+  branchCode: text("branch_code").notNull(),
+  period: text("period").notNull(),
+  accountNumber: text("account_number").notNull(),
+  debtorName: text("debtor_name").notNull().default(""),
+  outstanding: integer("outstanding").notNull().default(0),
+  collectibility: text("collectibility").notNull().default(""),
+  formedCkpn: integer("formed_ckpn").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("nominative_ckpn_branch_period_account_unique").on(table.branchCode, table.period, table.accountNumber),
+  index("nominative_ckpn_branch_period_idx").on(table.branchCode, table.period),
+]);
+
+export const missingLoanResolutions = sqliteTable("missing_loan_resolutions", {
+  id: text("id").primaryKey(),
+  branchCode: text("branch_code").notNull(),
+  period: text("period").notNull(),
+  accountNumber: text("account_number").notNull(),
+  status: text("status").notNull(),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("missing_loan_resolution_branch_period_account_unique").on(table.branchCode, table.period, table.accountNumber),
+  index("missing_loan_resolution_branch_period_idx").on(table.branchCode, table.period),
+]);
+
 export const whatsappCampaigns = sqliteTable("whatsapp_campaigns", {
   id: text("id").primaryKey(),
   campaignType: text("campaign_type").notNull(),
@@ -166,6 +195,8 @@ export const schema = {
   whatsappContacts,
   uploadRecords,
   loanRecords,
+  nominativeCkpnRecords,
+  missingLoanResolutions,
   depositRecords,
   whatsappCampaigns,
   whatsappCampaignRecipients,

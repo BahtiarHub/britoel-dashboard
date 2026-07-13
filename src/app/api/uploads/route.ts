@@ -3,10 +3,10 @@ import fs from "fs/promises";
 import { and, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { auditLogs, depositRecords, loanRecords, uploadRecords } from "@/db/schema";
+import { auditLogs, depositRecords, loanRecords, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
 import { upsertImportedBrimenCustomers } from "@/lib/brimen-db";
-import { inferPeriod, mapBrimenRows, mapDepositRows, mapLoanRows, parseTabularFile } from "@/lib/import-data";
+import { inferPeriod, mapBrimenRows, mapDepositRows, mapLoanRows, mapNominativeCkpnRows, parseTabularFile } from "@/lib/import-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +57,7 @@ export async function POST(request: Request) {
   let loanImport: ReturnType<typeof mapLoanRows> | undefined;
   let depositImport: ReturnType<typeof mapDepositRows> | undefined;
   let brimenImport: ReturnType<typeof mapBrimenRows> | undefined;
+  let nominativeCkpnImport: ReturnType<typeof mapNominativeCkpnRows> | undefined;
   let period: string | undefined;
   try {
     if (isLoanSnapshot) {
@@ -69,6 +70,10 @@ export async function POST(request: Request) {
       depositImport = mapDepositRows(rawRows, period);
     } else if (sourceKey === "brimen") {
       brimenImport = mapBrimenRows(parseTabularFile(file.name, buffer));
+    } else if (sourceKey === "nominatif-rekening") {
+      const rawRows = parseTabularFile(file.name, buffer);
+      period = inferPeriod(sourceKey, file.name, rawRows);
+      nominativeCkpnImport = mapNominativeCkpnRows(rawRows);
     }
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "File gagal diproses." }, { status: 400 });
@@ -82,7 +87,7 @@ export async function POST(request: Request) {
   await fs.writeFile(temporaryPath, buffer);
 
   const now = new Date();
-  const imported = loanImport ?? depositImport ?? brimenImport;
+  const imported = loanImport ?? depositImport ?? brimenImport ?? nominativeCkpnImport;
   const record = {
     id: crypto.randomUUID(),
     sourceKey,
@@ -119,6 +124,16 @@ export async function POST(request: Request) {
             cif: row.cif, loanAccountNumber: row.loanAccountNumber, debtorName: row.debtorName, mantri: row.mantri,
             savingsAccount: row.savingsAccount, blockedAtStart: row.blockedAtStart, currentBlocked: row.currentBlocked,
             installmentFromBlocked: row.installmentFromBlocked, mutationDate: row.mutationDate, status: row.status, createdAt: now,
+          }))).run();
+        }
+      }
+      if (nominativeCkpnImport && period) {
+        tx.delete(nominativeCkpnRecords).where(and(eq(nominativeCkpnRecords.branchCode, branchCode), eq(nominativeCkpnRecords.period, period))).run();
+        for (let index = 0; index < nominativeCkpnImport.rows.length; index += 40) {
+          tx.insert(nominativeCkpnRecords).values(nominativeCkpnImport.rows.slice(index, index + 40).map((row) => ({
+            id: crypto.randomUUID(), uploadId: record.id, branchCode, period,
+            accountNumber: row.accountNumber, debtorName: row.debtorName, outstanding: row.outstanding,
+            collectibility: row.collectibility, formedCkpn: row.formedCkpn, createdAt: now,
           }))).run();
         }
       }

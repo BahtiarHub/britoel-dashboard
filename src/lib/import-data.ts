@@ -31,6 +31,14 @@ export type ImportedDepositRow = {
   status: "Tidak Ada Blokiran" | "Setor dari Blokiran" | "Blokiran Aktif";
 };
 
+export type ImportedNominativeCkpnRow = {
+  accountNumber: string;
+  debtorName: string;
+  outstanding: number;
+  collectibility: string;
+  formedCkpn: number;
+};
+
 export type ImportedBrimenRow = {
   accountNumber: string;
   name: string;
@@ -95,6 +103,25 @@ const brimenAliases = {
   brimenJaminan: ["no_brimen_jaminan", "nomor_brimen_jaminan", "brimen_jaminan", "lokasi_jaminan"],
   guarantee: ["jaminan", "detail_jaminan", "jenis_jaminan", "guarantee"],
   status: ["status", "status_berkas", "status_brimen"],
+} as const;
+
+const nominativeCkpnAliases = {
+  accountNumber: aliases.accountNumber,
+  debtorName: aliases.debtorName,
+  outstanding: aliases.outstanding,
+  collectibility: aliases.collectibility,
+  formedCkpn: [
+    "ckpn",
+    "ckpn_terbentuk",
+    "ckpn_dibentuk",
+    "biaya_ckpn",
+    "nominal_ckpn",
+    "jumlah_ckpn",
+    "cadangan_ckpn",
+    "cadangan_kerugian_penurunan_nilai",
+    "impairment",
+    "impairment_amount",
+  ],
 } as const;
 
 function normalizeHeader(value: string) {
@@ -256,6 +283,7 @@ export function inferPeriod(sourceKey: string, fileName: string, rows: RawRow[],
   if (sourceKey === "lw321-bulan-lalu") base.setMonth(base.getMonth() - 1);
   if (sourceKey === "lw321-dua-bulan") base.setMonth(base.getMonth() - 2);
   if (sourceKey === "di319") base.setMonth(base.getMonth() - 1);
+  if (sourceKey === "nominatif-rekening") base.setMonth(base.getMonth() - 1);
   if (sourceKey === "lw321-tahun-lalu") return `${now.getFullYear() - 1}-12`;
   return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -370,6 +398,38 @@ export function mapDepositRows(rawRows: RawRow[], period: string) {
     });
   });
   if (!unique.size) throw new Error("Tidak ada baris DI319 yang valid untuk disimpan.");
+  return { rows: [...unique.values()], rejected, duplicates: normalizedRows.length - rejected - unique.size, issues };
+}
+
+export function mapNominativeCkpnRows(rawRows: RawRow[]) {
+  if (!rawRows.length) throw new Error("File Nominatif Per Rekening tidak memiliki baris data.");
+  const normalizedRows = rawRows.map(normalizeRow);
+  const headers = new Set(Object.keys(normalizedRows[0]));
+  const accountHeader = findPreferredHeader(headers, nominativeCkpnAliases.accountNumber);
+  const formedCkpnHeader = findPreferredHeader(headers, nominativeCkpnAliases.formedCkpn);
+  if (!accountHeader) throw new Error("Kolom No Rekening tidak ditemukan pada file Nominatif Per Rekening.");
+  if (!formedCkpnHeader) throw new Error("Kolom CKPN/CKPN Terbentuk tidak ditemukan pada file Nominatif Per Rekening.");
+
+  let rejected = 0;
+  const issues: string[] = [];
+  const unique = new Map<string, ImportedNominativeCkpnRow>();
+  normalizedRows.forEach((row, index) => {
+    const accountNumber = String(row[accountHeader]).trim().replace(/\s+/g, "");
+    const formedCkpn = parseMoney(row[formedCkpnHeader]);
+    if (!accountNumber) {
+      rejected += 1;
+      if (issues.length < 5) issues.push(`Baris ${index + 2}: No Rekening kosong.`);
+      return;
+    }
+    unique.set(accountNumber, {
+      accountNumber,
+      debtorName: String(pick(row, nominativeCkpnAliases.debtorName)).trim(),
+      outstanding: parseMoney(pick(row, nominativeCkpnAliases.outstanding)),
+      collectibility: parseCollectibility(pick(row, nominativeCkpnAliases.collectibility)) ?? String(pick(row, nominativeCkpnAliases.collectibility)).trim(),
+      formedCkpn,
+    });
+  });
+  if (!unique.size) throw new Error("Tidak ada baris Nominatif Per Rekening yang valid untuk disimpan.");
   return { rows: [...unique.values()], rejected, duplicates: normalizedRows.length - rejected - unique.size, issues };
 }
 

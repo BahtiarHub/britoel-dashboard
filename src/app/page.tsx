@@ -71,6 +71,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
   applyUploadedLoanData,
+  applySupplementalCkpnData,
   classifyQuality,
   formatCurrency,
   formatNumber,
@@ -79,6 +80,7 @@ import {
   getCompareSnapshot,
   getCreditSnapshots,
   getMantriRecap,
+  getMissingLoanDisplayStatus,
   getMonthLabel,
   getPipelineRows,
   getPreviousMonth,
@@ -94,6 +96,8 @@ import {
   loanSnapshots,
   months,
   restoreMockLoanData,
+  setMissingLoanResolution,
+  type MissingLoanStatus,
   type MenuKey,
   type MonthKey,
   type QualityBucket,
@@ -354,13 +358,13 @@ function dateLabel(value: string) {
 
 function QualityBadge({ bucket }: { bucket: QualityBucket | "KL/D" | string }) {
   const variant =
-    bucket === "Lancar"
+    bucket === "Lancar" || bucket === "Lunas"
       ? "success"
       : bucket === "SML1" || bucket === "SML2" || bucket === "SML3" || bucket === "LR"
         ? "warning"
-        : bucket === "KL" || bucket === "Diragukan" || bucket === "KL/D" || bucket === "Macet"
+        : bucket === "KL" || bucket === "Diragukan" || bucket === "KL/D" || bucket === "Macet" || bucket === "PH"
           ? "danger"
-          : "outline";
+          : bucket === "Perlu Konfirmasi" ? "warning" : "outline";
 
   return <Badge variant={variant}>{bucket}</Badge>;
 }
@@ -918,6 +922,10 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       const response = await fetch("/api/dashboard-data", { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Data dashboard gagal dimuat.");
+      applySupplementalCkpnData(
+        Array.isArray(payload.nominativeCkpn) ? payload.nominativeCkpn : [],
+        Array.isArray(payload.missingLoanResolutions) ? payload.missingLoanResolutions : [],
+      );
       setDi319Rows(Array.isArray(payload.di319) ? payload.di319 : []);
       const latestUpload = Array.isArray(payload.uploads) ? payload.uploads[0] : undefined;
       setLatestUploadAt(latestUpload?.createdAt ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(latestUpload.createdAt)) : undefined);
@@ -1047,7 +1055,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       (item) =>
         (item.accountNumber.toLowerCase().includes(lower) ||
           item.debtorName.toLowerCase().includes(lower) ||
-          item.mantri.toLowerCase().includes(lower)) &&
+          item.mantri.toLowerCase().includes(lower) ||
+          item.description.toLowerCase().includes(lower) ||
+          getProductType(item.description, item.loanType).toLowerCase().includes(lower)) &&
         (globalMantri === "Semua" || item.mantri === globalMantri) &&
         (globalProduct === "Semua" || getProductType(item.description, item.loanType) === globalProduct) &&
         (globalQuality === "Semua" ||
@@ -1376,9 +1386,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       <div className="flex min-h-screen">
         <aside
           className={cn(
-            "bri-sidebar fixed inset-y-0 left-0 z-[70] h-dvh w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden border-r border-[#d7e3ef] bg-card shadow-2xl transition-transform duration-200 xl:h-auto xl:w-72 xl:shadow-none",
+            "bri-sidebar fixed inset-y-0 left-0 z-[70] h-dvh w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden border-r border-[#d7e3ef] bg-card shadow-2xl transition-transform duration-200 xl:sticky xl:top-0 xl:h-screen xl:w-72 xl:self-start xl:shadow-none",
             mobileMenuOpen ? "translate-x-0" : "-translate-x-full",
-            desktopSidebarOpen ? "xl:static xl:block xl:translate-x-0" : "xl:hidden",
+            desktopSidebarOpen ? "xl:block xl:translate-x-0" : "xl:hidden",
           )}
         >
           <div className="flex h-full flex-col">
@@ -2793,7 +2803,7 @@ function NominatifView({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full max-w-md">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari no rekening, nama debitur, atau mantri" className="pl-9" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari rekening, debitur, mantri, atau produk" className="pl-9" />
         </div>
         <TableTools
           columns={nominatifColumnOptions}
@@ -2959,7 +2969,7 @@ function KualitasView({
   const visible = (key: string) => visibleColumns.includes(key);
   const sourceMonth = month;
   const comparisonMonth = getPreviousMonth(sourceMonth);
-  const rows = getSnapshots(sourceMonth)
+  const latestRows = getSnapshots(sourceMonth)
     .map((item) => {
       const latestBucket = classifyQuality(item, sourceMonth);
       const previous = comparisonMonth
@@ -2968,14 +2978,32 @@ function KualitasView({
       const previousBucket =
         previous && comparisonMonth ? classifyQuality(previous, comparisonMonth) : "-";
       const movement = getQualityMovement(previousBucket, latestBucket);
-      return { ...item, latestBucket, previousBucket, movement };
-    })
+      return { ...item, latestBucket, previousBucket, movement, missingLatest: false };
+    });
+  const latestAccounts = new Set(latestRows.map((item) => normalizeAccount(item.accountNumber)));
+  const missingRows = comparisonMonth
+    ? getSnapshots(comparisonMonth)
+      .filter((item) => !latestAccounts.has(normalizeAccount(item.accountNumber)))
+      .map((item) => {
+        const previousBucket = classifyQuality(item, comparisonMonth);
+        const latestBucket = getMissingLoanDisplayStatus(sourceMonth, item);
+        return {
+          ...item,
+          month: sourceMonth,
+          previousBucket,
+          latestBucket,
+          movement: getQualityMovement(previousBucket, latestBucket),
+          missingLatest: true,
+        };
+      })
+    : [];
+  const rows = [...latestRows, ...missingRows]
     .filter((item) => {
       const qualityMatch =
         qualityFilter === "Semua" ||
-        (qualityFilter === "PL" && isPl(item.latestBucket)) ||
-        (qualityFilter === "NPL" && isNpl(item.latestBucket)) ||
-        item.latestBucket === qualityFilter;
+        (qualityFilter === "PL" && item.previousBucket !== "-" && isPl(item.previousBucket)) ||
+        (qualityFilter === "NPL" && item.previousBucket !== "-" && isNpl(item.previousBucket)) ||
+        item.previousBucket === qualityFilter;
       return qualityMatch &&
         (mantriFilter === "Semua" || item.mantri === mantriFilter) &&
         (productFilter === "Semua" || getProductType(item.description, item.loanType) === productFilter);
@@ -3004,7 +3032,7 @@ function KualitasView({
         icon={Layers3}
       />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Field label={`Filter Kolektibilitas Terbaru ${getMonthLabel(sourceMonth)}`}>
+        <Field label={`Filter Kolektibilitas Bulan Lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)}`}>
           <Select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="min-w-64">
             {qualityOptions.map((option) => (
               <option key={option} value={option}>{option}</option>
@@ -3052,9 +3080,11 @@ function KualitasView({
   );
 }
 
+type DisplayQuality = QualityBucket | "Lunas" | "PH" | "Perlu Konfirmasi";
 type QualityMovement = "Upgrade" | "Downgrade" | "Tetap";
 
-const qualityRanks: Record<QualityBucket, number> = {
+const qualityRanks: Record<DisplayQuality, number> = {
+  Lunas: -1,
   Lancar: 0,
   LR: 1,
   SML1: 2,
@@ -3063,10 +3093,12 @@ const qualityRanks: Record<QualityBucket, number> = {
   KL: 5,
   Diragukan: 6,
   Macet: 7,
+  PH: 8,
+  "Perlu Konfirmasi": 7,
 };
 
-function getQualityMovement(previous: QualityBucket | "-", latest: QualityBucket): QualityMovement {
-  if (previous === "-" || qualityRanks[previous] === qualityRanks[latest]) return "Tetap";
+function getQualityMovement(previous: DisplayQuality | "-", latest: DisplayQuality): QualityMovement {
+  if (previous === "-" || latest === "Perlu Konfirmasi" || qualityRanks[previous] === qualityRanks[latest]) return "Tetap";
   return qualityRanks[latest] < qualityRanks[previous] ? "Upgrade" : "Downgrade";
 }
 
@@ -3780,19 +3812,44 @@ function CkpnView({
   setQuality: (value: string) => void;
   mantriNames: string[];
 }) {
+  const [savingResolution, setSavingResolution] = useState("");
+  const [resolutionVersion, setResolutionVersion] = useState(0);
+  const [resolutionMessage, setResolutionMessage] = useState("");
   const sourceMonth = month;
   const comparisonMonth = getPreviousMonth(sourceMonth);
   const rows = getCkpnRows(sourceMonth).filter((item) => {
     const mantriMatch = mantri === "Semua" || item.mantri === mantri;
     const productMatch = product === "Semua" || item.productType === product;
     const movementMatch = movement === "Semua" || item.movement === movement;
-    const qualityMatch = quality === "Semua" || item.latestBucket === quality;
+    const qualityMatch = quality === "Semua" || item.previousBucket === quality;
     return mantriMatch && productMatch && movementMatch && qualityMatch;
   });
   const tambahan = rows.filter((item) => item.ckpnImpact > 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
   const pemulihan = rows.filter((item) => item.ckpnImpact < 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
   const net = rows.reduce((sum, item) => sum + item.ckpnImpact, 0);
-  const pagination = useTablePagination(rows, `${sourceMonth}-${mantri}-${product}-${movement}-${quality}-${rows.length}`);
+  const pagination = useTablePagination(rows, `${sourceMonth}-${mantri}-${product}-${movement}-${quality}-${rows.length}-${resolutionVersion}`);
+
+  async function saveResolution(accountNumber: string, status: MissingLoanStatus) {
+    setSavingResolution(accountNumber);
+    setResolutionMessage("");
+    try {
+      const response = await fetch("/api/loan-resolutions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountNumber, period: sourceMonth, status }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Status belum dapat disimpan.");
+      setMissingLoanResolution(sourceMonth, accountNumber, status);
+      setResolutionVersion((current) => current + 1);
+      setResolutionMessage(`Status ${status} untuk rekening ${accountNumber} berhasil disimpan.`);
+      window.dispatchEvent(new CustomEvent("britoel-data-uploaded"));
+    } catch (error) {
+      setResolutionMessage(error instanceof Error ? error.message : "Status belum dapat disimpan.");
+    } finally {
+      setSavingResolution("");
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -3815,12 +3872,13 @@ function CkpnView({
           {["Semua", "Kupedes", "Kupedes Rakyat", "KUR Mikro"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
         <Field label="Arah Pergerakan"><Select value={movement} onChange={(event) => setMovement(event.target.value)}>
-          {["Semua", "Memburuk", "Membaik"].map((item) => <option key={item} value={item}>{item}</option>)}
+          {["Semua", "Memburuk", "Membaik", "Perlu Konfirmasi"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
-        <Field label={`Kolektibilitas Terbaru ${getMonthLabel(sourceMonth)}`}><Select value={quality} onChange={(event) => setQuality(event.target.value)}>
+        <Field label={`Kolektibilitas Bulan Lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)}`}><Select value={quality} onChange={(event) => setQuality(event.target.value)}>
           {["Semua", "Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
       </div>
+      {resolutionMessage ? <p className="rounded-md border border-[#b8d8f2] bg-[#eef7ff] px-3 py-2 text-sm font-semibold text-[#00529c]">{resolutionMessage}</p> : null}
       <TableShell>
         <thead>
           <tr>
@@ -3828,7 +3886,7 @@ function CkpnView({
             <Th>Nama Debitur</Th>
             <Th>Mantri</Th>
             <Th>Tipe Pinjaman</Th>
-            <Th>Outstanding Terbaru</Th>
+            <Th>Outstanding Acuan</Th>
             <Th>Kolek Bulan Lalu</Th>
             <Th>Kolek Terbaru</Th>
             <Th>Delta CKPN</Th>
@@ -3841,10 +3899,24 @@ function CkpnView({
               <Td>{item.debtorName}</Td>
               <Td>{item.mantri}</Td>
               <Td>{item.productType}</Td>
-              <Td>{formatCurrency(item.outstanding)}</Td>
+              <Td><span className="font-semibold">{formatCurrency(item.outstanding)}</span>{item.missingLatest ? <span className="mt-0.5 block text-[10px] text-muted-foreground">Posisi bulan lalu</span> : null}</Td>
               <Td><QualityBadge bucket={item.previousBucket} /></Td>
-              <Td><QualityBadge bucket={item.latestBucket} /></Td>
-              <Td className={cn("font-medium", item.ckpnImpact >= 0 ? "text-red-700" : "text-emerald-700")}>{formatCurrency(item.ckpnImpact)}</Td>
+              <Td>{item.missingLatest ? (
+                <Select
+                  value={item.resolutionStatus ?? ""}
+                  disabled={savingResolution === item.accountNumber}
+                  onChange={(event) => event.target.value && saveResolution(item.accountNumber, event.target.value as MissingLoanStatus)}
+                  className="h-9 min-w-36"
+                >
+                  <option value="">Pilih PH/Lunas</option>
+                  <option value="Lunas">Lunas</option>
+                  <option value="PH">PH</option>
+                </Select>
+              ) : <QualityBadge bucket={item.latestBucket} />}</Td>
+              <Td className={cn("font-medium", item.ckpnImpact > 0 ? "text-red-700" : item.ckpnImpact < 0 ? "text-emerald-700" : "text-slate-600")}>
+                {item.missingLatest && !item.resolutionStatus ? "Menunggu pilihan" : formatCurrency(item.ckpnImpact)}
+                {item.missingLatest ? <span className="mt-0.5 block text-[10px] font-semibold text-muted-foreground">Dasar: {item.ckpnBasisSource}</span> : null}
+              </Td>
             </tr>
           ))}
         </tbody>
