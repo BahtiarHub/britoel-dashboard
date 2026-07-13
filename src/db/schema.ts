@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
@@ -74,6 +74,31 @@ export const uploadRecords = sqliteTable("upload_records", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const loanRecords = sqliteTable("loan_records", {
+  id: text("id").primaryKey(),
+  uploadId: text("upload_id").notNull().references(() => uploadRecords.id, { onDelete: "cascade" }),
+  branchCode: text("branch_code").notNull(),
+  sourceKey: text("source_key").notNull(),
+  period: text("period").notNull(),
+  accountNumber: text("account_number").notNull(),
+  debtorName: text("debtor_name").notNull(),
+  nextPaymentDate: text("next_payment_date").notNull(),
+  outstanding: integer("outstanding").notNull().default(0),
+  plafond: integer("plafond").notNull().default(0),
+  collectibility: text("collectibility").notNull(),
+  restructureFlag: text("restructure_flag").notNull().default("N"),
+  mantri: text("mantri").notNull(),
+  pnPengelola: text("pn_pengelola").notNull(),
+  description: text("description").notNull(),
+  realizedDate: text("realized_date").notNull(),
+  realizedAmount: integer("realized_amount").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("loan_records_branch_period_account_unique").on(table.branchCode, table.period, table.accountNumber),
+  index("loan_records_branch_period_idx").on(table.branchCode, table.period),
+  index("loan_records_branch_mantri_idx").on(table.branchCode, table.mantri),
+]);
+
 export const whatsappCampaigns = sqliteTable("whatsapp_campaigns", {
   id: text("id").primaryKey(),
   campaignType: text("campaign_type").notNull(),
@@ -85,6 +110,27 @@ export const whatsappCampaigns = sqliteTable("whatsapp_campaigns", {
   createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+export const depositRecords = sqliteTable("deposit_records", {
+  id: text("id").primaryKey(),
+  uploadId: text("upload_id").notNull().references(() => uploadRecords.id, { onDelete: "cascade" }),
+  branchCode: text("branch_code").notNull(),
+  sourceKey: text("source_key").notNull().default("di319"),
+  period: text("period").notNull(),
+  loanAccountNumber: text("loan_account_number").notNull(),
+  debtorName: text("debtor_name").notNull().default(""),
+  mantri: text("mantri").notNull().default(""),
+  savingsAccount: text("savings_account").notNull().default(""),
+  blockedAtStart: integer("blocked_at_start").notNull().default(0),
+  currentBlocked: integer("current_blocked").notNull().default(0),
+  installmentFromBlocked: integer("installment_from_blocked").notNull().default(0),
+  mutationDate: text("mutation_date").notNull().default(""),
+  status: text("status").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+  branchPeriodAccountUnique: uniqueIndex("deposit_records_branch_period_account_unique").on(table.branchCode, table.period, table.loanAccountNumber),
+  branchPeriodIndex: index("deposit_records_branch_period_idx").on(table.branchCode, table.period),
+}));
 
 export const whatsappCampaignRecipients = sqliteTable("whatsapp_campaign_recipients", {
   id: text("id").primaryKey(),
@@ -116,6 +162,8 @@ export const schema = {
   verification,
   whatsappContacts,
   uploadRecords,
+  loanRecords,
+  depositRecords,
   whatsappCampaigns,
   whatsappCampaignRecipients,
   auditLogs,

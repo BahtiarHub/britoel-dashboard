@@ -1,4 +1,4 @@
-export type MonthKey = "2026-04" | "2026-05" | "2026-06";
+export type MonthKey = string;
 
 export type RawCollectibility = "Lancar" | "DPK" | "KL" | "Diragukan" | "Macet";
 export type QualityBucket =
@@ -42,13 +42,13 @@ export interface UploadHistory {
   rows: number;
 }
 
-export const months: { value: MonthKey; label: string }[] = [
+const mockMonths: { value: MonthKey; label: string }[] = [
   { value: "2026-04", label: "April 2026" },
   { value: "2026-05", label: "Mei 2026" },
   { value: "2026-06", label: "Juni 2026" },
 ];
 
-export const loanSnapshots: LoanSnapshot[] = [
+const mockLoanSnapshots: LoanSnapshot[] = [
   {
     month: "2026-04",
     accountNumber: "3210-01-000123-53-2",
@@ -545,6 +545,25 @@ export const loanSnapshots: LoanSnapshot[] = [
     realizedAmount: 125000000,
   },
 ];
+
+export let months: { value: MonthKey; label: string }[] = [...mockMonths];
+export let loanSnapshots: LoanSnapshot[] = [...mockLoanSnapshots];
+
+export function applyUploadedLoanData(rows: LoanSnapshot[], periods: string[]) {
+  loanSnapshots = rows;
+  months = periods.sort().map((value) => {
+    const [year, month] = value.split("-").map(Number);
+    const label = Number.isFinite(year) && Number.isFinite(month)
+      ? new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1))
+      : value;
+    return { value, label };
+  });
+}
+
+export function restoreMockLoanData() {
+  loanSnapshots = [...mockLoanSnapshots];
+  months = [...mockMonths];
+}
 
 export const uploadHistory: UploadHistory[] = [
   {

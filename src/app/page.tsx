@@ -69,6 +69,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
+  applyUploadedLoanData,
   classifyQuality,
   formatCurrency,
   formatNumber,
@@ -88,6 +89,7 @@ import {
   isSml,
   loanSnapshots,
   months,
+  restoreMockLoanData,
   type MenuKey,
   type MonthKey,
   type QualityBucket,
@@ -894,6 +896,42 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   });
   const [brimenProcessForm, setBrimenProcessForm] = useState<BrimenProcessFormState>(emptyBrimenProcessForm);
   const [brimenActionMessage, setBrimenActionMessage] = useState("");
+  const [loanDataVersion, setLoanDataVersion] = useState(0);
+  const [loanDataSource, setLoanDataSource] = useState<"loading" | "upload" | "mock">("loading");
+  const [di319Rows, setDi319Rows] = useState<UploadedDi319Row[]>([]);
+  const [latestUploadAt, setLatestUploadAt] = useState<string>();
+
+  async function loadDashboardData() {
+    try {
+      const response = await fetch("/api/dashboard-data", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Data dashboard gagal dimuat.");
+      setDi319Rows(Array.isArray(payload.di319) ? payload.di319 : []);
+      const latestUpload = Array.isArray(payload.uploads) ? payload.uploads[0] : undefined;
+      setLatestUploadAt(latestUpload?.createdAt ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(latestUpload.createdAt)) : undefined);
+      if (payload.source === "upload" && Array.isArray(payload.data) && payload.data.length) {
+        applyUploadedLoanData(payload.data, payload.periods ?? []);
+        setLoanDataSource("upload");
+        if (payload.latestPeriod) setSelectedMonth(payload.latestPeriod);
+        const firstMantri = payload.data.map((item: { mantri: string }) => item.mantri).filter(Boolean).sort()[0];
+        if (firstMantri) setSelectedMantri(firstMantri);
+      } else {
+        restoreMockLoanData();
+        setLoanDataSource("mock");
+        setSelectedMonth(months.at(-1)?.value ?? "2026-06");
+      }
+      setGlobalMantri("Semua");
+      setGlobalQuality("Semua");
+      setGlobalProduct("Semua");
+      setLoanDataVersion((current) => current + 1);
+    } catch {
+      restoreMockLoanData();
+      setDi319Rows([]);
+      setLatestUploadAt(undefined);
+      setLoanDataSource("mock");
+      setLoanDataVersion((current) => current + 1);
+    }
+  }
 
   async function loadBrimen() {
     setBrimenStatus("Memuat data BRIMEN...");
@@ -922,6 +960,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
 
   useEffect(() => {
     loadBrimen();
+    loadDashboardData();
     fetch("/api/audit", { cache: "no-store" })
       .then((response) => response.json())
       .then((payload) => {
@@ -937,6 +976,15 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         })));
       })
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      loadDashboardData();
+      loadBrimen();
+    };
+    window.addEventListener("britoel-data-uploaded", refresh);
+    return () => window.removeEventListener("britoel-data-uploaded", refresh);
   }, []);
 
   useEffect(() => {
@@ -974,11 +1022,11 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     }
   }, []);
 
-  const snapshots = useMemo(() => getSnapshots(selectedMonth), [selectedMonth]);
-  const summary = useMemo(() => getSummary(selectedMonth), [selectedMonth]);
+  const snapshots = useMemo(() => getSnapshots(selectedMonth), [selectedMonth, loanDataVersion]);
+  const summary = useMemo(() => getSummary(selectedMonth), [selectedMonth, loanDataVersion]);
   const mantriNames = useMemo(
     () => [...new Set(loanSnapshots.map((item) => item.mantri))].sort(),
-    [],
+    [loanDataVersion],
   );
   const brimenMap = useMemo(() => {
     return new Map(brimenRows.map((row) => [normalizeAccount(row.accountNumber), row]));
@@ -1108,7 +1156,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     {
       id: "upload-status",
       title: "Periksa pembaruan sumber data",
-      description: `Upload terakhir ${uploadHistory[0]?.uploadedAt ?? "belum tersedia"}.`,
+      description: `Upload terakhir ${latestUploadAt ?? uploadHistory[0]?.uploadedAt ?? "belum tersedia"}.`,
       tone: "info",
       actionLabel: "Buka upload",
       action: () => {
@@ -1239,7 +1287,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         mantriNames={mantriNames}
       />
     ),
-    di319: <Di319View month={selectedMonth} />,
+    di319: <Di319View month={selectedMonth} uploadedRows={di319Rows} />,
     wa: <WhatsappCampaignView month={selectedMonth} />,
     detail: (
       <DetailView
@@ -1256,6 +1304,8 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       <DashboardOverviewView
         month={selectedMonth}
         summary={summary}
+        loanDataSource={loanDataSource}
+        latestUploadAt={latestUploadAt}
         brimenSummary={brimenSummary}
         brimenStatus={brimenStatus}
         brimenRows={brimenRows}
@@ -1385,7 +1435,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
               })}
             </nav>
             <div className="border-t border-[#d7e3ef] p-4 text-xs text-muted-foreground">
-              Data kredit simulasi terhubung dengan database BRIMEN lokal.
+              Data upload kredit terhubung dengan database BRIMEN lokal.
             </div>
           </div>
         </aside>
@@ -1610,7 +1660,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                 <Database className="h-3.5 w-3.5" /> BRIMEN {brimenRows.length ? `${brimenRows.length} data` : "memuat"}
               </span>
               <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 font-semibold text-sky-700">
-                <Upload className="h-3.5 w-3.5" /> Upload terakhir {uploadHistory[0]?.uploadedAt ?? "-"}
+                <Upload className="h-3.5 w-3.5" /> Upload terakhir {latestUploadAt ?? uploadHistory[0]?.uploadedAt ?? "-"}
               </span>
               <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#f7c9aa] bg-[#fff5ee] px-2.5 py-1.5 font-semibold text-[#b54b00]">
                 <CalendarDays className="h-3.5 w-3.5" /> Periode aktif {getMonthLabel(selectedMonth)}
@@ -1856,6 +1906,8 @@ function PresentationMode({ month, summary, brimenRows, role, onClose }: { month
 function DashboardOverviewView({
   month,
   summary,
+  loanDataSource,
+  latestUploadAt,
   brimenSummary,
   brimenStatus,
   brimenRows,
@@ -1869,6 +1921,8 @@ function DashboardOverviewView({
 }: {
   month: MonthKey;
   summary: ReturnType<typeof getSummary>;
+  loanDataSource: "loading" | "upload" | "mock";
+  latestUploadAt?: string;
   brimenSummary?: BrimenSummary;
   brimenStatus: string;
   brimenRows: BrimenCustomer[];
@@ -1928,7 +1982,7 @@ function DashboardOverviewView({
     { label: "Berkas belum diarsipkan", value: `${brimenNotArchived} nasabah`, helper: "No BRIMEN berkas masih kosong", tone: "warning" },
     { label: "Berkas perlu dikembalikan", value: `${brimenBorrowed.length} nasabah`, helper: brimenBorrowed[0]?.name ?? "Tidak ada berkas dipinjam", tone: brimenBorrowed.length ? "warning" : "success" },
     { label: "Pipeline suplesi", value: `${pipelineRows.length} rekening`, helper: "Lancar, belum restruk, OS < 50% plafond", tone: "success" },
-    { label: "Pembaruan sumber data", value: "Periksa upload", helper: `Terakhir ${uploadHistory[0]?.uploadedAt ?? "belum tersedia"}`, tone: "default" },
+    { label: "Pembaruan sumber data", value: "Periksa upload", helper: `Terakhir ${latestUploadAt ?? uploadHistory[0]?.uploadedAt ?? "belum tersedia"}`, tone: "default" },
   ];
   const RoleFocusIcon = roleFocus.icon;
 
@@ -1939,6 +1993,30 @@ function DashboardOverviewView({
         description={`Ringkasan keseluruhan pinjaman dan operasional untuk periode ${getMonthLabel(month)}.`}
         icon={LayoutDashboard}
       />
+
+      <div className={cn(
+        "flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-bold",
+        loanDataSource === "upload"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : loanDataSource === "loading"
+            ? "border-[#b8d8f2] bg-[#eef7ff] text-[#00529c]"
+            : "border-amber-200 bg-amber-50 text-amber-800",
+      )}>
+        {loanDataSource === "loading" ? (
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : loanDataSource === "upload" ? (
+          <CheckCircle2 className="h-4 w-4" />
+        ) : (
+          <AlertTriangle className="h-4 w-4" />
+        )}
+        <span>
+          {loanDataSource === "upload"
+            ? `Data pinjaman aktif berasal dari file LW321 periode ${getMonthLabel(month)}.`
+            : loanDataSource === "loading"
+              ? "Memuat sumber data pinjaman..."
+              : "Data contoh sedang ditampilkan. Upload file LW321 untuk menggunakan data unit kerja."}
+        </span>
+      </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-[#d7e3ef] bg-white p-3 shadow-[0_10px_22px_rgba(0,55,105,0.05)] sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -3267,9 +3345,24 @@ function PipelineView({
 
 type Di319Status = "Tidak Ada Blokiran" | "Setor dari Blokiran" | "Blokiran Aktif";
 
-function Di319View({ month }: { month: MonthKey }) {
+type UploadedDi319Row = {
+  period: string;
+  loanAccountNumber: string;
+  debtorName: string;
+  mantri: string;
+  savingsAccount: string;
+  blockedAtStart: number;
+  currentBlocked: number;
+  installmentFromBlocked: number;
+  mutationDate: string;
+  status: Di319Status;
+};
+
+function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: UploadedDi319Row[] }) {
   const [filter, setFilter] = useState<"Semua Data" | Di319Status>("Tidak Ada Blokiran");
-  const sourceMonth = getPreviousMonth(month) ?? month;
+  const fallbackMonth = getPreviousMonth(month) ?? month;
+  const uploadPeriods = [...new Set(uploadedRows.map((item) => item.period))].sort();
+  const sourceMonth = uploadPeriods.filter((period) => period <= month).at(-1) ?? uploadPeriods.at(-1) ?? fallbackMonth;
   const statusPattern: Di319Status[] = [
     "Tidak Ada Blokiran",
     "Setor dari Blokiran",
@@ -3283,7 +3376,7 @@ function Di319View({ month }: { month: MonthKey }) {
     "Tidak Ada Blokiran",
     "Setor dari Blokiran",
   ];
-  const rows = getSnapshots(month).map((item, index) => {
+  const mockRows = getSnapshots(month).map((item, index) => {
     const status = statusPattern[index % statusPattern.length];
     const blockedAtStart = 2500000 + (index % 5) * 750000;
     const installmentFromBlocked = status === "Setor dari Blokiran" ? Math.min(blockedAtStart, 1750000 + (index % 3) * 500000) : 0;
@@ -3298,6 +3391,24 @@ function Di319View({ month }: { month: MonthKey }) {
       mutationDate: `${sourceMonth}-${String(20 + (index % 8)).padStart(2, "0")}`,
     };
   });
+  const creditByAccount = new Map(getSnapshots(month).map((item) => [normalizeAccount(item.accountNumber), item]));
+  const importedRows = uploadedRows.filter((item) => item.period === sourceMonth).map((item) => {
+    const credit = creditByAccount.get(normalizeAccount(item.loanAccountNumber));
+    return {
+      accountNumber: item.loanAccountNumber,
+      debtorName: credit?.debtorName || item.debtorName || "Nama tidak tersedia",
+      mantri: credit?.mantri || item.mantri || "-",
+      description: credit?.description || "Data DI319",
+      outstanding: credit?.outstanding ?? 0,
+      savingsAccount: item.savingsAccount || "-",
+      blockedAtStart: item.blockedAtStart,
+      currentBlocked: item.currentBlocked,
+      installmentFromBlocked: item.installmentFromBlocked,
+      mutationDate: item.mutationDate,
+      status: item.status,
+    };
+  });
+  const rows = importedRows.length ? importedRows : mockRows;
   const filteredRows = filter === "Semua Data" ? rows : rows.filter((item) => item.status === filter);
   const withoutBlock = rows.filter((item) => item.status === "Tidak Ada Blokiran");
   const paidFromBlock = rows.filter((item) => item.status === "Setor dari Blokiran");
@@ -3310,6 +3421,10 @@ function Di319View({ month }: { month: MonthKey }) {
         description={`Posisi DI319 ${getMonthLabel(sourceMonth)} untuk memantau blokiran simpanan yang disiapkan sebagai setoran akhir periode pinjaman.`}
         icon={Banknote}
       />
+      <div className={cn("flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-bold", importedRows.length ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800")}>
+        {importedRows.length ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+        {importedRows.length ? `${importedRows.length} baris berasal dari file DI319 yang diunggah.` : "Data contoh ditampilkan sampai file DI319 diunggah."}
+      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Tidak Ada Blokiran" value={`${withoutBlock.length} rekening`} helper="Blokiran sudah tidak tersedia" tone="warning" icon={AlertTriangle} />
         <MetricCard label="Setor dari Blokiran" value={`${paidFromBlock.length} rekening`} helper={formatCurrency(paidFromBlock.reduce((total, item) => total + item.installmentFromBlocked, 0))} tone="danger" icon={ArrowDownRight} />
@@ -6929,13 +7044,32 @@ function UnggahView() {
       .then((response) => response.json())
       .then((payload) => {
         if (!payload.ok) return;
-        setSessionUploads((payload.data ?? []).map((item: { id: string; fileName: string; sourceName: string; createdAt: string; rowCount: number }) => ({
+        const uploadedRows = (payload.data ?? []) as { id: string; sourceKey: UploadSlotKey; fileName: string; sourceName: string; createdAt: string; rowCount: number }[];
+        setSessionUploads(uploadedRows.map((item) => ({
           id: item.id,
           fileName: item.fileName,
           source: item.sourceName,
           uploadedAt: new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt)),
           rows: item.rowCount,
         })));
+        const latestBySource = new Map<UploadSlotKey, (typeof uploadedRows)[number]>();
+        uploadedRows.forEach((item) => {
+          if (!latestBySource.has(item.sourceKey)) latestBySource.set(item.sourceKey, item);
+        });
+        setSlotStates((current) => {
+          const next = { ...current };
+          latestBySource.forEach((item, key) => {
+            if (!next[key]) return;
+            next[key] = {
+              fileName: item.fileName,
+              status: "Berhasil",
+              uploadedAt: new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt)),
+              source: `${item.rowCount.toLocaleString("id-ID")} baris aktif`,
+              uploadCount: 1,
+            };
+          });
+          return next;
+        });
       });
   }, []);
 
@@ -6973,7 +7107,7 @@ function UnggahView() {
     const invalidAccounts = [4, 3, 2, 3, 0, 5, 2, 0, 0, 0][Math.max(0, slotIndex)];
     const missingColumns = fileName.toLowerCase().includes("error") ? 2 : 0;
     const accepted = Math.max(0, total - duplicates - invalidAccounts);
-    const validation = { total, accepted, duplicates, invalidAccounts, missingColumns, updated: accepted };
+    let validation = { total, accepted, duplicates, invalidAccounts, missingColumns, updated: accepted };
 
     const formData = new FormData();
     formData.append("file", file);
@@ -6985,6 +7119,16 @@ function UnggahView() {
     if (!response.ok || !payload.ok) {
       setSlotStates((current) => ({ ...current, [key]: { ...current[key], status: "Siap diunggah", source: payload.message ?? "Upload gagal." } }));
       return;
+    }
+    if (payload.import) {
+      validation = {
+        total: payload.import.accepted + payload.import.rejected + payload.import.duplicates,
+        accepted: payload.import.accepted,
+        duplicates: payload.import.duplicates,
+        invalidAccounts: payload.import.rejected,
+        missingColumns: 0,
+        updated: payload.import.accepted,
+      };
     }
 
     setSlotStates((current) => ({
@@ -7003,11 +7147,12 @@ function UnggahView() {
         fileName,
         source: slot?.title ?? "Data",
         uploadedAt,
-        rows: accepted,
+        rows: payload.data?.rowCount ?? validation.accepted,
       },
       ...current,
     ]);
     setValidationResults((current) => ({ ...current, [key]: validation }));
+    window.dispatchEvent(new CustomEvent("britoel-data-uploaded", { detail: { sourceKey: key } }));
   }
 
   function usePreviousArchive() {

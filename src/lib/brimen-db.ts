@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import type { ImportedBrimenRow } from "@/lib/import-data";
 
 export type BrimenCustomerStatus = "Disimpan" | "Dipinjam" | "Diambil" | "Lunas";
 
@@ -107,4 +108,59 @@ export function normalizeLoan(row: BrimenLoanRow) {
     brimenJaminan: row.brimen_jaminan,
     guarantee: row.guarantee,
   };
+}
+
+export function upsertImportedBrimenCustomers(rows: ImportedBrimenRow[], branchCode: string) {
+  const db = openBrimenDb(false);
+  const findExisting = db.prepare("select id, status, created_at from customers where account_number = ? and branch_code = ? limit 1");
+  const insert = db.prepare(`insert into customers (
+    id, account_number, name, plafond, realization_date, address, mantri,
+    brimen_berkas, brimen_jaminan, guarantee, status, branch_code, created_at, updated_at
+  ) values (
+    @id, @account_number, @name, @plafond, @realization_date, @address, @mantri,
+    @brimen_berkas, @brimen_jaminan, @guarantee, @status, @branch_code, @created_at, @updated_at
+  )`);
+  const update = db.prepare(`update customers set
+    name = @name, plafond = @plafond, realization_date = @realization_date,
+    address = @address, mantri = @mantri, brimen_berkas = @brimen_berkas,
+    brimen_jaminan = @brimen_jaminan, guarantee = @guarantee, status = @status,
+    updated_at = @updated_at
+    where id = @id`);
+  let inserted = 0;
+  let updated = 0;
+  const run = db.transaction((items: ImportedBrimenRow[]) => {
+    for (const item of items) {
+      const existing = findExisting.get(item.accountNumber, branchCode) as { id: string; status: BrimenCustomerStatus; created_at?: string } | undefined;
+      const now = nowIso();
+      const values = {
+        id: existing?.id ?? newId("cus"),
+        account_number: item.accountNumber,
+        name: item.name,
+        plafond: item.plafond,
+        realization_date: item.realizationDate,
+        address: item.address,
+        mantri: item.mantri,
+        brimen_berkas: item.brimenBerkas,
+        brimen_jaminan: item.brimenJaminan,
+        guarantee: item.guarantee,
+        status: existing?.status === "Dipinjam" ? "Dipinjam" : item.status,
+        branch_code: branchCode,
+        created_at: existing?.created_at ?? now,
+        updated_at: now,
+      };
+      if (existing) {
+        update.run(values);
+        updated += 1;
+      } else {
+        insert.run(values);
+        inserted += 1;
+      }
+    }
+  });
+  try {
+    run(rows);
+    return { inserted, updated };
+  } finally {
+    db.close();
+  }
 }
