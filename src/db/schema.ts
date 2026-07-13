@@ -80,6 +80,7 @@ export const loanRecords = sqliteTable("loan_records", {
   branchCode: text("branch_code").notNull(),
   sourceKey: text("source_key").notNull(),
   period: text("period").notNull(),
+  cif: text("cif").notNull().default(""),
   accountNumber: text("account_number").notNull(),
   debtorName: text("debtor_name").notNull(),
   nextPaymentDate: text("next_payment_date").notNull(),
@@ -117,7 +118,8 @@ export const depositRecords = sqliteTable("deposit_records", {
   branchCode: text("branch_code").notNull(),
   sourceKey: text("source_key").notNull().default("di319"),
   period: text("period").notNull(),
-  loanAccountNumber: text("loan_account_number").notNull(),
+  cif: text("cif").notNull().default(""),
+  loanAccountNumber: text("loan_account_number").notNull().default(""),
   debtorName: text("debtor_name").notNull().default(""),
   mantri: text("mantri").notNull().default(""),
   savingsAccount: text("savings_account").notNull().default(""),
@@ -128,7 +130,7 @@ export const depositRecords = sqliteTable("deposit_records", {
   status: text("status").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
-  branchPeriodAccountUnique: uniqueIndex("deposit_records_branch_period_account_unique").on(table.branchCode, table.period, table.loanAccountNumber),
+  branchPeriodSavingsUnique: uniqueIndex("deposit_records_branch_period_savings_unique").on(table.branchCode, table.period, table.cif, table.savingsAccount),
   branchPeriodIndex: index("deposit_records_branch_period_idx").on(table.branchCode, table.period),
 }));
 

@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { desc, eq } from "drizzle-orm";
+import { db as appDb } from "@/db";
+import { loanRecords } from "@/db/schema";
 import {
   type BrimenCustomerRow,
   getBrimenDbPath,
@@ -17,10 +20,10 @@ export async function GET(request: Request) {
   const guard = await requireApiSession(request);
   if (guard.response) return guard.response;
   try {
-    const db = openBrimenDb(true);
+    const brimenDb = openBrimenDb(true);
 
     const branchScoped = guard.session.user.role !== "SuperAdmin";
-    const rows = db
+    const rows = brimenDb
       .prepare(
         `select
           id,
@@ -42,13 +45,31 @@ export async function GET(request: Request) {
       )
       .all(...(branchScoped ? [guard.session.user.branchCode] : [])) as BrimenCustomerRow[];
 
-    const statusRows = db
+    const statusRows = brimenDb
       .prepare(`select status, count(*) as count from customers ${branchScoped ? "where branch_code = ?" : ""} group by status`)
       .all(...(branchScoped ? [guard.session.user.branchCode] : [])) as { status: string; count: number }[];
 
-    db.close();
+    brimenDb.close();
 
-    const data = rows.map(normalizeCustomer);
+    const creditRows = branchScoped
+      ? await appDb.select().from(loanRecords).where(eq(loanRecords.branchCode, guard.session.user.branchCode ?? "8014")).orderBy(desc(loanRecords.period))
+      : await appDb.select().from(loanRecords).orderBy(desc(loanRecords.period));
+    const latestCreditByAccount = new Map<string, (typeof creditRows)[number]>();
+    creditRows.forEach((row) => {
+      const key = `${row.branchCode}:${row.accountNumber.replace(/\D/g, "")}`;
+      if (!latestCreditByAccount.has(key)) latestCreditByAccount.set(key, row);
+    });
+    let synchronizedCount = 0;
+    const data = rows.map(normalizeCustomer).map((customer) => {
+      const credit = latestCreditByAccount.get(`${customer.branchCode}:${customer.accountNumber.replace(/\D/g, "")}`);
+      if (!credit) return customer;
+      synchronizedCount += 1;
+      return {
+        ...customer,
+        realizationDate: credit.realizedDate || customer.realizationDate,
+        mantri: credit.mantri || customer.mantri,
+      };
+    });
     const withGuarantee = data.filter((row) => row.brimenJaminan || row.guarantee).length;
     const withoutArchive = data.filter((row) => !row.brimenBerkas).length;
     const borrowed = data.filter((row) => row.status === "Dipinjam").length;
@@ -62,6 +83,7 @@ export async function GET(request: Request) {
         withoutGuarantee: data.length - withGuarantee,
         withoutArchive,
         borrowed,
+        synchronizedWithLw321: synchronizedCount,
         byStatus: statusRows,
       },
       source: getBrimenDbPath(),

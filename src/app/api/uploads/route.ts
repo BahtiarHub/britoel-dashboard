@@ -104,7 +104,7 @@ export async function POST(request: Request) {
         for (let index = 0; index < loanImport.rows.length; index += 40) {
           tx.insert(loanRecords).values(loanImport.rows.slice(index, index + 40).map((row) => ({
             id: crypto.randomUUID(), uploadId: record.id, branchCode, sourceKey, period,
-            accountNumber: row.accountNumber, debtorName: row.debtorName, nextPaymentDate: row.nextPaymentDate,
+            cif: row.cif, accountNumber: row.accountNumber, debtorName: row.debtorName, nextPaymentDate: row.nextPaymentDate,
             outstanding: row.outstanding, plafond: row.plafond, collectibility: row.collectibility,
             restructureFlag: row.restructureFlag, mantri: row.mantri, pnPengelola: row.pnPengelola,
             description: row.description, realizedDate: row.realizedDate, realizedAmount: row.realizedAmount, createdAt: now,
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         for (let index = 0; index < depositImport.rows.length; index += 40) {
           tx.insert(depositRecords).values(depositImport.rows.slice(index, index + 40).map((row) => ({
             id: crypto.randomUUID(), uploadId: record.id, branchCode, sourceKey, period,
-            loanAccountNumber: row.loanAccountNumber, debtorName: row.debtorName, mantri: row.mantri,
+            cif: row.cif, loanAccountNumber: row.loanAccountNumber, debtorName: row.debtorName, mantri: row.mantri,
             savingsAccount: row.savingsAccount, blockedAtStart: row.blockedAtStart, currentBlocked: row.currentBlocked,
             installmentFromBlocked: row.installmentFromBlocked, mutationDate: row.mutationDate, status: row.status, createdAt: now,
           }))).run();

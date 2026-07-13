@@ -3347,6 +3347,7 @@ type Di319Status = "Tidak Ada Blokiran" | "Setor dari Blokiran" | "Blokiran Akti
 
 type UploadedDi319Row = {
   period: string;
+  cif: string;
   loanAccountNumber: string;
   debtorName: string;
   mantri: string;
@@ -3383,6 +3384,7 @@ function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: Upl
     const currentBlocked = status === "Blokiran Aktif" ? blockedAtStart : status === "Setor dari Blokiran" ? Math.max(0, blockedAtStart - installmentFromBlocked) : 0;
     return {
       ...item,
+      cif: item.cif ?? "-",
       status,
       savingsAccount: `0206${item.accountNumber.replace(/\D/g, "").slice(-11)}`,
       blockedAtStart,
@@ -3391,24 +3393,35 @@ function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: Upl
       mutationDate: `${sourceMonth}-${String(20 + (index % 8)).padStart(2, "0")}`,
     };
   });
-  const creditByAccount = new Map(getSnapshots(month).map((item) => [normalizeAccount(item.accountNumber), item]));
-  const importedRows = uploadedRows.filter((item) => item.period === sourceMonth).map((item) => {
-    const credit = creditByAccount.get(normalizeAccount(item.loanAccountNumber));
-    return {
-      accountNumber: item.loanAccountNumber,
-      debtorName: credit?.debtorName || item.debtorName || "Nama tidak tersedia",
-      mantri: credit?.mantri || item.mantri || "-",
-      description: credit?.description || "Data DI319",
-      outstanding: credit?.outstanding ?? 0,
+  const monthSnapshots = getSnapshots(month);
+  const creditByAccount = new Map(monthSnapshots.map((item) => [normalizeAccount(item.accountNumber), item]));
+  const creditByCif = new Map<string, (typeof monthSnapshots)[number]>();
+  [...monthSnapshots].sort((a, b) => b.outstanding - a.outstanding).forEach((item) => {
+    const cif = String(item.cif ?? "").trim().toUpperCase();
+    if (cif && !creditByCif.has(cif)) creditByCif.set(cif, item);
+  });
+  const sourceDepositRows = uploadedRows.filter((item) => item.period === sourceMonth);
+  const importedRows = sourceDepositRows.flatMap((item) => {
+    const credit = (item.loanAccountNumber ? creditByAccount.get(normalizeAccount(item.loanAccountNumber)) : undefined)
+      ?? creditByCif.get(String(item.cif ?? "").trim().toUpperCase());
+    if (!credit) return [];
+    return [{
+      cif: item.cif,
+      debtorName: credit.debtorName || item.debtorName || "Nama tidak tersedia",
+      mantri: credit.mantri || item.mantri || "-",
+      description: credit.description || "Data DI319",
+      outstanding: credit.outstanding,
       savingsAccount: item.savingsAccount || "-",
       blockedAtStart: item.blockedAtStart,
       currentBlocked: item.currentBlocked,
       installmentFromBlocked: item.installmentFromBlocked,
       mutationDate: item.mutationDate,
       status: item.status,
-    };
+      accountNumber: credit.accountNumber,
+    }];
   });
-  const rows = importedRows.length ? importedRows : mockRows;
+  const rows = sourceDepositRows.length ? importedRows : mockRows;
+  const unmatchedCifCount = Math.max(0, sourceDepositRows.length - importedRows.length);
   const filteredRows = filter === "Semua Data" ? rows : rows.filter((item) => item.status === filter);
   const withoutBlock = rows.filter((item) => item.status === "Tidak Ada Blokiran");
   const paidFromBlock = rows.filter((item) => item.status === "Setor dari Blokiran");
@@ -3422,13 +3435,15 @@ function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: Upl
         icon={Banknote}
       />
       <div className={cn("flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-bold", importedRows.length ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800")}>
-        {importedRows.length ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-        {importedRows.length ? `${importedRows.length} baris berasal dari file DI319 yang diunggah.` : "Data contoh ditampilkan sampai file DI319 diunggah."}
+        {sourceDepositRows.length ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+        {sourceDepositRows.length
+          ? `${importedRows.length} rekening simpanan tersinkron dengan LW321 melalui CIF${unmatchedCifCount ? `, ${unmatchedCifCount} CIF belum cocok` : ""}.`
+          : "Data contoh ditampilkan sampai file DI319 diunggah."}
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <MetricCard label="Tidak Ada Blokiran" value={`${withoutBlock.length} rekening`} helper="Blokiran sudah tidak tersedia" tone="warning" icon={AlertTriangle} />
-        <MetricCard label="Setor dari Blokiran" value={`${paidFromBlock.length} rekening`} helper={formatCurrency(paidFromBlock.reduce((total, item) => total + item.installmentFromBlocked, 0))} tone="danger" icon={ArrowDownRight} />
-        <MetricCard label="Blokiran Aktif" value={`${activeBlock.length} rekening`} helper={formatCurrency(activeBlock.reduce((total, item) => total + item.currentBlocked, 0))} icon={Shield} />
+        <MetricCard label="Tidak Ada Blokiran" value={`${withoutBlock.length} rekening simpanan`} helper="Blokiran sudah tidak tersedia" tone="warning" icon={AlertTriangle} />
+        <MetricCard label="Setor dari Blokiran" value={`${paidFromBlock.length} rekening simpanan`} helper={formatCurrency(paidFromBlock.reduce((total, item) => total + item.installmentFromBlocked, 0))} tone="danger" icon={ArrowDownRight} />
+        <MetricCard label="Blokiran Aktif" value={`${activeBlock.length} rekening simpanan`} helper={formatCurrency(activeBlock.reduce((total, item) => total + item.currentBlocked, 0))} icon={Shield} />
       </div>
       <div className="bri-card rounded-lg border border-[#d7e3ef] bg-white p-3">
         <p className="mb-2 text-xs font-black uppercase text-[#f37021]">Kategori DI319</p>
@@ -3441,12 +3456,12 @@ function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: Upl
           ))}
         </div>
       </div>
-      <TableShell minWidth="min-w-[1450px]">
-        <thead><tr><Th>No Rekening Pinjaman</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding</Th><Th>No Rekening Simpanan</Th><Th>Blokiran Awal</Th><Th>Blokiran Saat Ini</Th><Th>Setoran dari Blokiran</Th><Th>Tanggal Mutasi</Th><Th>Status DI319</Th></tr></thead>
+      <TableShell minWidth="min-w-[1550px]">
+        <thead><tr><Th>No CIF</Th><Th>No Rekening Pinjaman</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding</Th><Th>No Rekening Simpanan</Th><Th>Blokiran Awal</Th><Th>Blokiran Saat Ini</Th><Th>Setoran dari Blokiran</Th><Th>Tanggal Mutasi</Th><Th>Status DI319</Th></tr></thead>
         <tbody>
           {filteredRows.map((item) => (
-            <tr key={item.accountNumber} className={cn(item.status === "Tidak Ada Blokiran" && "bg-[#fff7ed]/60", item.status === "Setor dari Blokiran" && "bg-rose-50/60")}>
-              <Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td className="font-mono text-[#00529c]">{item.savingsAccount}</Td><Td>{formatCurrency(item.blockedAtStart)}</Td><Td>{formatCurrency(item.currentBlocked)}</Td><Td className={item.installmentFromBlocked ? "font-bold text-rose-700" : "text-muted-foreground"}>{formatCurrency(item.installmentFromBlocked)}</Td><Td>{dateLabel(item.mutationDate)}</Td><Td><Badge variant={item.status === "Tidak Ada Blokiran" ? "warning" : item.status === "Setor dari Blokiran" ? "danger" : "success"}>{item.status}</Badge></Td>
+            <tr key={`${item.cif}-${item.accountNumber}-${item.savingsAccount}`} className={cn(item.status === "Tidak Ada Blokiran" && "bg-[#fff7ed]/60", item.status === "Setor dari Blokiran" && "bg-rose-50/60")}>
+              <Td className="font-medium text-[#00529c]">{item.cif}</Td><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td className="font-mono text-[#00529c]">{item.savingsAccount}</Td><Td>{formatCurrency(item.blockedAtStart)}</Td><Td>{formatCurrency(item.currentBlocked)}</Td><Td className={item.installmentFromBlocked ? "font-bold text-rose-700" : "text-muted-foreground"}>{formatCurrency(item.installmentFromBlocked)}</Td><Td>{dateLabel(item.mutationDate)}</Td><Td><Badge variant={item.status === "Tidak Ada Blokiran" ? "warning" : item.status === "Setor dari Blokiran" ? "danger" : "success"}>{item.status}</Badge></Td>
             </tr>
           ))}
         </tbody>

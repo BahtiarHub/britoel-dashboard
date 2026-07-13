@@ -20,6 +20,7 @@ export type MenuKey =
 
 export interface LoanSnapshot {
   month: MonthKey;
+  cif?: string;
   accountNumber: string;
   debtorName: string;
   nextPaymentDate: string;

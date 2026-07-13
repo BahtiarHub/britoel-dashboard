@@ -2,6 +2,7 @@ import { parse } from "csv-parse/sync";
 import * as XLSX from "xlsx";
 
 export type ImportedLoanRow = {
+  cif: string;
   accountNumber: string;
   debtorName: string;
   nextPaymentDate: string;
@@ -17,6 +18,7 @@ export type ImportedLoanRow = {
 };
 
 export type ImportedDepositRow = {
+  cif: string;
   loanAccountNumber: string;
   debtorName: string;
   mantri: string;
@@ -44,6 +46,7 @@ export type ImportedBrimenRow = {
 type RawRow = Record<string, unknown>;
 
 const aliases = {
+  cif: ["cif", "cifno", "no_cif", "nomor_cif", "cif_number", "customer_information_file"],
   accountNumber: ["no_rekening", "nomor_rekening", "no_rek", "norek", "rekening", "account_number", "account_no", "acctno", "no_rekening_nasabah"],
   debtorName: ["nama_debitur", "nama_nasabah", "nama_debitur_single", "debitur", "customer_name", "nama"],
   nextPaymentDate: ["next_payment_date", "next_pmt_date", "nextpaymentdate", "tanggal_jatuh_tempo", "tgl_jatuh_tempo", "jatuh_tempo", "npd"],
@@ -67,10 +70,11 @@ const qualityAmountAliases = {
 } as const;
 
 const depositAliases = {
-  loanAccountNumber: ["no_rekening_pinjaman", "nomor_rekening_pinjaman", "rekening_pinjaman", "loan_account_number", "no_rekening_kredit", "no_rekening"],
+  cif: aliases.cif,
+  loanAccountNumber: ["no_rekening_pinjaman", "nomor_rekening_pinjaman", "rekening_pinjaman", "loan_account_number", "no_rekening_kredit"],
   debtorName: aliases.debtorName,
   mantri: aliases.mantri,
-  savingsAccount: ["no_rekening_simpanan", "nomor_rekening_simpanan", "rekening_simpanan", "savings_account", "saving_account", "rekening_blokiran"],
+  savingsAccount: ["no_rekening_simpanan", "nomor_rekening_simpanan", "rekening_simpanan", "savings_account", "saving_account", "rekening_blokiran", "no_rekening", "nomor_rekening", "rekening", "account_number", "account_no"],
   blockedAtStart: ["blokiran_awal", "saldo_blokir_awal", "saldo_blokiran_awal", "nominal_blokir_awal", "blokir_awal"],
   currentBlocked: ["blokiran_saat_ini", "saldo_blokir", "saldo_blokiran", "nominal_blokir", "current_blocked"],
   installmentFromBlocked: ["setoran_dari_blokiran", "setor_dari_blokiran", "debet_blokiran", "nominal_setoran_blokir", "installment_from_blocked"],
@@ -142,6 +146,10 @@ function parseMoney(value: unknown) {
   else text = text.replace(/,/g, "");
   const parsed = Number(text.replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? Math.round(parsed) : 0;
+}
+
+function normalizeCif(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, "").toUpperCase();
 }
 
 function toIsoDate(value: unknown) {
@@ -296,6 +304,7 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
     const pnPengelola = mantri;
     const flagText = normalizeHeader(String(pick(row, aliases.restructureFlag)));
     unique.set(accountNumber, {
+      cif: normalizeCif(pick(row, aliases.cif)),
       accountNumber,
       debtorName,
       nextPaymentDate: toIsoDate(pick(row, aliases.nextPaymentDate)) || `${period}-01`,
@@ -318,17 +327,21 @@ export function mapDepositRows(rawRows: RawRow[], period: string) {
   if (!rawRows.length) throw new Error("File DI319 tidak memiliki baris data.");
   const normalizedRows = rawRows.map(normalizeRow);
   const headers = new Set(Object.keys(normalizedRows[0]));
-  if (!depositAliases.loanAccountNumber.some((key) => headers.has(key))) {
-    throw new Error("Kolom No Rekening Pinjaman tidak ditemukan pada file DI319.");
-  }
+  const cifHeader = findPreferredHeader(headers, depositAliases.cif);
+  const savingsHeader = findPreferredHeader(headers, depositAliases.savingsAccount);
+  const loanHeader = findPreferredHeader(headers, depositAliases.loanAccountNumber);
+  if (!cifHeader) throw new Error("Kolom No CIF/CIFNO tidak ditemukan pada file DI319.");
+  if (!savingsHeader) throw new Error("Kolom No Rekening Simpanan tidak ditemukan pada file DI319.");
   let rejected = 0;
   const issues: string[] = [];
   const unique = new Map<string, ImportedDepositRow>();
   normalizedRows.forEach((row, index) => {
-    const loanAccountNumber = String(pick(row, depositAliases.loanAccountNumber)).replace(/\D/g, "");
-    if (!loanAccountNumber) {
+    const cif = normalizeCif(row[cifHeader]);
+    const savingsAccount = String(row[savingsHeader]).replace(/\D/g, "");
+    const loanAccountNumber = loanHeader ? String(row[loanHeader]).replace(/\D/g, "") : "";
+    if (!cif || !savingsAccount) {
       rejected += 1;
-      if (issues.length < 5) issues.push(`Baris ${index + 2}: No Rekening Pinjaman kosong.`);
+      if (issues.length < 5) issues.push(`Baris ${index + 2}: No CIF atau No Rekening Simpanan kosong.`);
       return;
     }
     const blockedAtStart = parseMoney(pick(row, depositAliases.blockedAtStart));
@@ -340,11 +353,12 @@ export function mapDepositRows(rawRows: RawRow[], period: string) {
       : rawStatus.includes("aktif") || currentBlocked > 0
         ? "Blokiran Aktif"
         : "Tidak Ada Blokiran";
-    unique.set(loanAccountNumber, {
+    unique.set(`${cif}|${savingsAccount}`, {
+      cif,
       loanAccountNumber,
       debtorName: String(pick(row, depositAliases.debtorName)).trim(),
       mantri: String(pick(row, depositAliases.mantri)).trim(),
-      savingsAccount: String(pick(row, depositAliases.savingsAccount)).replace(/\D/g, ""),
+      savingsAccount,
       blockedAtStart,
       currentBlocked,
       installmentFromBlocked,

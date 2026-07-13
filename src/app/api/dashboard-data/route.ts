@@ -35,6 +35,7 @@ export async function GET(request: Request) {
     latestPeriod: periods.at(-1) ?? null,
     data: rows.map((item) => ({
       month: item.period,
+      cif: item.cif,
       accountNumber: item.accountNumber,
       debtorName: item.debtorName,
       nextPaymentDate: item.nextPaymentDate,
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
     })),
     di319: deposits.map((item) => ({
       period: item.period,
+      cif: item.cif,
       loanAccountNumber: item.loanAccountNumber,
       debtorName: item.debtorName,
       mantri: item.mantri,
