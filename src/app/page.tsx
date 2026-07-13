@@ -130,8 +130,7 @@ type MantriViewKey =
   | "pipeline"
   | "ckpn"
   | "di319"
-  | "wa"
-  | "detail";
+  | "wa";
 
 const mantriTabs: { key: MantriViewKey; label: string; icon: React.ElementType }[] = [
   { key: "ringkasan", label: "Ringkasan Kredit", icon: LayoutDashboard },
@@ -143,7 +142,6 @@ const mantriTabs: { key: MantriViewKey; label: string; icon: React.ElementType }
   { key: "ckpn", label: "CKPN Internal", icon: PieChartIcon },
   { key: "di319", label: "Monitoring Simpanan", icon: Banknote },
   { key: "wa", label: "WA Blast", icon: MessageCircle },
-  { key: "detail", label: "Detail Mantri", icon: UserRound },
 ];
 
 const mantriTabTones: Record<MantriViewKey, string> = {
@@ -156,7 +154,6 @@ const mantriTabTones: Record<MantriViewKey, string> = {
   ckpn: "bg-rose-600 text-white border-rose-600/20 shadow-[0_10px_18px_rgba(225,29,72,0.20)]",
   di319: "bg-indigo-600 text-white border-indigo-600/20 shadow-[0_10px_18px_rgba(79,70,229,0.20)]",
   wa: "bg-emerald-600 text-white border-emerald-600/20 shadow-[0_10px_18px_rgba(5,150,105,0.20)]",
-  detail: "bg-slate-700 text-white border-slate-700/20 shadow-[0_10px_18px_rgba(51,65,85,0.20)]",
 };
 
 type BrimenCustomer = {
@@ -887,7 +884,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   const [favoriteMenus, setFavoriteMenus] = useState<MenuKey[]>(["mantri", "brimen"]);
   const [recentMenus, setRecentMenus] = useState<MenuKey[]>(["dashboard"]);
   const [search, setSearch] = useState("");
-  const [selectedMantri, setSelectedMantri] = useState("Rina Puspita");
   const [pipelineProduct, setPipelineProduct] = useState("Semua");
   const [pipelineMantri, setPipelineMantri] = useState("Semua");
   const [ckpnMantri, setCkpnMantri] = useState("Semua");
@@ -929,8 +925,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         applyUploadedLoanData(payload.data, payload.periods ?? []);
         setLoanDataSource("upload");
         if (payload.latestPeriod) setSelectedMonth(payload.latestPeriod);
-        const firstMantri = payload.data.map((item: { mantri: string }) => item.mantri).filter(Boolean).sort()[0];
-        if (firstMantri) setSelectedMantri(firstMantri);
       } else {
         restoreMockLoanData();
         setLoanDataSource("mock");
@@ -1258,8 +1252,8 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         month={selectedMonth}
         mantriFilter={globalMantri}
         onSelectMantri={(mantri) => {
-          setSelectedMantri(mantri);
-          setMantriView("detail");
+          setGlobalMantri(mantri);
+          setMantriView("nominatif");
         }}
       />
     ),
@@ -1305,14 +1299,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     ),
     di319: <Di319View month={selectedMonth} uploadedRows={di319Rows} />,
     wa: <WhatsappCampaignView month={selectedMonth} />,
-    detail: (
-      <DetailView
-        month={selectedMonth}
-        selectedMantri={selectedMantri}
-        setSelectedMantri={setSelectedMantri}
-        mantriNames={mantriNames}
-      />
-    ),
   }[mantriView];
 
   const content = {
@@ -1332,8 +1318,8 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         onToggleFavorite={toggleFavorite}
         selectedRole={selectedRole}
         onOpenMantri={(mantri) => {
-          setSelectedMantri(mantri);
-          setMantriView("detail");
+          setGlobalMantri(mantri);
+          setMantriView("nominatif");
           openMenu("mantri");
         }}
       />
@@ -2425,14 +2411,13 @@ function DashboardMantriView({
   const tabPreviewText: Record<MantriViewKey, string> = {
     ringkasan: "Ikhtisar OS, SML, NPL, CKPN, dan pergerakan kredit.",
     nominatif: `${getSnapshots(month).length} rekening nasabah pada periode ${getMonthLabel(month)}.`,
-    kualitas: "Perbandingan kolektibilitas bulan lalu dengan kondisi terbaru.",
+    kualitas: "Nominatif dan filter kolektibilitas berdasarkan posisi bulan lalu.",
     rekap: `${rekap.length} mantri dengan rincian OS dan delta pencapaian.`,
     realisasi: `${realisasi.reduce((total, item) => total + item.count, 0)} rekening realisasi bulan ini.`,
     pipeline: `${pipeline.length} rekening siap dipertimbangkan untuk suplesi.`,
-    ckpn: `${getCkpnRows(month).length} rekening mengalami pergerakan CKPN.`,
+    ckpn: `${getCkpnRows(getPreviousMonth(month) ?? month).length} rekening bergerak pada posisi bulan lalu.`,
     di319: "Monitoring pinjaman tanpa blokiran dan setoran yang menggunakan dana blokiran.",
     wa: "Kampanye penawaran suplesi dan pengingat setoran menjelang jatuh tempo.",
-    detail: "Profil kelolaan dan nominatif nasabah per mantri.",
   };
   const pinjamanQuickCards: {
     label: string;
@@ -2500,7 +2485,7 @@ function DashboardMantriView({
     <div className="space-y-5">
       <SectionHeader
         title="Dashboard Pinjaman"
-        description="Seluruh data kredit, kualitas, realisasi, pipeline, CKPN, dan detail mantri."
+        description="Seluruh data kredit, kualitas, realisasi, pipeline, CKPN, dan monitoring simpanan."
         icon={UsersRound}
       />
       <div className={cn("flex gap-2 overflow-x-auto pb-1 min-[520px]:grid min-[520px]:grid-cols-2 min-[520px]:overflow-visible min-[520px]:pb-0 md:grid-cols-4", mobilePinjamanOpen ? "hidden sm:grid" : "flex min-[520px]:grid")}>
@@ -2530,7 +2515,7 @@ function DashboardMantriView({
         <div className="mb-2 rounded-md border border-[#d7e3ef] bg-[#fffaf6] px-3 py-2 sm:hidden">
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama Pinjaman</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 2xl:grid-cols-10">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-9">
         {mantriTabs.map((item) => {
           const Icon = item.icon;
           return (
@@ -2621,7 +2606,13 @@ function RingkasanView({
     { label: "SML", current: summary.smlOs, mtd: summary.smlOs - previousSummary.smlOs, ytd: summary.smlOs - yearEndSummary.smlOs, risk: true, tone: "orange", icon: AlertTriangle },
     { label: "NPL", current: summary.nplOs, mtd: summary.nplOs - previousSummary.nplOs, ytd: summary.nplOs - yearEndSummary.nplOs, risk: true, tone: "red", icon: ArrowDownRight },
   ] as const;
-  const selectedNewRows = newQualityMenu === "SML" ? summary.newSml : summary.newNpl;
+  const selectedNewRows = (newQualityMenu === "SML" ? summary.newSml : summary.newNpl).map((item) => {
+    const latestRow = getCompareSnapshot(month, item.accountNumber);
+    return {
+      ...item,
+      latestBucket: latestRow ? classifyQuality(latestRow, month) : undefined,
+    };
+  });
   const newRowsPagination = useTablePagination(selectedNewRows, `${month}-${newQualityMenu}-${selectedNewRows.length}`);
 
   return (
@@ -2670,7 +2661,7 @@ function RingkasanView({
 
       <div className="bri-card rounded-lg border border-[#d7e3ef] bg-white p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="text-xs font-black uppercase text-[#f37021]">Pergerakan Baru</p><h2 className="mt-1 text-lg font-black text-[#00529c]">Nominatif New SML & New NPL</h2><p className="mt-1 text-xs text-muted-foreground">Perbandingan {getMonthLabel(getPreviousMonth(month, 2) ?? month)} ke {getMonthLabel(getPreviousMonth(month) ?? month)}.</p></div>
+          <div><p className="text-xs font-black uppercase text-[#f37021]">Pergerakan Baru</p><h2 className="mt-1 text-lg font-black text-[#00529c]">Nominatif New SML & New NPL</h2><p className="mt-1 text-xs text-muted-foreground">Kriteria dihitung dari {getMonthLabel(getPreviousMonth(month, 2) ?? month)} ke {getMonthLabel(getPreviousMonth(month) ?? month)}. Tabel menampilkan posisi bulan lalu dan terbaru.</p></div>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setNewQualityMenu("SML")} className={cn("flex min-w-[140px] items-center justify-between rounded-md border px-3 py-2 text-sm font-black", newQualityMenu === "SML" ? "border-[#f37021] bg-[#fff7ed] text-[#b54b00]" : "border-[#d7e3ef] bg-white text-muted-foreground")}><span>New SML</span><span className="rounded-full bg-white px-2 py-0.5 text-xs">{summary.newSml.length}</span></button>
             <button type="button" onClick={() => setNewQualityMenu("NPL")} className={cn("flex min-w-[140px] items-center justify-between rounded-md border px-3 py-2 text-sm font-black", newQualityMenu === "NPL" ? "border-rose-500 bg-rose-50 text-rose-700" : "border-[#d7e3ef] bg-white text-muted-foreground")}><span>New NPL</span><span className="rounded-full bg-white px-2 py-0.5 text-xs">{summary.newNpl.length}</span></button>
@@ -2680,8 +2671,8 @@ function RingkasanView({
           {selectedNewRows.length ? (
             <>
               <TableShell minWidth="min-w-[900px]">
-                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek 2 Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th></tr></thead>
-                <tbody>{newRowsPagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description, item.loanType)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.sourceBucket} /></Td><Td><QualityBadge bucket={item.targetBucket} /></Td></tr>)}</tbody>
+                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th><Th>Kolek Terbaru</Th></tr></thead>
+                <tbody>{newRowsPagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description, item.loanType)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.targetBucket} /></Td><Td>{item.latestBucket ? <QualityBadge bucket={item.latestBucket} /> : "-"}</Td></tr>)}</tbody>
               </TableShell>
               <PaginationControls page={newRowsPagination.page} pageSize={newRowsPagination.pageSize} totalItems={selectedNewRows.length} onPageChange={newRowsPagination.setPage} onPageSizeChange={newRowsPagination.setPageSize} />
             </>
@@ -2946,8 +2937,8 @@ const kualitasColumnOptions: ColumnOption[] = [
   { key: "mantri", label: "Mantri" },
   { key: "outstanding", label: "Outstanding" },
   { key: "nextPayment", label: "Next Payment Date" },
-  { key: "previous", label: "Kolek Bulan Lalu" },
-  { key: "latest", label: "Kolek Terbaru" },
+  { key: "previous", label: "Kolek 2 Bulan Lalu" },
+  { key: "latest", label: "Kolek Bulan Lalu" },
   { key: "movement", label: "Perubahan Status" },
 ];
 
@@ -3011,15 +3002,17 @@ function KualitasView({
     <div className="space-y-4">
       <SectionHeader
         title="Nominatif per Kualitas"
-        description={`Sumber LW321 ${getMonthLabel(sourceMonth)}, dibandingkan dengan ${getMonthLabel(comparisonMonth ?? sourceMonth)}.`}
+        description={`Nominatif dan filter kualitas mengacu pada posisi LW321 ${getMonthLabel(sourceMonth)}, dibandingkan dengan ${getMonthLabel(comparisonMonth ?? sourceMonth)}.`}
         icon={Layers3}
       />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="max-w-xs">
-          {qualityOptions.map((option) => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </Select>
+        <Field label={`Filter Kolektibilitas ${getMonthLabel(sourceMonth)}`}>
+          <Select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="min-w-64">
+            {qualityOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </Select>
+        </Field>
         <TableTools
           columns={kualitasColumnOptions}
           visibleColumns={visibleColumns}
@@ -3036,8 +3029,8 @@ function KualitasView({
             {visible("mantri") ? <Th>Mantri</Th> : null}
             {visible("outstanding") ? <Th>Outstanding</Th> : null}
             {visible("nextPayment") ? <Th>Next Payment Date</Th> : null}
-            {visible("previous") ? <Th>Kolek Bulan Lalu</Th> : null}
-            {visible("latest") ? <Th>Kolek Terbaru</Th> : null}
+            {visible("previous") ? <Th>Kolek 2 Bulan Lalu</Th> : null}
+            {visible("latest") ? <Th>Kolek Bulan Lalu</Th> : null}
             {visible("movement") ? <Th>Perubahan Status</Th> : null}
           </tr>
         </thead>
@@ -3242,33 +3235,73 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
   const rows = getRealisasiRows(month).filter((row) => mantriFilter === "Semua" || row.mantri === mantriFilter);
   const total = rows.reduce((sum, item) => sum + item.total, 0);
   const count = rows.reduce((sum, item) => sum + item.count, 0);
+  const average = count ? total / count : 0;
+  const topMantri = rows[0];
+  const maxTotal = Math.max(...rows.map((item) => item.total), 1);
   const pagination = useTablePagination(rows, `${month}-${mantriFilter}-${rows.length}`);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <SectionHeader
         title="Realisasi Mantri"
         description="Nominal dan jumlah rekening realisasi berdasarkan tanggal realisasi pada bulan terpilih."
         icon={TrendingUp}
       />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <MetricCard label="Total Realisasi" value={formatCurrency(total)} helper={`${count} rekening`} tone="success" icon={TrendingUp} />
-        <MetricCard label="Bulan Filter" value={getMonthLabel(month)} helper="Dihitung dari tanggal realisasi" icon={LineChart} />
-      </div>
-      <TableShell>
+      <section className="overflow-hidden rounded-lg bg-[#00529c] text-white shadow-[0_12px_28px_rgba(0,82,156,0.2)]">
+        <div className="h-1.5 bg-[#f37021]" />
+        <div className="grid divide-y divide-white/15 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+          <div className="p-5"><p className="text-xs font-black uppercase text-white/65">Total Realisasi</p><p className="mt-2 text-2xl font-black">{formatCurrency(total)}</p><p className="mt-1 text-xs font-semibold text-white/70">Posisi {getMonthLabel(month)}</p></div>
+          <div className="p-5"><p className="text-xs font-black uppercase text-white/65">Jumlah Rekening</p><p className="mt-2 text-2xl font-black">{formatNumber(count)}</p><p className="mt-1 text-xs font-semibold text-white/70">Rekening terealisasi</p></div>
+          <div className="p-5"><p className="text-xs font-black uppercase text-white/65">Rata-rata per Rekening</p><p className="mt-2 text-2xl font-black">{formatCurrency(average)}</p><p className="mt-1 text-xs font-semibold text-white/70">Nominal rata-rata realisasi</p></div>
+          <div className="bg-[#004077] p-5"><p className="text-xs font-black uppercase text-[#ffd2b5]">Mantri Tertinggi</p><p className="mt-2 truncate text-lg font-black">{topMantri?.mantri ?? "-"}</p><p className="mt-1 text-xs font-semibold text-white/70">{topMantri ? formatCurrency(topMantri.total) : "Belum ada realisasi"}</p></div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_8px_22px_rgba(0,55,105,0.06)] sm:p-5">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="text-xs font-black uppercase text-[#f37021]">Perbandingan Kinerja</p><h2 className="mt-1 text-lg font-black text-[#00529c]">Realisasi per Mantri</h2></div>
+          <p className="text-xs font-semibold text-muted-foreground">Urutan berdasarkan nominal terbesar</p>
+        </div>
+        {rows.length ? (
+          <div className="mt-4 h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 24, left: 12, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#d7e3ef" />
+                <XAxis type="number" tickFormatter={(value) => `${Math.round(Number(value) / 1000000)} jt`} tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="mantri" width={175} tick={{ fontSize: 11, fill: "#004077" }} />
+                <Tooltip formatter={(value: number) => formatCurrency(value)} cursor={{ fill: "#eef7ff" }} />
+                <Bar dataKey="total" fill="#00529c" radius={[0, 5, 5, 0]} barSize={24}>
+                  {rows.map((row, index) => <Cell key={row.mantri} fill={index === 0 ? "#f37021" : index % 2 ? "#0f9f8f" : "#00529c"} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : <EmptyState title="Belum ada realisasi" description={`Tidak ada realisasi pada ${getMonthLabel(month)} untuk filter terpilih.`} icon={TrendingUp} />}
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eaf3fb]">
+          <div className="h-full rounded-full bg-[linear-gradient(90deg,#00529c,#0f9f8f,#f37021)]" style={{ width: `${total ? 100 : 0}%` }} />
+        </div>
+      </section>
+
+      <TableShell minWidth="min-w-[820px]">
         <thead>
           <tr>
+            <Th>Peringkat</Th>
             <Th>Mantri</Th>
             <Th>Nominal Realisasi</Th>
+            <Th>Kontribusi</Th>
             <Th>Jumlah Debitur/Rekening</Th>
+            <Th>Rata-rata/Rekening</Th>
           </tr>
         </thead>
         <tbody>
-          {pagination.pagedRows.map((row) => (
+          {pagination.pagedRows.map((row, index) => (
             <tr key={row.mantri}>
-              <Td className="font-medium">{row.mantri}</Td>
-              <Td>{formatCurrency(row.total)}</Td>
+              <Td><span className={cn("grid h-8 w-8 place-items-center rounded-md text-xs font-black", pagination.page === 1 && index === 0 ? "bg-[#f37021] text-white" : "bg-[#eaf3fb] text-[#00529c]")}>{(pagination.page - 1) * pagination.pageSize + index + 1}</span></Td>
+              <Td className="font-bold text-[#004077]">{row.mantri}</Td>
+              <Td className="font-black text-[#00529c]">{formatCurrency(row.total)}</Td>
+              <Td><div className="min-w-32"><div className="flex justify-between text-xs font-bold"><span>{formatPercent(total ? (row.total / total) * 100 : 0)}</span><span className="text-muted-foreground">dari total</span></div><div className="mt-1.5 h-2 rounded-full bg-[#eaf3fb]"><div className="h-2 rounded-full bg-[#0f9f8f]" style={{ width: `${(row.total / maxTotal) * 100}%` }} /></div></div></Td>
               <Td>{formatNumber(row.count)}</Td>
+              <Td>{formatCurrency(row.count ? row.total / row.count : 0)}</Td>
             </tr>
           ))}
         </tbody>
@@ -3767,7 +3800,7 @@ function CkpnView({
     <div className="space-y-4">
       <SectionHeader
         title="CKPN Internal"
-        description={`Pergerakan kolektibilitas LW321 ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke ${getMonthLabel(sourceMonth)}. PUMK tidak masuk perhitungan.`}
+        description={`Pergerakan kolektibilitas LW321 ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke posisi bulan lalu ${getMonthLabel(sourceMonth)}. Filter kualitas mengacu pada posisi bulan lalu dan PUMK tidak masuk perhitungan.`}
         icon={PieChartIcon}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -3777,18 +3810,18 @@ function CkpnView({
         <MetricCard label="Rekening Bergerak" value={`${rows.length} rekening`} icon={UsersRound} />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Select value={mantri} onChange={(event) => setMantri(event.target.value)}>
+        <Field label="Mantri"><Select value={mantri} onChange={(event) => setMantri(event.target.value)}>
           {["Semua", ...mantriNames].map((item) => <option key={item} value={item}>{item}</option>)}
-        </Select>
-        <Select value={product} onChange={(event) => setProduct(event.target.value)}>
+        </Select></Field>
+        <Field label="Tipe Pinjaman"><Select value={product} onChange={(event) => setProduct(event.target.value)}>
           {["Semua", "Kupedes", "Kupedes Rakyat", "KUR Mikro"].map((item) => <option key={item} value={item}>{item}</option>)}
-        </Select>
-        <Select value={movement} onChange={(event) => setMovement(event.target.value)}>
+        </Select></Field>
+        <Field label="Arah Pergerakan"><Select value={movement} onChange={(event) => setMovement(event.target.value)}>
           {["Semua", "Memburuk", "Membaik"].map((item) => <option key={item} value={item}>{item}</option>)}
-        </Select>
-        <Select value={quality} onChange={(event) => setQuality(event.target.value)}>
+        </Select></Field>
+        <Field label={`Kolektibilitas ${getMonthLabel(sourceMonth)}`}><Select value={quality} onChange={(event) => setQuality(event.target.value)}>
           {["Semua", "Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet"].map((item) => <option key={item} value={item}>{item}</option>)}
-        </Select>
+        </Select></Field>
       </div>
       <TableShell>
         <thead>
@@ -3797,9 +3830,9 @@ function CkpnView({
             <Th>Nama Debitur</Th>
             <Th>Mantri</Th>
             <Th>Tipe Pinjaman</Th>
-            <Th>Outstanding Terbaru</Th>
+            <Th>Outstanding Bulan Lalu</Th>
+            <Th>Kolek 2 Bulan Lalu</Th>
             <Th>Kolek Bulan Lalu</Th>
-            <Th>Kolek Terbaru</Th>
             <Th>Delta CKPN</Th>
           </tr>
         </thead>
@@ -7393,69 +7426,6 @@ function UnggahView() {
         </tbody>
       </TableShell>
       <PaginationControls page={historyPagination.page} pageSize={historyPagination.pageSize} totalItems={historyRows.length} onPageChange={historyPagination.setPage} onPageSizeChange={historyPagination.setPageSize} />
-    </div>
-  );
-}
-
-function DetailView({
-  month,
-  selectedMantri,
-  setSelectedMantri,
-  mantriNames,
-}: {
-  month: MonthKey;
-  selectedMantri: string;
-  setSelectedMantri: (value: string) => void;
-  mantriNames: string[];
-}) {
-  const rows = getCreditSnapshots(month).filter((item) => item.mantri === selectedMantri);
-  const totalOs = rows.reduce((sum, item) => sum + item.outstanding, 0);
-  const nplOs = rows.reduce((sum, item) => sum + (isNpl(classifyQuality(item, month)) ? item.outstanding : 0), 0);
-  const pagination = useTablePagination(rows, `${month}-${selectedMantri}-${rows.length}`);
-
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Detail Mantri"
-        description="Profil ringkas, tren OS, dan daftar nasabah berdasarkan mantri terpilih."
-        icon={UserRound}
-      />
-      <Select value={selectedMantri} onChange={(event) => setSelectedMantri(event.target.value)} className="max-w-xs">
-        {mantriNames.map((item) => <option key={item} value={item}>{item}</option>)}
-      </Select>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MetricCard label="Mantri" value={selectedMantri} helper="PN pengelola aktif" icon={UserRound} />
-        <MetricCard label="OS Kelolaan" value={formatCurrency(totalOs)} helper={`${rows.length} rekening`} icon={Banknote} />
-        <MetricCard label="NPL Kelolaan" value={formatCurrency(nplOs)} helper={formatPercent(totalOs ? (nplOs / totalOs) * 100 : 0)} tone="danger" icon={AlertTriangle} />
-      </div>
-      <TableShell>
-        <thead>
-          <tr>
-            <Th>No Rekening</Th>
-            <Th>Nama Debitur</Th>
-            <Th>Tipe Pinjaman</Th>
-            <Th>Outstanding</Th>
-            <Th>Kolektibilitas</Th>
-            <Th>Next Payment Date</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {pagination.pagedRows.map((item) => {
-            const bucket = classifyQuality(item, month);
-            return (
-              <tr key={item.accountNumber} className={cn(isNpl(bucket) && "bg-rose-50/70", isSml(bucket) && "bg-[#f37021]/5")}>
-                <Td className="font-medium">{item.accountNumber}</Td>
-                <Td>{item.debtorName}</Td>
-                <Td>{getProductType(item.description, item.loanType)}</Td>
-                <Td>{formatCurrency(item.outstanding)}</Td>
-                <Td><QualityBadge bucket={bucket} /></Td>
-                <Td>{dateLabel(item.nextPaymentDate)}</Td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </TableShell>
-      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
     </div>
   );
 }
