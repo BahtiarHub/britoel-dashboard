@@ -599,6 +599,14 @@ export function getPreviousMonth(month: MonthKey, offset = 1): MonthKey | undefi
   return months[index - offset]?.value;
 }
 
+export function getYearEndComparisonMonth(month: MonthKey): MonthKey {
+  const selectedYear = Number(month.slice(0, 4));
+  const exactYearEnd = `${selectedYear - 1}-12`;
+  if (months.some((item) => item.value === exactYearEnd)) return exactYearEnd;
+  const priorPeriods = months.map((item) => item.value).filter((value) => value < `${selectedYear}-01`).sort();
+  return priorPeriods.at(-1) ?? months[0]?.value ?? month;
+}
+
 export function getMonthDate(month: MonthKey) {
   const [year, monthNumber] = month.split("-").map(Number);
   return new Date(year, monthNumber, 0);
@@ -770,17 +778,23 @@ export function getCkpnRows(month: MonthKey) {
 }
 
 export function getNewRows(month: MonthKey, target: "SML" | "NPL") {
-  const previousTwoMonth = getPreviousMonth(month, 2);
-  if (!previousTwoMonth) return [];
+  const sourceMonth = getPreviousMonth(month, 2);
+  const targetMonth = getPreviousMonth(month);
+  if (!sourceMonth || !targetMonth) return [];
 
-  return getSnapshots(month).filter((latest) => {
-    const previous = getCompareSnapshot(previousTwoMonth, latest.accountNumber);
-    if (!previous) return false;
-    const previousBucket = classifyQuality(previous, previousTwoMonth);
-    const latestBucket = classifyQuality(latest, month);
-    if (previousBucket !== "Lancar") return false;
-    return target === "SML" ? isSml(latestBucket) : isNpl(latestBucket);
-  });
+  return getSnapshots(targetMonth)
+    .map((targetRow) => {
+      const sourceRow = getCompareSnapshot(sourceMonth, targetRow.accountNumber);
+      if (!sourceRow) return undefined;
+      const sourceBucket = classifyQuality(sourceRow, sourceMonth);
+      const targetBucket = classifyQuality(targetRow, targetMonth);
+      const matches = target === "SML"
+        ? sourceBucket === "Lancar" && targetBucket === "SML1"
+        : sourceBucket === "SML3" && targetBucket === "KL";
+      if (!matches) return undefined;
+      return { ...targetRow, sourceMonth, targetMonth, sourceBucket, targetBucket };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
 export function getPipelineRows(month: MonthKey) {

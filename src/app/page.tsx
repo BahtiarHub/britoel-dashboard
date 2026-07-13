@@ -84,6 +84,7 @@ import {
   getRealisasiRows,
   getSnapshots,
   getSummary,
+  getYearEndComparisonMonth,
   isNpl,
   isPl,
   isSml,
@@ -2598,13 +2599,12 @@ function RingkasanView({
   const ckpnRows = getCkpnRows(month);
   const previousMonth = getPreviousMonth(month);
   const previousSummary = getSummary(previousMonth ?? month);
-  const selectedYear = month.slice(0, 4);
-  const yearStartMonth = months.find((item) => item.value.startsWith(selectedYear))?.value ?? month;
-  const yearStartSummary = getSummary(yearStartMonth);
+  const yearEndMonth = getYearEndComparisonMonth(month);
+  const yearEndSummary = getSummary(yearEndMonth);
   const trendCards = [
-    { label: "OS", current: summary.totalOs, mtd: summary.totalOs - previousSummary.totalOs, ytd: summary.totalOs - yearStartSummary.totalOs, risk: false, tone: "blue", icon: Banknote },
-    { label: "SML", current: summary.smlOs, mtd: summary.smlOs - previousSummary.smlOs, ytd: summary.smlOs - yearStartSummary.smlOs, risk: true, tone: "orange", icon: AlertTriangle },
-    { label: "NPL", current: summary.nplOs, mtd: summary.nplOs - previousSummary.nplOs, ytd: summary.nplOs - yearStartSummary.nplOs, risk: true, tone: "red", icon: ArrowDownRight },
+    { label: "OS", current: summary.totalOs, mtd: summary.totalOs - previousSummary.totalOs, ytd: summary.totalOs - yearEndSummary.totalOs, risk: false, tone: "blue", icon: Banknote },
+    { label: "SML", current: summary.smlOs, mtd: summary.smlOs - previousSummary.smlOs, ytd: summary.smlOs - yearEndSummary.smlOs, risk: true, tone: "orange", icon: AlertTriangle },
+    { label: "NPL", current: summary.nplOs, mtd: summary.nplOs - previousSummary.nplOs, ytd: summary.nplOs - yearEndSummary.nplOs, risk: true, tone: "red", icon: ArrowDownRight },
   ] as const;
   const selectedNewRows = newQualityMenu === "SML" ? summary.newSml : summary.newNpl;
 
@@ -2635,6 +2635,7 @@ function RingkasanView({
                   {[{ label: "Delta MTD", value: item.mtd }, { label: "Delta YTD", value: item.ytd }].map((delta) => (
                     <div key={delta.label} className="rounded-md border border-[#e3edf6] bg-[#f8fbfe] px-3 py-2">
                       <p className="text-[10px] font-black uppercase text-muted-foreground">{delta.label}</p>
+                      {delta.label === "Delta YTD" ? <p className="mt-0.5 text-[9px] font-semibold text-muted-foreground">vs {getMonthLabel(yearEndMonth)}</p> : null}
                       <p className={cn("mt-1 flex items-center gap-1 text-sm font-black", deltaTone(delta.value))}>{delta.value > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : delta.value < 0 ? <ArrowDownRight className="h-3.5 w-3.5" /> : null}{delta.value > 0 ? "+" : ""}{formatCurrency(delta.value)}</p>
                     </div>
                   ))}
@@ -2653,7 +2654,7 @@ function RingkasanView({
 
       <div className="bri-card rounded-lg border border-[#d7e3ef] bg-white p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="text-xs font-black uppercase text-[#f37021]">Pergerakan Baru</p><h2 className="mt-1 text-lg font-black text-[#00529c]">Nominatif New SML & New NPL</h2></div>
+          <div><p className="text-xs font-black uppercase text-[#f37021]">Pergerakan Baru</p><h2 className="mt-1 text-lg font-black text-[#00529c]">Nominatif New SML & New NPL</h2><p className="mt-1 text-xs text-muted-foreground">Perbandingan {getMonthLabel(getPreviousMonth(month, 2) ?? month)} ke {getMonthLabel(getPreviousMonth(month) ?? month)}.</p></div>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setNewQualityMenu("SML")} className={cn("flex min-w-[140px] items-center justify-between rounded-md border px-3 py-2 text-sm font-black", newQualityMenu === "SML" ? "border-[#f37021] bg-[#fff7ed] text-[#b54b00]" : "border-[#d7e3ef] bg-white text-muted-foreground")}><span>New SML</span><span className="rounded-full bg-white px-2 py-0.5 text-xs">{summary.newSml.length}</span></button>
             <button type="button" onClick={() => setNewQualityMenu("NPL")} className={cn("flex min-w-[140px] items-center justify-between rounded-md border px-3 py-2 text-sm font-black", newQualityMenu === "NPL" ? "border-rose-500 bg-rose-50 text-rose-700" : "border-[#d7e3ef] bg-white text-muted-foreground")}><span>New NPL</span><span className="rounded-full bg-white px-2 py-0.5 text-xs">{summary.newNpl.length}</span></button>
@@ -2662,8 +2663,8 @@ function RingkasanView({
         <div className="mt-4">
           {selectedNewRows.length ? (
             <TableShell minWidth="min-w-[900px]">
-              <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding</Th><Th>Kolektibilitas Terbaru</Th></tr></thead>
-              <tbody>{selectedNewRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={classifyQuality(item, month)} /></Td></tr>)}</tbody>
+              <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek 2 Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th></tr></thead>
+              <tbody>{selectedNewRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.sourceBucket} /></Td><Td><QualityBadge bucket={item.targetBucket} /></Td></tr>)}</tbody>
             </TableShell>
           ) : <EmptyState title={`Tidak ada New ${newQualityMenu}`} description={`Belum ada rekening yang masuk kategori New ${newQualityMenu} pada ${getMonthLabel(month)}.`} icon={CheckCircle2} />}
         </div>
@@ -3135,16 +3136,15 @@ function PortfolioDeltaCell({ delta }: { delta: PortfolioPosition }) {
 function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; mantriFilter: string; onSelectMantri: (mantri: string) => void }) {
   const rows = getMantriRecap(month).filter((row) => mantriFilter === "Semua" || row.mantri === mantriFilter);
   const previousMonth = getPreviousMonth(month);
-  const selectedYear = month.slice(0, 4);
-  const yearEndComparisonMonth = months.find((item) => item.value.startsWith(selectedYear))?.value ?? month;
+  const yearEndComparisonMonth = getYearEndComparisonMonth(month);
   const previousRecap = new Map(
     (previousMonth ? getMantriRecap(previousMonth) : []).map((row) => [row.mantri, row]),
   );
   const yearEndRecap = new Map(getMantriRecap(yearEndComparisonMonth).map((row) => [row.mantri, row]));
   const rowsWithDelta = rows.map((row) => {
     const latest = getPortfolioPosition(row);
-    const yearEnd = getPortfolioPosition(yearEndRecap.get(row.mantri) ?? row);
-    const previous = getPortfolioPosition(previousRecap.get(row.mantri) ?? row);
+    const yearEnd = getPortfolioPosition(yearEndRecap.get(row.mantri));
+    const previous = getPortfolioPosition(previousRecap.get(row.mantri));
     return {
       ...row,
       latest,
@@ -3173,7 +3173,7 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
       <div className="flex flex-wrap gap-2 text-xs">
         <Badge variant="outline">YTD: terbaru dibanding posisi akhir tahun</Badge>
         <Badge variant="outline">MTD: dibanding akhir bulan lalu</Badge>
-        <Badge variant="secondary">Data contoh akhir tahun memakai snapshot pembanding paling awal yang tersedia</Badge>
+        <Badge variant="secondary">Posisi akhir tahun: {getMonthLabel(yearEndComparisonMonth)}</Badge>
       </div>
       <TableShell minWidth="min-w-[1260px]">
         <thead>
