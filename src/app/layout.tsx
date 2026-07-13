@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Monitor Kredit Mantri",
-  description: "Dasbor frontend untuk monitoring kualitas kredit dan kinerja mantri.",
+  title: "BRI Tool",
+  description: "Dashboard monitoring pinjaman dan operasional BRIMEN.",
 };
 
 export default function RootLayout({

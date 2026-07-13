@@ -799,7 +799,7 @@ function AuthLoading() {
     <main className="grid min-h-screen place-items-center bg-[#f4f8fc] px-5">
       <div className="flex items-center gap-3 text-sm font-bold text-[#00529c]">
         <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#b8d8f2] border-t-[#f37021]" />
-        Menyiapkan BRIToel...
+        Menyiapkan BRI Tool...
       </div>
     </main>
   );
@@ -829,7 +829,7 @@ function LoginView() {
       <section className="relative hidden min-h-screen overflow-hidden bg-[#004785] px-12 py-14 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="absolute inset-x-0 top-0 h-2 bg-[#f37021]" />
         <div className="relative z-10 flex items-center gap-3">
-          <div className="britoel-mark scale-110" aria-label="BRIToel"><span className="britoel-mark__bri">BRI</span><span className="britoel-mark__toel">Toel</span><span className="britoel-mark__spark" /></div>
+          <div className="britoel-mark scale-110" aria-label="BRI Tool"><span className="britoel-mark__bri">BRI</span><span className="britoel-mark__toel">Tool</span><span className="britoel-mark__spark" /></div>
           <span className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm font-black text-[#ffb37d]">8014</span>
         </div>
         <div className="relative z-10 max-w-xl">
@@ -837,19 +837,19 @@ function LoginView() {
           <h1 className="text-5xl font-black leading-[1.08]">Satu ruang kerja untuk pinjaman dan operasional BRIMEN.</h1>
           <p className="mt-5 max-w-lg text-base leading-7 text-blue-100">Pantau kualitas kredit, tindak lanjut nasabah, arsip berkas, serta aktivitas unit dengan akses yang terlindungi.</p>
         </div>
-        <p className="relative z-10 text-xs font-semibold text-blue-200">BRIToel Internal Workspace</p>
+        <p className="relative z-10 text-xs font-semibold text-blue-200">BRI Tool Internal Workspace</p>
         <div className="absolute -bottom-32 -right-28 h-96 w-96 rounded-full border-[70px] border-white/5" />
       </section>
 
       <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-10">
         <div className="w-full max-w-md">
           <div className="mb-8 lg:hidden">
-            <div className="britoel-mark" aria-label="BRIToel"><span className="britoel-mark__bri">BRI</span><span className="britoel-mark__toel">Toel</span><span className="britoel-mark__spark" /></div>
+            <div className="britoel-mark" aria-label="BRI Tool"><span className="britoel-mark__bri">BRI</span><span className="britoel-mark__toel">Tool</span><span className="britoel-mark__spark" /></div>
             <p className="mt-3 text-sm font-bold text-[#00529c]">Unit Greenvilage</p>
           </div>
           <div className="rounded-lg border border-[#cbddeb] bg-white p-6 shadow-[0_24px_60px_rgba(0,65,120,0.12)] sm:p-8">
             <span className="mb-5 grid h-12 w-12 place-items-center rounded-md bg-[#eaf4fd] text-[#00529c]"><LockKeyhole className="h-6 w-6" /></span>
-            <h2 className="text-2xl font-black text-[#003d70]">Masuk ke BRIToel</h2>
+            <h2 className="text-2xl font-black text-[#003d70]">Masuk ke BRI Tool</h2>
             <p className="mt-1 text-sm text-slate-500">Gunakan username sesuai kode branch unit kerja Anda.</p>
             <form className="mt-7 space-y-4" onSubmit={handleLogin}>
               <label className="block text-sm font-bold text-slate-700">Username
@@ -988,7 +988,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         setBackendAuditEntries((payload.data ?? []).map((item: { id: string; actor?: string; action: string; entity: string; detail?: string; createdAt: string; branchCode?: string }) => ({
           id: item.id,
           time: new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt)),
-          actor: item.actor || "Sistem BRIToel",
+          actor: item.actor || "Sistem BRI Tool",
           action: item.action.replaceAll("_", " "),
           detail: item.detail || item.entity,
           category: item.entity.includes("upload") ? "Upload" : item.entity.includes("whatsapp") ? "Kredit" : "BRIMEN",
@@ -1396,9 +1396,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
           <div className="flex h-full flex-col">
             <div className="border-b border-[#d7e3ef] p-4 sm:p-5">
               <div className="flex items-center gap-3">
-                <div className="britoel-mark" aria-label="BRIToel">
+                <div className="britoel-mark" aria-label="BRI Tool">
                   <span className="britoel-mark__bri">BRI</span>
-                  <span className="britoel-mark__toel">Toel</span>
+                  <span className="britoel-mark__toel">Tool</span>
                   <span className="britoel-mark__spark" />
                 </div>
                 <div className="min-w-0">
@@ -1657,7 +1657,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   <FilterX className="mr-2 h-4 w-4" />Reset Filter
                 </Button>
                 <Button type="button" variant="outline" className="col-span-2 h-10 border-rose-200 bg-white text-rose-600" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>
-                  <LogOut className="mr-2 h-4 w-4" />Keluar dari BRIToel
+                  <LogOut className="mr-2 h-4 w-4" />Keluar dari BRI Tool
                 </Button>
               </div>
             ) : null}
@@ -1686,7 +1686,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
             <footer className="rounded-lg border border-[#d7e3ef] bg-white px-4 py-3 text-xs text-muted-foreground shadow-[0_10px_22px_rgba(0,55,105,0.05)]">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <span className="font-black text-[#00529c]">BRIToel</span>
+                  <span className="font-black text-[#00529c]">BRI Tool</span>
                   <span className="mx-2 text-[#f37021]">|</span>
                   <span>8014 - Unit Greenvilage</span>
                 </div>
@@ -1845,7 +1845,7 @@ function PresentationMode({ month, summary, brimenRows, role, onClose }: { month
       <div className="h-2 shrink-0 bg-[linear-gradient(90deg,#00529c_0%,#00529c_76%,#f37021_76%,#f37021_100%)]" />
       <div className="flex items-center justify-between border-b border-[#d7e3ef] bg-white px-4 py-3 shadow-sm sm:px-8">
         <div className="flex items-center gap-3">
-          <div className="britoel-mark scale-90" aria-label="BRIToel"><span className="britoel-mark__bri">BRI</span><span className="britoel-mark__toel">Toel</span><span className="britoel-mark__spark" /></div>
+          <div className="britoel-mark scale-90" aria-label="BRI Tool"><span className="britoel-mark__bri">BRI</span><span className="britoel-mark__toel">Tool</span><span className="britoel-mark__spark" /></div>
           <div><p className="text-xs font-black uppercase text-[#f37021]">8014 - Unit Greenvilage</p><p className="text-sm font-bold text-[#00529c]">Briefing Kinerja | {getMonthLabel(month)}</p></div>
         </div>
         <div className="flex items-center gap-2"><span className="hidden rounded-md bg-[#eaf3fb] px-3 py-2 text-xs font-bold text-[#00529c] sm:inline-flex">Tampilan {role}</span><Button type="button" variant="outline" size="icon" aria-label="Tutup mode presentasi" className="border-[#bfd3e5] bg-white text-[#00529c] hover:bg-[#eaf3fb]" onClick={onClose}><X className="h-5 w-5" /></Button></div>
@@ -2612,9 +2612,9 @@ function RingkasanView({
   const yearEndMonth = getYearEndComparisonMonth(month);
   const yearEndSummary = getSummary(yearEndMonth);
   const trendCards = [
-    { label: "OS", current: summary.totalOs, mtd: summary.totalOs - previousSummary.totalOs, ytd: summary.totalOs - yearEndSummary.totalOs, risk: false, tone: "blue", icon: Banknote },
-    { label: "SML", current: summary.smlOs, mtd: summary.smlOs - previousSummary.smlOs, ytd: summary.smlOs - yearEndSummary.smlOs, risk: true, tone: "orange", icon: AlertTriangle },
-    { label: "NPL", current: summary.nplOs, mtd: summary.nplOs - previousSummary.nplOs, ytd: summary.nplOs - yearEndSummary.nplOs, risk: true, tone: "red", icon: ArrowDownRight },
+    { label: "OS", current: summary.totalOs, debtorCount: summary.totalDebtorCount, mtd: summary.totalOs - previousSummary.totalOs, ytd: summary.totalOs - yearEndSummary.totalOs, risk: false, tone: "blue", icon: Banknote },
+    { label: "SML", current: summary.smlOs, debtorCount: summary.smlDebtorCount, mtd: summary.smlOs - previousSummary.smlOs, ytd: summary.smlOs - yearEndSummary.smlOs, risk: true, tone: "orange", icon: AlertTriangle },
+    { label: "NPL", current: summary.nplOs, debtorCount: summary.nplDebtorCount, mtd: summary.nplOs - previousSummary.nplOs, ytd: summary.nplOs - yearEndSummary.nplOs, risk: true, tone: "red", icon: ArrowDownRight },
   ] as const;
   const selectedNewRows = (newQualityMenu === "SML" ? summary.newSml : summary.newNpl).map((item) => {
     const latestRow = getCompareSnapshot(month, item.accountNumber);
@@ -2649,7 +2649,13 @@ function RingkasanView({
               <div className={cn("h-1", item.tone === "blue" ? "bg-[#00529c]" : item.tone === "orange" ? "bg-[#f37021]" : "bg-rose-600")} />
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div><p className="text-xs font-black uppercase text-muted-foreground">Posisi {item.label} Terbaru</p><p className="mt-2 text-2xl font-black text-[#004077]">{formatCurrency(item.current)}</p></div>
+                  <div>
+                    <p className="text-xs font-black uppercase text-muted-foreground">Posisi {item.label} Terbaru</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <p className="text-2xl font-black text-[#004077]">{formatCurrency(item.current)}</p>
+                      <span className={cn("rounded-md border px-2 py-1 text-xs font-black", item.tone === "blue" ? "border-sky-200 bg-sky-50 text-[#00529c]" : item.tone === "orange" ? "border-orange-200 bg-orange-50 text-[#b54b00]" : "border-rose-200 bg-rose-50 text-rose-700")}>{formatNumber(item.debtorCount)} debitur</span>
+                    </div>
+                  </div>
                   <span className={cn("grid h-10 w-10 place-items-center rounded-md", item.tone === "blue" ? "bg-[#eaf3fb] text-[#00529c]" : item.tone === "orange" ? "bg-[#fff7ed] text-[#f37021]" : "bg-rose-50 text-rose-700")}><Icon className="h-5 w-5" /></span>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-2">
@@ -3875,6 +3881,7 @@ function CkpnView({
     return mantriMatch && productMatch && movementMatch && qualityMatch;
   });
   const filledRows = rows.filter((item) => item.targetCollectibility);
+  const changedRows = filledRows.filter((item) => Math.abs(item.ckpnImpact) >= 1);
   const tambahan = filledRows.filter((item) => item.ckpnImpact > 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
   const pemulihan = filledRows.filter((item) => item.ckpnImpact < 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
   const net = filledRows.reduce((sum, item) => sum + item.ckpnImpact, 0);
@@ -3906,7 +3913,7 @@ function CkpnView({
     <div className="space-y-4">
       <SectionHeader
         title="Prognosa CKPN"
-        description={`Isi kolektibilitas terbaru secara manual untuk memproyeksikan Delta CKPN dari posisi ${getMonthLabel(comparisonMonth ?? sourceMonth)}. PUMK tidak masuk perhitungan.`}
+        description={`Isi Prognosa Kolek secara manual untuk memproyeksikan Delta CKPN dari posisi ${getMonthLabel(comparisonMonth ?? sourceMonth)}. PUMK tidak masuk perhitungan.`}
         icon={PieChartIcon}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -3929,6 +3936,24 @@ function CkpnView({
           {["Semua", "Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
       </div>
+      <div className="flex flex-col gap-3 rounded-lg border border-[#d7e3ef] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-black text-[#004077]">Laporan Perubahan Prognosa CKPN</p>
+          <p className="text-xs text-muted-foreground">Excel hanya memuat {changedRows.length} rekening terfilter dengan Delta CKPN tidak nol.</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={!changedRows.length}
+          onClick={() => exportRowsXls(
+            `prognosa-ckpn-perubahan-${sourceMonth}.xls`,
+            ["No Rekening", "Nama Debitur", "Mantri", "Outstanding Acuan", "Kolek Bulan Lalu", "Prognosa Kolek", "CKPN Terbentuk", "Delta CKPN", "Arah Prognosa"],
+            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousBucket, item.targetCollectibility, item.formedCkpn, item.ckpnImpact, item.movement]),
+          )}
+        >
+          <FileSpreadsheet className="mr-2 h-4 w-4" />Export Excel ({changedRows.length})
+        </Button>
+      </div>
       {forecastMessage ? <p className="rounded-md border border-[#b8d8f2] bg-[#eef7ff] px-3 py-2 text-sm font-semibold text-[#00529c]">{forecastMessage}</p> : null}
       <TableShell>
         <thead>
@@ -3938,7 +3963,7 @@ function CkpnView({
             <Th>Mantri</Th>
             <Th>Outstanding Acuan</Th>
             <Th>Kolek Bulan Lalu</Th>
-            <Th>Kolek Terbaru</Th>
+            <Th>Prognosa Kolek</Th>
             <Th>Delta CKPN</Th>
           </tr>
         </thead>
@@ -3957,7 +3982,7 @@ function CkpnView({
                   onChange={(event) => event.target.value && saveForecast(item.accountNumber, event.target.value as PrognosaCollectibility)}
                   className="h-9 min-w-40"
                 >
-                  <option value="">Pilih kolektibilitas</option>
+                  <option value="">Pilih prognosa kolek</option>
                   {targetOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                 </Select>
               </Td>
@@ -7080,7 +7105,7 @@ function UserManagementView({ session }: { session: DashboardSession }) {
         <MetricCard label="Akun Nonaktif" value={formatNumber(rows.filter((item) => !item.active).length)} helper="Akses dihentikan" icon={Shield} tone="warning" />
       </div>
       {isSuperAdmin ? <div className="overflow-hidden rounded-lg border border-[#cbddeb] bg-white">
-        <div className="border-b border-[#d7e3ef] bg-[#f4f9fd] px-4 py-3"><p className="font-black text-[#004077]">Aktivitas Unit Kerja</p><p className="text-xs text-slate-500">Ringkasan penggunaan BRIToel secara global.</p></div>
+        <div className="border-b border-[#d7e3ef] bg-[#f4f9fd] px-4 py-3"><p className="font-black text-[#004077]">Aktivitas Unit Kerja</p><p className="text-xs text-slate-500">Ringkasan penggunaan BRI Tool secara global.</p></div>
         <div className="grid gap-px bg-[#d7e3ef] sm:grid-cols-2 xl:grid-cols-4">{branchSummaries.map((item) => <div key={item.branchCode} className="bg-white p-4"><div className="flex items-center justify-between"><span className="text-lg font-black text-[#00529c]">Uker {item.branchCode}</span><span className={cn("rounded-full px-2 py-1 text-xs font-bold", item.online ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>{item.online} online</span></div><p className="mt-2 text-sm font-semibold text-slate-700">{item.total} pengguna</p><p className="mt-1 text-xs text-slate-500">Last update: {item.lastActive ? formatter.format(item.lastActive) : "Belum ada aktivitas"}</p></div>)}</div>
       </div> : null}
       <div className="flex flex-col gap-3 rounded-lg border border-[#cbddeb] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">

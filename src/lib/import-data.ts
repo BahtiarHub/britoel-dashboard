@@ -55,7 +55,7 @@ export type ImportedBrimenRow = {
 type RawRow = Record<string, unknown>;
 
 const aliases = {
-  cif: ["cif", "cifno", "no_cif", "nomor_cif", "cif_number", "customer_information_file"],
+  cif: ["cif", "cifno", "cif_no", "no_cif", "nomor_cif", "no_cif_nasabah", "cif_number", "customer_information_file"],
   loanType: ["ln_type", "loan_type", "tipe_kredit", "kode_produk_pinjaman"],
   accountNumber: ["no_rekening", "nomor_rekening", "no_rek", "norek", "rekening", "account_number", "account_no", "acctno", "no_rekening_nasabah"],
   debtorName: ["nama_debitur", "nama_nasabah", "nama_debitur_single", "debitur", "customer_name", "nama"],
@@ -245,11 +245,49 @@ function deriveCollectibility(amounts: ReturnType<typeof getQualityAmounts>): Im
   return undefined;
 }
 
+const knownCsvHeaderAliases = [
+  ...Object.values(aliases).flat(),
+  ...Object.values(qualityAmountAliases).flat(),
+  ...Object.values(depositAliases).flat(),
+  ...Object.values(brimenAliases).flat(),
+  ...Object.values(nominativeCkpnAliases).flat(),
+];
+
+function csvHeaderScore(row: unknown[]) {
+  return row.reduce<number>((score, value) => {
+    const header = normalizeHeader(String(value ?? ""));
+    return score + (knownCsvHeaderAliases.some((alias) => headerMatchesAlias(header, alias)) ? 1 : 0);
+  }, 0);
+}
+
 function parseCsv(buffer: Buffer) {
   const content = buffer.toString("utf8").replace(/^\uFEFF/, "");
-  const firstLine = content.split(/\r?\n/, 1)[0] ?? "";
-  const delimiter = [";", ",", "\t", "|"].sort((a, b) => firstLine.split(b).length - firstLine.split(a).length)[0];
-  return parse(content, { columns: true, skip_empty_lines: true, relax_column_count: true, trim: true, delimiter }) as RawRow[];
+  const candidates = [";", ",", "\t", "|"]
+    .map((delimiter) => {
+      try {
+        const matrix = parse(content, { columns: false, skip_empty_lines: true, relax_column_count: true, trim: true, delimiter }) as unknown[][];
+        const inspected = matrix.slice(0, 25);
+        const headerIndex = inspected.reduce((bestIndex, row, index) => (
+          csvHeaderScore(row) > csvHeaderScore(inspected[bestIndex] ?? []) ? index : bestIndex
+        ), 0);
+        return {
+          delimiter,
+          matrix,
+          headerIndex,
+          score: csvHeaderScore(matrix[headerIndex] ?? []),
+          width: Math.max(0, ...inspected.map((row) => row.length)),
+        };
+      } catch {
+        return { delimiter, matrix: [] as unknown[][], headerIndex: 0, score: -1, width: 0 };
+      }
+    })
+    .sort((a, b) => b.score - a.score || b.width - a.width);
+  const selected = candidates[0];
+  const rawHeaders = selected.matrix[selected.headerIndex] ?? [];
+  const headers = rawHeaders.map((value, index) => String(value ?? "").trim() || `Kolom ${index + 1}`);
+  return selected.matrix.slice(selected.headerIndex + 1).map((row) => Object.fromEntries(
+    headers.map((header, index) => [header, row[index] ?? ""]),
+  )) as RawRow[];
 }
 
 export function parseTabularFile(fileName: string, buffer: Buffer) {
@@ -361,7 +399,7 @@ export function mapDepositRows(rawRows: RawRow[], period: string) {
   const cifHeader = findPreferredHeader(headers, depositAliases.cif);
   const savingsHeader = findPreferredHeader(headers, depositAliases.savingsAccount);
   const loanHeader = findPreferredHeader(headers, depositAliases.loanAccountNumber);
-  if (!cifHeader) throw new Error("Kolom No CIF/CIFNO tidak ditemukan pada file DI319.");
+  if (!cifHeader) throw new Error(`Kolom No CIF/CIFNO tidak ditemukan pada file DI319. Header yang terbaca: ${[...headers].slice(0, 15).join(", ") || "tidak ada"}.`);
   if (!savingsHeader) throw new Error("Kolom No Rekening Simpanan tidak ditemukan pada file DI319.");
   let rejected = 0;
   const issues: string[] = [];

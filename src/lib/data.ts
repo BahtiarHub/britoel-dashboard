@@ -1102,6 +1102,7 @@ export function getSummary(month: MonthKey) {
     totalOs,
     smlOs,
     nplOs,
+    totalDebtorCount: countDebtors(rows),
     smlPercent: totalOs ? (smlOs / totalOs) * 100 : 0,
     nplPercent: totalOs ? (nplOs / totalOs) * 100 : 0,
     smlDebtorCount: countDebtors(smlRows),
