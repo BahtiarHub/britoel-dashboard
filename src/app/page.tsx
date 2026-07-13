@@ -1217,7 +1217,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     { id: "upload", label: "Upload Sumber Data", description: "LW321, BRIMEN, nominatif, dan DI319", icon: Upload, action: () => { openMenu("unggah"); setActiveControlPanel("none"); } },
   ];
 
-  const previousMonth = getPreviousMonth(selectedMonth);
   const currentTitle = sidebarItems.find((item) => item.key === activeMenu);
 
   const mantriContent = {
@@ -1240,7 +1239,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     kualitas: (
       <KualitasView
         month={selectedMonth}
-        previousMonth={previousMonth}
         qualityFilter={globalQuality}
         setQualityFilter={setGlobalQuality}
         mantriFilter={globalMantri}
@@ -2411,11 +2409,11 @@ function DashboardMantriView({
   const tabPreviewText: Record<MantriViewKey, string> = {
     ringkasan: "Ikhtisar OS, SML, NPL, CKPN, dan pergerakan kredit.",
     nominatif: `${getSnapshots(month).length} rekening nasabah pada periode ${getMonthLabel(month)}.`,
-    kualitas: "Nominatif dan filter kolektibilitas berdasarkan posisi bulan lalu.",
+    kualitas: "Perbandingan kolektibilitas bulan lalu dengan posisi terbaru.",
     rekap: `${rekap.length} mantri dengan rincian OS dan delta pencapaian.`,
     realisasi: `${realisasi.reduce((total, item) => total + item.count, 0)} rekening realisasi bulan ini.`,
     pipeline: `${pipeline.length} rekening siap dipertimbangkan untuk suplesi.`,
-    ckpn: `${getCkpnRows(getPreviousMonth(month) ?? month).length} rekening bergerak pada posisi bulan lalu.`,
+    ckpn: `${getCkpnRows(month).length} rekening mengalami pergerakan CKPN pada posisi terbaru.`,
     di319: "Monitoring pinjaman tanpa blokiran dan setoran yang menggunakan dana blokiran.",
     wa: "Kampanye penawaran suplesi dan pengingat setoran menjelang jatuh tempo.",
   };
@@ -2608,9 +2606,11 @@ function RingkasanView({
   ] as const;
   const selectedNewRows = (newQualityMenu === "SML" ? summary.newSml : summary.newNpl).map((item) => {
     const latestRow = getCompareSnapshot(month, item.accountNumber);
+    const latestBucket = latestRow ? classifyQuality(latestRow, month) : undefined;
     return {
       ...item,
-      latestBucket: latestRow ? classifyQuality(latestRow, month) : undefined,
+      latestBucket,
+      latestMovement: latestBucket ? getQualityMovement(item.targetBucket, latestBucket) : "Tetap" as const,
     };
   });
   const newRowsPagination = useTablePagination(selectedNewRows, `${month}-${newQualityMenu}-${selectedNewRows.length}`);
@@ -2670,9 +2670,9 @@ function RingkasanView({
         <div className="mt-4">
           {selectedNewRows.length ? (
             <>
-              <TableShell minWidth="min-w-[900px]">
-                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th><Th>Kolek Terbaru</Th></tr></thead>
-                <tbody>{newRowsPagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description, item.loanType)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.targetBucket} /></Td><Td>{item.latestBucket ? <QualityBadge bucket={item.latestBucket} /> : "-"}</Td></tr>)}</tbody>
+              <TableShell minWidth="min-w-[850px]">
+                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th><Th>Kolek Terbaru</Th><Th>Status Perubahan</Th></tr></thead>
+                <tbody>{newRowsPagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.targetBucket} /></Td><Td>{item.latestBucket ? <QualityBadge bucket={item.latestBucket} /> : "-"}</Td><Td><MovementBadge movement={item.latestMovement} /></Td></tr>)}</tbody>
               </TableShell>
               <PaginationControls page={newRowsPagination.page} pageSize={newRowsPagination.pageSize} totalItems={selectedNewRows.length} onPageChange={newRowsPagination.setPage} onPageSizeChange={newRowsPagination.setPageSize} />
             </>
@@ -2937,21 +2937,19 @@ const kualitasColumnOptions: ColumnOption[] = [
   { key: "mantri", label: "Mantri" },
   { key: "outstanding", label: "Outstanding" },
   { key: "nextPayment", label: "Next Payment Date" },
-  { key: "previous", label: "Kolek 2 Bulan Lalu" },
-  { key: "latest", label: "Kolek Bulan Lalu" },
+  { key: "previous", label: "Kolek Bulan Lalu" },
+  { key: "latest", label: "Kolek Terbaru" },
   { key: "movement", label: "Perubahan Status" },
 ];
 
 function KualitasView({
   month,
-  previousMonth,
   qualityFilter,
   setQualityFilter,
   mantriFilter,
   productFilter,
 }: {
   month: MonthKey;
-  previousMonth?: MonthKey;
   qualityFilter: string;
   setQualityFilter: (value: string) => void;
   mantriFilter: string;
@@ -2959,7 +2957,7 @@ function KualitasView({
 }) {
   const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-kualitas", kualitasColumnOptions);
   const visible = (key: string) => visibleColumns.includes(key);
-  const sourceMonth = previousMonth ?? month;
+  const sourceMonth = month;
   const comparisonMonth = getPreviousMonth(sourceMonth);
   const rows = getSnapshots(sourceMonth)
     .map((item) => {
@@ -3002,11 +3000,11 @@ function KualitasView({
     <div className="space-y-4">
       <SectionHeader
         title="Nominatif per Kualitas"
-        description={`Nominatif dan filter kualitas mengacu pada posisi LW321 ${getMonthLabel(sourceMonth)}, dibandingkan dengan ${getMonthLabel(comparisonMonth ?? sourceMonth)}.`}
+        description={`Perubahan status dihitung dari kolektibilitas bulan lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke posisi terbaru ${getMonthLabel(sourceMonth)}.`}
         icon={Layers3}
       />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Field label={`Filter Kolektibilitas ${getMonthLabel(sourceMonth)}`}>
+        <Field label={`Filter Kolektibilitas Terbaru ${getMonthLabel(sourceMonth)}`}>
           <Select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="min-w-64">
             {qualityOptions.map((option) => (
               <option key={option} value={option}>{option}</option>
@@ -3029,8 +3027,8 @@ function KualitasView({
             {visible("mantri") ? <Th>Mantri</Th> : null}
             {visible("outstanding") ? <Th>Outstanding</Th> : null}
             {visible("nextPayment") ? <Th>Next Payment Date</Th> : null}
-            {visible("previous") ? <Th>Kolek 2 Bulan Lalu</Th> : null}
-            {visible("latest") ? <Th>Kolek Bulan Lalu</Th> : null}
+            {visible("previous") ? <Th>Kolek Bulan Lalu</Th> : null}
+            {visible("latest") ? <Th>Kolek Terbaru</Th> : null}
             {visible("movement") ? <Th>Perubahan Status</Th> : null}
           </tr>
         </thead>
@@ -3782,7 +3780,7 @@ function CkpnView({
   setQuality: (value: string) => void;
   mantriNames: string[];
 }) {
-  const sourceMonth = getPreviousMonth(month) ?? month;
+  const sourceMonth = month;
   const comparisonMonth = getPreviousMonth(sourceMonth);
   const rows = getCkpnRows(sourceMonth).filter((item) => {
     const mantriMatch = mantri === "Semua" || item.mantri === mantri;
@@ -3800,7 +3798,7 @@ function CkpnView({
     <div className="space-y-4">
       <SectionHeader
         title="CKPN Internal"
-        description={`Pergerakan kolektibilitas LW321 ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke posisi bulan lalu ${getMonthLabel(sourceMonth)}. Filter kualitas mengacu pada posisi bulan lalu dan PUMK tidak masuk perhitungan.`}
+        description={`Pergerakan dan Delta CKPN dihitung dari kolektibilitas bulan lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke posisi terbaru ${getMonthLabel(sourceMonth)}. PUMK tidak masuk perhitungan.`}
         icon={PieChartIcon}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -3819,7 +3817,7 @@ function CkpnView({
         <Field label="Arah Pergerakan"><Select value={movement} onChange={(event) => setMovement(event.target.value)}>
           {["Semua", "Memburuk", "Membaik"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
-        <Field label={`Kolektibilitas ${getMonthLabel(sourceMonth)}`}><Select value={quality} onChange={(event) => setQuality(event.target.value)}>
+        <Field label={`Kolektibilitas Terbaru ${getMonthLabel(sourceMonth)}`}><Select value={quality} onChange={(event) => setQuality(event.target.value)}>
           {["Semua", "Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
       </div>
@@ -3830,9 +3828,9 @@ function CkpnView({
             <Th>Nama Debitur</Th>
             <Th>Mantri</Th>
             <Th>Tipe Pinjaman</Th>
-            <Th>Outstanding Bulan Lalu</Th>
-            <Th>Kolek 2 Bulan Lalu</Th>
+            <Th>Outstanding Terbaru</Th>
             <Th>Kolek Bulan Lalu</Th>
+            <Th>Kolek Terbaru</Th>
             <Th>Delta CKPN</Th>
           </tr>
         </thead>
