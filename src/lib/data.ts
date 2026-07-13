@@ -13,6 +13,7 @@ export type QualityBucket =
 export type ProductType = "PUMK" | "Kupedes" | "Kupedes Rakyat" | "KUR Mikro" | "Lainnya";
 export type MissingLoanStatus = "PH" | "Lunas";
 export type MissingLoanDisplayStatus = MissingLoanStatus | "Perlu Konfirmasi";
+export type PrognosaCollectibility = "Lancar" | "LR" | "SML1" | "SML2" | "SML3" | "KL/D" | "Macet" | "Lunas" | "PH";
 
 export interface NominativeCkpnRecord {
   period: MonthKey;
@@ -27,6 +28,12 @@ export interface MissingLoanResolution {
   period: MonthKey;
   accountNumber: string;
   status: MissingLoanStatus;
+}
+
+export interface CkpnForecast {
+  period: MonthKey;
+  accountNumber: string;
+  targetCollectibility: PrognosaCollectibility;
 }
 export type MenuKey =
   | "dashboard"
@@ -571,6 +578,7 @@ let snapshotsByMonth = new Map<MonthKey, LoanSnapshot[]>();
 let snapshotsByMonthAndAccount = new Map<MonthKey, Map<string, LoanSnapshot>>();
 let nominativeCkpnByPeriodAndAccount = new Map<MonthKey, Map<string, NominativeCkpnRecord>>();
 let missingLoanResolutionByPeriodAndAccount = new Map<MonthKey, Map<string, MissingLoanStatus>>();
+let ckpnForecastByPeriodAndAccount = new Map<MonthKey, Map<string, PrognosaCollectibility>>();
 
 function normalizeAccountKey(value: string) {
   return value.replace(/\D/g, "") || value.trim().toUpperCase();
@@ -604,9 +612,10 @@ export function applyUploadedLoanData(rows: LoanSnapshot[], periods: string[]) {
   });
 }
 
-export function applySupplementalCkpnData(records: NominativeCkpnRecord[], resolutions: MissingLoanResolution[]) {
+export function applySupplementalCkpnData(records: NominativeCkpnRecord[], resolutions: MissingLoanResolution[], forecasts: CkpnForecast[] = []) {
   nominativeCkpnByPeriodAndAccount = new Map();
   missingLoanResolutionByPeriodAndAccount = new Map();
+  ckpnForecastByPeriodAndAccount = new Map();
   for (const item of records) {
     const periodRows = nominativeCkpnByPeriodAndAccount.get(item.period) ?? new Map<string, NominativeCkpnRecord>();
     periodRows.set(normalizeAccountKey(item.accountNumber), item);
@@ -617,12 +626,23 @@ export function applySupplementalCkpnData(records: NominativeCkpnRecord[], resol
     periodRows.set(normalizeAccountKey(item.accountNumber), item.status);
     missingLoanResolutionByPeriodAndAccount.set(item.period, periodRows);
   }
+  for (const item of forecasts) {
+    const periodRows = ckpnForecastByPeriodAndAccount.get(item.period) ?? new Map<string, PrognosaCollectibility>();
+    periodRows.set(normalizeAccountKey(item.accountNumber), item.targetCollectibility);
+    ckpnForecastByPeriodAndAccount.set(item.period, periodRows);
+  }
 }
 
 export function setMissingLoanResolution(period: MonthKey, accountNumber: string, status: MissingLoanStatus) {
   const periodRows = missingLoanResolutionByPeriodAndAccount.get(period) ?? new Map<string, MissingLoanStatus>();
   periodRows.set(normalizeAccountKey(accountNumber), status);
   missingLoanResolutionByPeriodAndAccount.set(period, periodRows);
+}
+
+export function setCkpnForecast(period: MonthKey, accountNumber: string, targetCollectibility: PrognosaCollectibility) {
+  const periodRows = ckpnForecastByPeriodAndAccount.get(period) ?? new Map<string, PrognosaCollectibility>();
+  periodRows.set(normalizeAccountKey(accountNumber), targetCollectibility);
+  ckpnForecastByPeriodAndAccount.set(period, periodRows);
 }
 
 export function getMissingLoanDisplayStatus(period: MonthKey, previous: LoanSnapshot): MissingLoanDisplayStatus {
@@ -906,6 +926,60 @@ export function getCkpnRows(month: MonthKey) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   return [...activeRows, ...missingRows];
+}
+
+export function getPrognosaCkpnRows(month: MonthKey) {
+  const previousMonth = getPreviousMonth(month);
+  if (!previousMonth) return [];
+
+  return getCreditSnapshots(previousMonth)
+    .map((item) => {
+      const productType = getProductType(item.description, item.loanType);
+      const group = getCkpnGroup(productType);
+      if (!group) return undefined;
+
+      const previousBucket = getCkpnBucket(item, previousMonth);
+      const previousRate = getLossRate(item, previousMonth);
+      if (previousRate === undefined) return undefined;
+
+      const targetCollectibility = ckpnForecastByPeriodAndAccount.get(month)?.get(normalizeAccountKey(item.accountNumber));
+      const nominative = nominativeCkpnByPeriodAndAccount.get(previousMonth)?.get(normalizeAccountKey(item.accountNumber));
+      const formedCkpn = nominative?.formedCkpn ?? item.outstanding * previousRate;
+      const latestRate = targetCollectibility === "PH"
+        ? 1
+        : targetCollectibility === "Lunas"
+          ? 0
+          : targetCollectibility
+            ? ckpnLossRates[group][targetCollectibility as keyof (typeof ckpnLossRates)[typeof group]]
+            : undefined;
+      const ckpnImpact = latestRate === undefined ? 0 : item.outstanding * latestRate - formedCkpn;
+      const movement = !targetCollectibility
+        ? "Belum Diisi" as const
+        : targetCollectibility === "PH"
+          ? "Memburuk" as const
+          : targetCollectibility === "Lunas"
+            ? "Membaik" as const
+            : getCollectibilityRank(targetCollectibility) > getCollectibilityRank(previousBucket)
+              ? "Memburuk" as const
+              : getCollectibilityRank(targetCollectibility) < getCollectibilityRank(previousBucket)
+                ? "Membaik" as const
+                : "Tetap" as const;
+
+      return {
+        ...item,
+        month,
+        productType,
+        previousBucket,
+        targetCollectibility,
+        previousRate,
+        latestRate,
+        formedCkpn,
+        ckpnImpact,
+        movement,
+        ckpnBasisSource: nominative ? "Nominatif Per Rekening" as const : "Estimasi loss rate internal" as const,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
 export function getNewRows(month: MonthKey, target: "SML" | "NPL") {

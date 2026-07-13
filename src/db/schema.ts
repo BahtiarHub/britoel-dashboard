@@ -130,6 +130,19 @@ export const missingLoanResolutions = sqliteTable("missing_loan_resolutions", {
   index("missing_loan_resolution_branch_period_idx").on(table.branchCode, table.period),
 ]);
 
+export const ckpnForecasts = sqliteTable("ckpn_forecasts", {
+  id: text("id").primaryKey(),
+  branchCode: text("branch_code").notNull(),
+  period: text("period").notNull(),
+  accountNumber: text("account_number").notNull(),
+  targetCollectibility: text("target_collectibility").notNull(),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("ckpn_forecast_branch_period_account_unique").on(table.branchCode, table.period, table.accountNumber),
+  index("ckpn_forecast_branch_period_idx").on(table.branchCode, table.period),
+]);
+
 export const whatsappCampaigns = sqliteTable("whatsapp_campaigns", {
   id: text("id").primaryKey(),
   campaignType: text("campaign_type").notNull(),
@@ -197,6 +210,7 @@ export const schema = {
   loanRecords,
   nominativeCkpnRecords,
   missingLoanResolutions,
+  ckpnForecasts,
   depositRecords,
   whatsappCampaigns,
   whatsappCampaignRecipients,

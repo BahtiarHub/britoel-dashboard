@@ -84,6 +84,7 @@ import {
   getMonthLabel,
   getPipelineRows,
   getPreviousMonth,
+  getPrognosaCkpnRows,
   getProductType,
   getQualityDistribution,
   getRealisasiRows,
@@ -96,10 +97,10 @@ import {
   loanSnapshots,
   months,
   restoreMockLoanData,
-  setMissingLoanResolution,
-  type MissingLoanStatus,
+  setCkpnForecast,
   type MenuKey,
   type MonthKey,
+  type PrognosaCollectibility,
   type QualityBucket,
   uploadHistory,
 } from "@/lib/data";
@@ -143,7 +144,7 @@ const mantriTabs: { key: MantriViewKey; label: string; icon: React.ElementType }
   { key: "rekap", label: "Rekap Mantri", icon: BarChart3 },
   { key: "realisasi", label: "Realisasi", icon: TrendingUp },
   { key: "pipeline", label: "Pipeline Suplesi", icon: Gauge },
-  { key: "ckpn", label: "CKPN Internal", icon: PieChartIcon },
+  { key: "ckpn", label: "Prognosa CKPN", icon: PieChartIcon },
   { key: "di319", label: "Monitoring Simpanan", icon: Banknote },
   { key: "wa", label: "WA Blast", icon: MessageCircle },
 ];
@@ -925,6 +926,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       applySupplementalCkpnData(
         Array.isArray(payload.nominativeCkpn) ? payload.nominativeCkpn : [],
         Array.isArray(payload.missingLoanResolutions) ? payload.missingLoanResolutions : [],
+        Array.isArray(payload.ckpnForecasts) ? payload.ckpnForecasts : [],
       );
       setDi319Rows(Array.isArray(payload.di319) ? payload.di319 : []);
       const latestUpload = Array.isArray(payload.uploads) ? payload.uploads[0] : undefined;
@@ -1218,7 +1220,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     { id: "dashboard", label: "Buka Dashboard Utama", description: "Ringkasan pinjaman dan operasional", icon: LayoutDashboard, action: () => { openMenu("dashboard"); setActiveControlPanel("none"); } },
     { id: "nominatif", label: "Cari Nominatif Nasabah", description: "Buka tabel rekening pinjaman", icon: ClipboardList, action: () => openMantriTab("nominatif") },
     { id: "quality", label: "Lihat Perubahan Kualitas", description: "Upgrade, downgrade, dan tetap", icon: Layers3, action: () => openMantriTab("kualitas") },
-    { id: "ckpn", label: "Buka CKPN Internal", description: "Dampak perubahan kolektibilitas", icon: PieChartIcon, action: () => openMantriTab("ckpn") },
+    { id: "ckpn", label: "Buka Prognosa CKPN", description: "Simulasi dampak perubahan kolektibilitas", icon: PieChartIcon, action: () => openMantriTab("ckpn") },
     { id: "pipeline", label: "Buka Pipeline Suplesi", description: "Nasabah potensial untuk suplesi", icon: Gauge, action: () => openMantriTab("pipeline") },
     { id: "di319", label: "Buka Monitoring Simpanan", description: "Blokiran simpanan dan setoran akhir periode", icon: Banknote, action: () => openMantriTab("di319") },
     { id: "wa-campaign", label: "Buka WA Blast", description: "Penawaran suplesi dan pengingat jatuh tempo", icon: MessageCircle, action: () => openMantriTab("wa") },
@@ -2423,7 +2425,7 @@ function DashboardMantriView({
     rekap: `${rekap.length} mantri dengan rincian OS dan delta pencapaian.`,
     realisasi: `${realisasi.reduce((total, item) => total + item.count, 0)} rekening realisasi bulan ini.`,
     pipeline: `${pipeline.length} rekening siap dipertimbangkan untuk suplesi.`,
-    ckpn: `${getCkpnRows(month).length} rekening mengalami pergerakan CKPN pada posisi terbaru.`,
+    ckpn: `${getPrognosaCkpnRows(month).filter((item) => item.targetCollectibility).length} rekening telah diisi kolektibilitas prognosanya.`,
     di319: "Monitoring pinjaman tanpa blokiran dan setoran yang menggunakan dana blokiran.",
     wa: "Kampanye penawaran suplesi dan pengingat setoran menjelang jatuh tempo.",
   };
@@ -2616,11 +2618,13 @@ function RingkasanView({
   ] as const;
   const selectedNewRows = (newQualityMenu === "SML" ? summary.newSml : summary.newNpl).map((item) => {
     const latestRow = getCompareSnapshot(month, item.accountNumber);
-    const latestBucket = latestRow ? classifyQuality(latestRow, month) : undefined;
+    const latestBucket: DisplayQuality = latestRow
+      ? classifyQuality(latestRow, month)
+      : getMissingLoanDisplayStatus(month, item);
     return {
       ...item,
       latestBucket,
-      latestMovement: latestBucket ? getQualityMovement(item.targetBucket, latestBucket) : "Tetap" as const,
+      latestMovement: getQualityMovement(item.targetBucket, latestBucket),
     };
   });
   const newRowsPagination = useTablePagination(selectedNewRows, `${month}-${newQualityMenu}-${selectedNewRows.length}`);
@@ -2682,7 +2686,7 @@ function RingkasanView({
             <>
               <TableShell minWidth="min-w-[850px]">
                 <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th><Th>Kolek Terbaru</Th><Th>Status Perubahan</Th></tr></thead>
-                <tbody>{newRowsPagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.targetBucket} /></Td><Td>{item.latestBucket ? <QualityBadge bucket={item.latestBucket} /> : "-"}</Td><Td><MovementBadge movement={item.latestMovement} /></Td></tr>)}</tbody>
+                <tbody>{newRowsPagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.targetBucket} /></Td><Td><QualityBadge bucket={item.latestBucket} /></Td><Td><MovementBadge movement={item.latestMovement} /></Td></tr>)}</tbody>
               </TableShell>
               <PaginationControls page={newRowsPagination.page} pageSize={newRowsPagination.pageSize} totalItems={selectedNewRows.length} onPageChange={newRowsPagination.setPage} onPageSizeChange={newRowsPagination.setPageSize} />
             </>
@@ -2950,6 +2954,7 @@ const kualitasColumnOptions: ColumnOption[] = [
   { key: "previous", label: "Kolek Bulan Lalu" },
   { key: "latest", label: "Kolek Terbaru" },
   { key: "movement", label: "Perubahan Status" },
+  { key: "deltaCkpn", label: "Delta CKPN" },
 ];
 
 function KualitasView({
@@ -2965,10 +2970,13 @@ function KualitasView({
   mantriFilter: string;
   productFilter: string;
 }) {
-  const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-kualitas", kualitasColumnOptions);
+  const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-kualitas-v2", kualitasColumnOptions);
   const visible = (key: string) => visibleColumns.includes(key);
   const sourceMonth = month;
   const comparisonMonth = getPreviousMonth(sourceMonth);
+  const actualCkpnByAccount = new Map(
+    getCkpnRows(sourceMonth).map((item) => [normalizeAccount(item.accountNumber), item]),
+  );
   const latestRows = getSnapshots(sourceMonth)
     .map((item) => {
       const latestBucket = classifyQuality(item, sourceMonth);
@@ -2998,6 +3006,7 @@ function KualitasView({
       })
     : [];
   const rows = [...latestRows, ...missingRows]
+    .map((item) => ({ ...item, actualCkpn: actualCkpnByAccount.get(normalizeAccount(item.accountNumber)) }))
     .filter((item) => {
       const qualityMatch =
         qualityFilter === "Semua" ||
@@ -3020,6 +3029,9 @@ function KualitasView({
       previous: item.previousBucket,
       latest: item.latestBucket,
       movement: item.movement,
+      deltaCkpn: item.actualCkpn?.missingLatest && !item.actualCkpn.resolutionStatus
+        ? "Menunggu pilihan"
+        : item.actualCkpn?.ckpnImpact ?? 0,
     };
     return visibleColumns.map((key) => values[key]);
   });
@@ -3058,6 +3070,7 @@ function KualitasView({
             {visible("previous") ? <Th>Kolek Bulan Lalu</Th> : null}
             {visible("latest") ? <Th>Kolek Terbaru</Th> : null}
             {visible("movement") ? <Th>Perubahan Status</Th> : null}
+            {visible("deltaCkpn") ? <Th>Delta CKPN</Th> : null}
           </tr>
         </thead>
         <tbody>
@@ -3071,6 +3084,13 @@ function KualitasView({
               {visible("previous") ? <Td>{typeof item.previousBucket === "string" && item.previousBucket !== "-" ? <QualityBadge bucket={item.previousBucket} /> : "-"}</Td> : null}
               {visible("latest") ? <Td><QualityBadge bucket={item.latestBucket} /></Td> : null}
               {visible("movement") ? <Td><MovementBadge movement={item.movement} /></Td> : null}
+              {visible("deltaCkpn") ? (
+                <Td className={cn("font-bold", (item.actualCkpn?.ckpnImpact ?? 0) > 0 ? "text-rose-700" : (item.actualCkpn?.ckpnImpact ?? 0) < 0 ? "text-emerald-700" : "text-slate-600")}>
+                  {item.actualCkpn?.missingLatest && !item.actualCkpn.resolutionStatus
+                    ? "Menunggu pilihan"
+                    : formatCurrency(item.actualCkpn?.ckpnImpact ?? 0)}
+                </Td>
+              ) : null}
             </tr>
           ))}
         </tbody>
@@ -3581,6 +3601,7 @@ type WhatsappRecipient = {
   detail: string;
   product?: string;
   dueDate?: string;
+  previousQuality: QualityBucket | "-";
   optIn: boolean;
 };
 
@@ -3596,6 +3617,8 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
   const [phoneSaveStatus, setPhoneSaveStatus] = useState<Record<string, "Menyimpan" | "Tersimpan" | "Gagal">>({});
   const [contactsLoaded, setContactsLoaded] = useState(false);
+  const [waMantriFilter, setWaMantriFilter] = useState("Semua");
+  const [waPreviousQualityFilter, setWaPreviousQualityFilter] = useState("Semua");
   const pipelineRecipients: WhatsappRecipient[] = getPipelineRows(month).map((item) => ({
     id: `pipeline-${item.accountNumber}`,
     accountNumber: item.accountNumber,
@@ -3603,10 +3626,12 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
     phone: contactPhones[normalizeAccount(item.accountNumber)] ?? "",
     mantri: item.pnPengelolaSinglePn,
     product: item.productType,
+    previousQuality: classifyQuality(item, item.sourceMonth),
     detail: `${item.productType} | OS ${formatCurrency(item.outstanding)}`,
     optIn: true,
   }));
   const today = new Date("2026-07-12T00:00:00");
+  const reminderPreviousMonth = getPreviousMonth(month);
   const reminderRecipients: WhatsappRecipient[] = getSnapshots(month)
     .map((item) => {
       const due = new Date(`${item.nextPaymentDate}T00:00:00`);
@@ -3614,18 +3639,27 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       return { item, daysUntilDue };
     })
     .filter(({ daysUntilDue }) => daysUntilDue >= 0 && daysUntilDue <= 14)
-    .map(({ item, daysUntilDue }) => ({
+    .map(({ item, daysUntilDue }) => {
+      const previous = reminderPreviousMonth ? getCompareSnapshot(reminderPreviousMonth, item.accountNumber) : undefined;
+      return {
       id: `reminder-${item.accountNumber}`,
       accountNumber: item.accountNumber,
       name: item.debtorName,
       phone: contactPhones[normalizeAccount(item.accountNumber)] ?? "",
       mantri: item.mantri,
       dueDate: item.nextPaymentDate,
+      previousQuality: previous && reminderPreviousMonth ? classifyQuality(previous, reminderPreviousMonth) : "-" as const,
       detail: `${daysUntilDue} hari lagi | ${dateLabel(item.nextPaymentDate)}`,
       optIn: true,
-    }));
-  const recipients = campaignType === "pipeline" ? pipelineRecipients : reminderRecipients;
-  const pagination = useTablePagination(recipients, `${month}-${campaignType}-${recipients.length}`);
+    };
+    });
+  const allRecipients = campaignType === "pipeline" ? pipelineRecipients : reminderRecipients;
+  const recipients = allRecipients.filter((item) =>
+    (waMantriFilter === "Semua" || item.mantri === waMantriFilter) &&
+    (campaignType !== "reminder" || waPreviousQualityFilter === "Semua" || item.previousQuality === waPreviousQualityFilter),
+  );
+  const waMantriNames = [...new Set(allRecipients.map((item) => item.mantri))].sort();
+  const pagination = useTablePagination(recipients, `${month}-${campaignType}-${waMantriFilter}-${waPreviousQualityFilter}-${recipients.length}`);
   const selectedRows = recipients.filter((item) => selectedRecipients.has(item.id));
   const templateName = campaignType === "pipeline" ? "penawaran_suplesi" : "pengingat_setoran";
   const previewRecipient = recipients[0];
@@ -3638,7 +3672,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
     setSelectedRecipients(new Set(recipients.filter((item) => item.optIn && item.phone).map((item) => item.id)));
     setSendResults({});
     setResultMessage("");
-  }, [campaignType, month, contactsLoaded]);
+  }, [campaignType, month, contactsLoaded, waMantriFilter, waPreviousQualityFilter]);
 
   useEffect(() => {
     fetch("/api/whatsapp/campaign", { cache: "no-store" })
@@ -3740,6 +3774,22 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
           <button type="button" onClick={() => setCampaignType("reminder")} className={cn("flex min-h-16 items-center gap-3 rounded-lg border p-3 text-left", campaignType === "reminder" ? "border-[#f37021] bg-[#fff7ed]" : "border-[#d7e3ef] bg-white")}><span className="grid h-10 w-10 place-items-center rounded-md bg-[#f37021] text-white"><CalendarDays className="h-5 w-5" /></span><span><strong className="block text-[#004077]">Pengingat Setoran</strong><span className="text-xs text-muted-foreground">Next Payment Date dalam 14 hari</span></span></button>
         </div>
       </div>
+      <div className="grid gap-3 rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] p-4 sm:grid-cols-2">
+        <Field label="Filter Mantri">
+          <Select value={waMantriFilter} onChange={(event) => setWaMantriFilter(event.target.value)}>
+            {["Semua", ...waMantriNames].map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </Field>
+        {campaignType === "reminder" ? (
+          <Field label={`Kolektibilitas Bulan Lalu ${getMonthLabel(reminderPreviousMonth ?? month)}`}>
+            <Select value={waPreviousQualityFilter} onChange={(event) => setWaPreviousQualityFilter(event.target.value)}>
+              {["Semua", "Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet"].map((item) => <option key={item} value={item}>{item}</option>)}
+            </Select>
+          </Field>
+        ) : (
+          <div className="flex items-end"><p className="w-full rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-700">Filter mantri berlaku untuk daftar penawaran pipeline suplesi.</p></div>
+        )}
+      </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -3812,57 +3862,58 @@ function CkpnView({
   setQuality: (value: string) => void;
   mantriNames: string[];
 }) {
-  const [savingResolution, setSavingResolution] = useState("");
-  const [resolutionVersion, setResolutionVersion] = useState(0);
-  const [resolutionMessage, setResolutionMessage] = useState("");
+  const [savingForecast, setSavingForecast] = useState("");
+  const [forecastVersion, setForecastVersion] = useState(0);
+  const [forecastMessage, setForecastMessage] = useState("");
   const sourceMonth = month;
   const comparisonMonth = getPreviousMonth(sourceMonth);
-  const rows = getCkpnRows(sourceMonth).filter((item) => {
+  const rows = getPrognosaCkpnRows(sourceMonth).filter((item) => {
     const mantriMatch = mantri === "Semua" || item.mantri === mantri;
     const productMatch = product === "Semua" || item.productType === product;
     const movementMatch = movement === "Semua" || item.movement === movement;
     const qualityMatch = quality === "Semua" || item.previousBucket === quality;
     return mantriMatch && productMatch && movementMatch && qualityMatch;
   });
-  const tambahan = rows.filter((item) => item.ckpnImpact > 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
-  const pemulihan = rows.filter((item) => item.ckpnImpact < 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
-  const net = rows.reduce((sum, item) => sum + item.ckpnImpact, 0);
-  const pagination = useTablePagination(rows, `${sourceMonth}-${mantri}-${product}-${movement}-${quality}-${rows.length}-${resolutionVersion}`);
+  const filledRows = rows.filter((item) => item.targetCollectibility);
+  const tambahan = filledRows.filter((item) => item.ckpnImpact > 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
+  const pemulihan = filledRows.filter((item) => item.ckpnImpact < 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
+  const net = filledRows.reduce((sum, item) => sum + item.ckpnImpact, 0);
+  const pagination = useTablePagination(rows, `${sourceMonth}-${mantri}-${product}-${movement}-${quality}-${rows.length}-${forecastVersion}`);
+  const targetOptions: PrognosaCollectibility[] = ["Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet", "Lunas", "PH"];
 
-  async function saveResolution(accountNumber: string, status: MissingLoanStatus) {
-    setSavingResolution(accountNumber);
-    setResolutionMessage("");
+  async function saveForecast(accountNumber: string, targetCollectibility: PrognosaCollectibility) {
+    setSavingForecast(accountNumber);
+    setForecastMessage("");
     try {
-      const response = await fetch("/api/loan-resolutions", {
+      const response = await fetch("/api/ckpn-forecasts", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountNumber, period: sourceMonth, status }),
+        body: JSON.stringify({ accountNumber, period: sourceMonth, targetCollectibility }),
       });
       const payload = await response.json();
-      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Status belum dapat disimpan.");
-      setMissingLoanResolution(sourceMonth, accountNumber, status);
-      setResolutionVersion((current) => current + 1);
-      setResolutionMessage(`Status ${status} untuk rekening ${accountNumber} berhasil disimpan.`);
-      window.dispatchEvent(new CustomEvent("britoel-data-uploaded"));
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Kolektibilitas prognosa belum dapat disimpan.");
+      setCkpnForecast(sourceMonth, accountNumber, targetCollectibility);
+      setForecastVersion((current) => current + 1);
+      setForecastMessage(`Prognosa ${targetCollectibility} untuk rekening ${accountNumber} berhasil disimpan.`);
     } catch (error) {
-      setResolutionMessage(error instanceof Error ? error.message : "Status belum dapat disimpan.");
+      setForecastMessage(error instanceof Error ? error.message : "Kolektibilitas prognosa belum dapat disimpan.");
     } finally {
-      setSavingResolution("");
+      setSavingForecast("");
     }
   }
 
   return (
     <div className="space-y-4">
       <SectionHeader
-        title="CKPN Internal"
-        description={`Pergerakan dan Delta CKPN dihitung dari kolektibilitas bulan lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke posisi terbaru ${getMonthLabel(sourceMonth)}. PUMK tidak masuk perhitungan.`}
+        title="Prognosa CKPN"
+        description={`Isi kolektibilitas terbaru secara manual untuk memproyeksikan Delta CKPN dari posisi ${getMonthLabel(comparisonMonth ?? sourceMonth)}. PUMK tidak masuk perhitungan.`}
         icon={PieChartIcon}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Tambahan CKPN" value={formatCurrency(tambahan)} tone="danger" icon={ArrowUpRight} />
         <MetricCard label="Pemulihan CKPN" value={formatCurrency(pemulihan)} tone="success" icon={ArrowDownRight} />
         <MetricCard label="Net Dampak CKPN" value={formatCurrency(net)} tone={net >= 0 ? "danger" : "success"} icon={PieChartIcon} />
-        <MetricCard label="Rekening Bergerak" value={`${rows.length} rekening`} icon={UsersRound} />
+        <MetricCard label="Prognosa Terisi" value={`${filledRows.length} rekening`} helper={`dari ${rows.length} rekening`} icon={UsersRound} />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="Mantri"><Select value={mantri} onChange={(event) => setMantri(event.target.value)}>
@@ -3871,21 +3922,20 @@ function CkpnView({
         <Field label="Tipe Pinjaman"><Select value={product} onChange={(event) => setProduct(event.target.value)}>
           {["Semua", "Kupedes", "Kupedes Rakyat", "KUR Mikro"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
-        <Field label="Arah Pergerakan"><Select value={movement} onChange={(event) => setMovement(event.target.value)}>
-          {["Semua", "Memburuk", "Membaik", "Perlu Konfirmasi"].map((item) => <option key={item} value={item}>{item}</option>)}
+        <Field label="Arah Prognosa"><Select value={movement} onChange={(event) => setMovement(event.target.value)}>
+          {["Semua", "Belum Diisi", "Memburuk", "Membaik", "Tetap"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
         <Field label={`Kolektibilitas Bulan Lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)}`}><Select value={quality} onChange={(event) => setQuality(event.target.value)}>
           {["Semua", "Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
       </div>
-      {resolutionMessage ? <p className="rounded-md border border-[#b8d8f2] bg-[#eef7ff] px-3 py-2 text-sm font-semibold text-[#00529c]">{resolutionMessage}</p> : null}
+      {forecastMessage ? <p className="rounded-md border border-[#b8d8f2] bg-[#eef7ff] px-3 py-2 text-sm font-semibold text-[#00529c]">{forecastMessage}</p> : null}
       <TableShell>
         <thead>
           <tr>
             <Th>No Rekening</Th>
             <Th>Nama Debitur</Th>
             <Th>Mantri</Th>
-            <Th>Tipe Pinjaman</Th>
             <Th>Outstanding Acuan</Th>
             <Th>Kolek Bulan Lalu</Th>
             <Th>Kolek Terbaru</Th>
@@ -3898,24 +3948,22 @@ function CkpnView({
               <Td className="font-medium">{item.accountNumber}</Td>
               <Td>{item.debtorName}</Td>
               <Td>{item.mantri}</Td>
-              <Td>{item.productType}</Td>
-              <Td><span className="font-semibold">{formatCurrency(item.outstanding)}</span>{item.missingLatest ? <span className="mt-0.5 block text-[10px] text-muted-foreground">Posisi bulan lalu</span> : null}</Td>
+              <Td><span className="font-semibold">{formatCurrency(item.outstanding)}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">Posisi bulan lalu</span></Td>
               <Td><QualityBadge bucket={item.previousBucket} /></Td>
-              <Td>{item.missingLatest ? (
+              <Td>
                 <Select
-                  value={item.resolutionStatus ?? ""}
-                  disabled={savingResolution === item.accountNumber}
-                  onChange={(event) => event.target.value && saveResolution(item.accountNumber, event.target.value as MissingLoanStatus)}
-                  className="h-9 min-w-36"
+                  value={item.targetCollectibility ?? ""}
+                  disabled={savingForecast === item.accountNumber}
+                  onChange={(event) => event.target.value && saveForecast(item.accountNumber, event.target.value as PrognosaCollectibility)}
+                  className="h-9 min-w-40"
                 >
-                  <option value="">Pilih PH/Lunas</option>
-                  <option value="Lunas">Lunas</option>
-                  <option value="PH">PH</option>
+                  <option value="">Pilih kolektibilitas</option>
+                  {targetOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                 </Select>
-              ) : <QualityBadge bucket={item.latestBucket} />}</Td>
+              </Td>
               <Td className={cn("font-medium", item.ckpnImpact > 0 ? "text-red-700" : item.ckpnImpact < 0 ? "text-emerald-700" : "text-slate-600")}>
-                {item.missingLatest && !item.resolutionStatus ? "Menunggu pilihan" : formatCurrency(item.ckpnImpact)}
-                {item.missingLatest ? <span className="mt-0.5 block text-[10px] font-semibold text-muted-foreground">Dasar: {item.ckpnBasisSource}</span> : null}
+                {item.targetCollectibility ? formatCurrency(item.ckpnImpact) : "Menunggu input"}
+                <span className="mt-0.5 block text-[10px] font-semibold text-muted-foreground">Dasar: {item.ckpnBasisSource}</span>
               </Td>
             </tr>
           ))}

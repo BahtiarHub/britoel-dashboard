@@ -50,6 +50,13 @@
       "when": 1783950797135,
       "tag": "0006_dusty_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1783952163597,
+      "tag": "0007_tricky_hobgoblin",
+      "breakpoints": true
     }
   ]
 }
