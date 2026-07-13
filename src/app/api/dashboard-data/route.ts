@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     data: rows.map((item) => ({
       month: item.period,
       cif: item.cif,
+      loanType: item.loanType,
       accountNumber: item.accountNumber,
       debtorName: item.debtorName,
       nextPaymentDate: item.nextPaymentDate,

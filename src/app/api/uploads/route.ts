@@ -104,7 +104,7 @@ export async function POST(request: Request) {
         for (let index = 0; index < loanImport.rows.length; index += 40) {
           tx.insert(loanRecords).values(loanImport.rows.slice(index, index + 40).map((row) => ({
             id: crypto.randomUUID(), uploadId: record.id, branchCode, sourceKey, period,
-            cif: row.cif, accountNumber: row.accountNumber, debtorName: row.debtorName, nextPaymentDate: row.nextPaymentDate,
+            cif: row.cif, loanType: row.loanType, accountNumber: row.accountNumber, debtorName: row.debtorName, nextPaymentDate: row.nextPaymentDate,
             outstanding: row.outstanding, plafond: row.plafond, collectibility: row.collectibility,
             restructureFlag: row.restructureFlag, mantri: row.mantri, pnPengelola: row.pnPengelola,
             description: row.description, realizedDate: row.realizedDate, realizedAmount: row.realizedAmount, createdAt: now,

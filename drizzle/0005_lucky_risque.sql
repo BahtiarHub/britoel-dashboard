@@ -1,0 +1,1 @@
+ALTER TABLE `loan_records` ADD `loan_type` text DEFAULT '' NOT NULL;

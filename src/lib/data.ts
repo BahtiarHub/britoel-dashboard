@@ -10,7 +10,7 @@ export type QualityBucket =
   | "KL"
   | "Diragukan"
   | "Macet";
-export type ProductType = "Kupedes" | "Kupedes Rakyat" | "KUR Mikro" | "Lainnya";
+export type ProductType = "PUMK" | "Kupedes" | "Kupedes Rakyat" | "KUR Mikro" | "Lainnya";
 export type MenuKey =
   | "dashboard"
   | "mantri"
@@ -21,6 +21,7 @@ export type MenuKey =
 export interface LoanSnapshot {
   month: MonthKey;
   cif?: string;
+  loanType?: string;
   accountNumber: string;
   debtorName: string;
   nextPaymentDate: string;
@@ -616,7 +617,16 @@ export function getSnapshots(month: MonthKey) {
   return loanSnapshots.filter((item) => item.month === month);
 }
 
-export function getProductType(description: string): ProductType {
+export function isPumk(item: Pick<LoanSnapshot, "loanType">) {
+  return item.loanType?.trim().toUpperCase() === "5G";
+}
+
+export function getCreditSnapshots(month: MonthKey) {
+  return getSnapshots(month).filter((item) => !isPumk(item));
+}
+
+export function getProductType(description: string, loanType?: string): ProductType {
+  if (loanType?.trim().toUpperCase() === "5G") return "PUMK";
   const value = description.toLowerCase();
   if (value.includes("kur mikro")) return "KUR Mikro";
   if (value.includes("kupedes rakyat")) return "Kupedes Rakyat";
@@ -638,8 +648,9 @@ export function classifyQuality(item: LoanSnapshot, month: MonthKey): QualityBuc
     (asOf.getFullYear() - nextPayment.getFullYear()) * 12 +
     (asOf.getMonth() - nextPayment.getMonth());
 
-  if (monthDiff <= 1) return "SML1";
-  if (monthDiff === 2) return "SML2";
+  // Umur tunggakan dihitung inklusif: bulan NPD adalah bulan tunggakan pertama.
+  if (monthDiff <= 0) return "SML1";
+  if (monthDiff === 1) return "SML2";
   return "SML3";
 }
 
@@ -724,7 +735,7 @@ export function getCkpnGroup(productType: ProductType): keyof typeof ckpnLossRat
 }
 
 export function getLossRate(item: LoanSnapshot, month: MonthKey) {
-  const productType = getProductType(item.description);
+  const productType = getProductType(item.description, item.loanType);
   const group = getCkpnGroup(productType);
   if (!group) return undefined;
 
@@ -740,7 +751,7 @@ export function getCkpnRows(month: MonthKey) {
   const previousMonth = getPreviousMonth(month);
   if (!previousMonth) return [];
 
-  return getSnapshots(month)
+  return getCreditSnapshots(month)
     .map((latest) => {
       const previous = getCompareSnapshot(previousMonth, latest.accountNumber);
       if (!previous) return undefined;
@@ -782,7 +793,7 @@ export function getNewRows(month: MonthKey, target: "SML" | "NPL") {
   const targetMonth = getPreviousMonth(month);
   if (!sourceMonth || !targetMonth) return [];
 
-  return getSnapshots(targetMonth)
+  return getCreditSnapshots(targetMonth)
     .map((targetRow) => {
       const sourceRow = getCompareSnapshot(sourceMonth, targetRow.accountNumber);
       if (!sourceRow) return undefined;
@@ -800,9 +811,9 @@ export function getNewRows(month: MonthKey, target: "SML" | "NPL") {
 export function getPipelineRows(month: MonthKey) {
   const previousMonth = getPreviousMonth(month);
   const sourceMonth = previousMonth ?? month;
-  return getSnapshots(sourceMonth)
+  return getCreditSnapshots(sourceMonth)
     .filter((item) => {
-      const productType = getProductType(item.description);
+      const productType = getProductType(item.description, item.loanType);
       const ratio = item.outstanding / item.plafond;
       return (
         classifyQuality(item, sourceMonth) === "Lancar" &&
@@ -814,14 +825,14 @@ export function getPipelineRows(month: MonthKey) {
     .map((item) => ({
       ...item,
       sourceMonth,
-      productType: getProductType(item.description),
+      productType: getProductType(item.description, item.loanType),
       ratio: item.outstanding / item.plafond,
       remainingPlafond: item.plafond - item.outstanding,
     }));
 }
 
 export function getRealisasiRows(month: MonthKey) {
-  const rows = getSnapshots(month).filter((item) => item.realizedDate.startsWith(month));
+  const rows = getCreditSnapshots(month).filter((item) => item.realizedDate.startsWith(month));
   const map = new Map<string, { mantri: string; total: number; count: number }>();
   for (const item of rows) {
     const current = map.get(item.mantri) ?? { mantri: item.mantri, total: 0, count: 0 };
@@ -847,7 +858,7 @@ export function getMantriRecap(month: MonthKey) {
     { mantri: string; totalOs: number } & Record<QualityBucket, { os: number; count: number }>
   >();
 
-  for (const item of getSnapshots(month)) {
+  for (const item of getCreditSnapshots(month)) {
     const row =
       map.get(item.mantri) ??
       ({
@@ -880,7 +891,8 @@ export function getMantriRecap(month: MonthKey) {
 }
 
 export function getSummary(month: MonthKey) {
-  const rows = getSnapshots(month);
+  const rows = getCreditSnapshots(month);
+  const pumkRows = getSnapshots(month).filter(isPumk);
   const totalOs = rows.reduce((total, item) => total + item.outstanding, 0);
   const smlOs = rows.reduce((total, item) => {
     return total + (isSml(classifyQuality(item, month)) ? item.outstanding : 0);
@@ -900,6 +912,8 @@ export function getSummary(month: MonthKey) {
     newSml: getNewRows(month, "SML"),
     newNpl: getNewRows(month, "NPL"),
     totalCkpn,
+    pumkCount: pumkRows.length,
+    pumkOs: pumkRows.reduce((total, item) => total + item.outstanding, 0),
   };
 }
 
@@ -914,7 +928,7 @@ export function getQualityDistribution(month: MonthKey) {
     "Macet",
   ];
   return buckets.map((bucket) => {
-    const rows = getSnapshots(month).filter((item) => classifyQuality(item, month) === bucket);
+    const rows = getCreditSnapshots(month).filter((item) => classifyQuality(item, month) === bucket);
     return {
       name: bucket,
       os: rows.reduce((total, item) => total + item.outstanding, 0),

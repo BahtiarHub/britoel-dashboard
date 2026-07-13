@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 
 export type ImportedLoanRow = {
   cif: string;
+  loanType: string;
   accountNumber: string;
   debtorName: string;
   nextPaymentDate: string;
@@ -47,6 +48,7 @@ type RawRow = Record<string, unknown>;
 
 const aliases = {
   cif: ["cif", "cifno", "no_cif", "nomor_cif", "cif_number", "customer_information_file"],
+  loanType: ["ln_type", "loan_type", "tipe_kredit", "kode_produk_pinjaman"],
   accountNumber: ["no_rekening", "nomor_rekening", "no_rek", "norek", "rekening", "account_number", "account_no", "acctno", "no_rekening_nasabah"],
   debtorName: ["nama_debitur", "nama_nasabah", "nama_debitur_single", "debitur", "customer_name", "nama"],
   nextPaymentDate: ["next_payment_date", "next_pmt_date", "nextpaymentdate", "tanggal_jatuh_tempo", "tgl_jatuh_tempo", "jatuh_tempo", "npd"],
@@ -305,6 +307,7 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
     const flagText = normalizeHeader(String(pick(row, aliases.restructureFlag)));
     unique.set(accountNumber, {
       cif: normalizeCif(pick(row, aliases.cif)),
+      loanType: String(pick(row, aliases.loanType)).trim().toUpperCase(),
       accountNumber,
       debtorName,
       nextPaymentDate: toIsoDate(pick(row, aliases.nextPaymentDate)) || `${period}-01`,

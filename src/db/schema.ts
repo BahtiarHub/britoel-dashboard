@@ -81,6 +81,7 @@ export const loanRecords = sqliteTable("loan_records", {
   sourceKey: text("source_key").notNull(),
   period: text("period").notNull(),
   cif: text("cif").notNull().default(""),
+  loanType: text("loan_type").notNull().default(""),
   accountNumber: text("account_number").notNull(),
   debtorName: text("debtor_name").notNull(),
   nextPaymentDate: text("next_payment_date").notNull(),

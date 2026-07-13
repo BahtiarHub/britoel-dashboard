@@ -9,6 +9,7 @@ import {
   Banknote,
   BarChart3,
   Bell,
+  BriefcaseBusiness,
   CalendarDays,
   Camera,
   Check,
@@ -75,6 +76,7 @@ import {
   formatNumber,
   formatPercent,
   getCkpnRows,
+  getCreditSnapshots,
   getMantriRecap,
   getMonthLabel,
   getPipelineRows,
@@ -1040,7 +1042,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
           item.debtorName.toLowerCase().includes(lower) ||
           item.mantri.toLowerCase().includes(lower)) &&
         (globalMantri === "Semua" || item.mantri === globalMantri) &&
-        (globalProduct === "Semua" || getProductType(item.description) === globalProduct) &&
+        (globalProduct === "Semua" || getProductType(item.description, item.loanType) === globalProduct) &&
         (globalQuality === "Semua" ||
           (globalQuality === "PL" && isPl(classifyQuality(item, selectedMonth))) ||
           (globalQuality === "NPL" && isNpl(classifyQuality(item, selectedMonth))) ||
@@ -1059,7 +1061,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         kind: "Pinjaman" as const,
         accountNumber: item.accountNumber,
         name: item.debtorName,
-        meta: `${item.mantri} | ${getProductType(item.description)}`,
+        meta: `${item.mantri} | ${getProductType(item.description, item.loanType)}`,
       }));
     const brimenResults = brimenRows
       .filter((item) => item.accountNumber.toLowerCase().includes(query) || item.name.toLowerCase().includes(query))
@@ -1575,7 +1577,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   {qualityOptions.map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Kualitas" : item}</option>)}
                 </Select>
                 <Select value={globalProduct} onChange={(event) => setGlobalProduct(event.target.value)} className="h-10 min-w-[150px] bg-white">
-                  {['Semua', 'Kupedes', 'Kupedes Rakyat', 'KUR Mikro'].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Produk" : item}</option>)}
+                  {['Semua', 'PUMK', 'Kupedes', 'Kupedes Rakyat', 'KUR Mikro'].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Produk" : item}</option>)}
                 </Select>
                 <Button
                   type="button"
@@ -1622,7 +1624,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   {qualityOptions.map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Kualitas" : item}</option>)}
                 </Select>
                 <Select value={globalProduct} onChange={(event) => setGlobalProduct(event.target.value)} className="h-10 bg-white">
-                  {['Semua', 'Kupedes', 'Kupedes Rakyat', 'KUR Mikro'].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Produk" : item}</option>)}
+                  {['Semua', 'PUMK', 'Kupedes', 'Kupedes Rakyat', 'KUR Mikro'].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Produk" : item}</option>)}
                 </Select>
                 <div className="col-span-2 flex h-10 items-center justify-between rounded-md border border-[#cbddeb] bg-white px-3 text-sm font-semibold text-[#00529c]">
                   <span className="truncate">{session.user.name}</span><span>{selectedRole}</span>
@@ -2646,10 +2648,11 @@ function RingkasanView({
         })}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="SML %" value={formatPercent(summary.smlPercent)} helper={`${summary.newSml.length} rekening baru`} tone="warning" icon={LineChart} />
         <MetricCard label="NPL %" value={formatPercent(summary.nplPercent)} helper={`${summary.newNpl.length} rekening baru`} tone="danger" icon={BarChart3} />
         <MetricCard label="Total Dampak CKPN" value={formatCurrency(summary.totalCkpn)} helper={`${ckpnRows.length} rekening bergerak`} tone={summary.totalCkpn >= 0 ? "danger" : "success"} icon={PieChartIcon} />
+        <MetricCard label="Portofolio PUMK" value={formatCurrency(summary.pumkOs)} helper={`${summary.pumkCount} rekening LN_TYPE 5G, terpisah dari rekap kredit`} icon={BriefcaseBusiness} />
       </div>
 
       <div className="bri-card rounded-lg border border-[#d7e3ef] bg-white p-4">
@@ -2664,7 +2667,7 @@ function RingkasanView({
           {selectedNewRows.length ? (
             <TableShell minWidth="min-w-[900px]">
               <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek 2 Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th></tr></thead>
-              <tbody>{selectedNewRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.sourceBucket} /></Td><Td><QualityBadge bucket={item.targetBucket} /></Td></tr>)}</tbody>
+              <tbody>{selectedNewRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description, item.loanType)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.sourceBucket} /></Td><Td><QualityBadge bucket={item.targetBucket} /></Td></tr>)}</tbody>
             </TableShell>
           ) : <EmptyState title={`Tidak ada New ${newQualityMenu}`} description={`Belum ada rekening yang masuk kategori New ${newQualityMenu} pada ${getMonthLabel(month)}.`} icon={CheckCircle2} />}
         </div>
@@ -2736,6 +2739,7 @@ const nominatifColumnOptions: ColumnOption[] = [
   { key: "nextPayment", label: "Next Payment Date" },
   { key: "outstanding", label: "Outstanding" },
   { key: "quality", label: "Kolektibilitas" },
+  { key: "product", label: "Produk" },
   { key: "mantri", label: "Mantri" },
   { key: "realization", label: "Tanggal Realisasi" },
 ];
@@ -2754,7 +2758,7 @@ function NominatifView({
   brimenMap: Map<string, BrimenCustomer>;
 }) {
   const [selectedCustomer, setSelectedCustomer] = useState<(typeof rows)[number] | undefined>();
-  const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-nominatif", nominatifColumnOptions);
+  const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-nominatif-v2", nominatifColumnOptions);
   const visible = (key: string) => visibleColumns.includes(key);
   const exportHeaders = nominatifColumnOptions.filter((column) => visible(column.key)).map((column) => column.label);
   const exportData = rows.map((item) => {
@@ -2764,6 +2768,7 @@ function NominatifView({
       nextPayment: dateLabel(item.nextPaymentDate),
       outstanding: item.outstanding,
       quality: classifyQuality(item, month),
+      product: getProductType(item.description, item.loanType),
       mantri: item.mantri,
       realization: dateLabel(item.realizedDate),
     };
@@ -2798,6 +2803,7 @@ function NominatifView({
             {visible("nextPayment") ? <Th>Next Payment Date</Th> : null}
             {visible("outstanding") ? <Th>Outstanding</Th> : null}
             {visible("quality") ? <Th>Kolektibilitas</Th> : null}
+            {visible("product") ? <Th>Produk</Th> : null}
             {visible("mantri") ? <Th>Mantri</Th> : null}
             {visible("realization") ? <Th>Tanggal Realisasi</Th> : null}
           </tr>
@@ -2819,6 +2825,7 @@ function NominatifView({
                 {visible("nextPayment") ? <Td>{dateLabel(item.nextPaymentDate)}</Td> : null}
                 {visible("outstanding") ? <Td>{formatCurrency(item.outstanding)}</Td> : null}
                 {visible("quality") ? <Td><QualityBadge bucket={bucket} /></Td> : null}
+                {visible("product") ? <Td>{getProductType(item.description, item.loanType)}</Td> : null}
                 {visible("mantri") ? <Td>{item.mantri}</Td> : null}
                 {visible("realization") ? <Td>{dateLabel(item.realizedDate)}</Td> : null}
               </tr>
@@ -2886,7 +2893,7 @@ function CustomerQuickPanel({
             <InfoItem label="Outstanding" value={formatCurrency(customer.outstanding)} />
             <InfoItem label="Plafond" value={formatCurrency(customer.plafond)} />
             <InfoItem label="Mantri" value={customer.mantri} />
-            <InfoItem label="Produk" value={getProductType(customer.description)} />
+            <InfoItem label="Produk" value={getProductType(customer.description, customer.loanType)} />
             <InfoItem label="Next Payment" value={dateLabel(customer.nextPaymentDate)} />
             <InfoItem label="Tanggal Realisasi" value={dateLabel(customer.realizedDate)} />
           </div>
@@ -2943,14 +2950,16 @@ function KualitasView({
 }) {
   const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-kualitas", kualitasColumnOptions);
   const visible = (key: string) => visibleColumns.includes(key);
-  const rows = getSnapshots(month)
+  const sourceMonth = previousMonth ?? month;
+  const comparisonMonth = getPreviousMonth(sourceMonth);
+  const rows = getSnapshots(sourceMonth)
     .map((item) => {
-      const latestBucket = classifyQuality(item, month);
-      const previous = previousMonth
-        ? getSnapshots(previousMonth).find((row) => row.accountNumber === item.accountNumber)
+      const latestBucket = classifyQuality(item, sourceMonth);
+      const previous = comparisonMonth
+        ? getSnapshots(comparisonMonth).find((row) => row.accountNumber === item.accountNumber)
         : undefined;
       const previousBucket =
-        previous && previousMonth ? classifyQuality(previous, previousMonth) : "-";
+        previous && comparisonMonth ? classifyQuality(previous, comparisonMonth) : "-";
       const movement = getQualityMovement(previousBucket, latestBucket);
       return { ...item, latestBucket, previousBucket, movement };
     })
@@ -2962,7 +2971,7 @@ function KualitasView({
         item.latestBucket === qualityFilter;
       return qualityMatch &&
         (mantriFilter === "Semua" || item.mantri === mantriFilter) &&
-        (productFilter === "Semua" || getProductType(item.description) === productFilter);
+        (productFilter === "Semua" || getProductType(item.description, item.loanType) === productFilter);
     });
   const exportHeaders = kualitasColumnOptions.filter((column) => visible(column.key)).map((column) => column.label);
   const exportData = rows.map((item) => {
@@ -2983,7 +2992,7 @@ function KualitasView({
     <div className="space-y-4">
       <SectionHeader
         title="Nominatif per Kualitas"
-        description="Menampilkan kondisi kolektibilitas bulan lalu dan kolektibilitas terbaru per rekening."
+        description={`Sumber LW321 ${getMonthLabel(sourceMonth)}, dibandingkan dengan ${getMonthLabel(comparisonMonth ?? sourceMonth)}.`}
         icon={Layers3}
       />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -2996,8 +3005,8 @@ function KualitasView({
           columns={kualitasColumnOptions}
           visibleColumns={visibleColumns}
           onToggleColumn={toggleColumn}
-          onExportCsv={() => exportRowsCsv(`nominatif-kualitas-${month}.csv`, exportHeaders, exportData)}
-          onExportXls={() => exportRowsXls(`nominatif-kualitas-${month}.xls`, exportHeaders, exportData)}
+          onExportCsv={() => exportRowsCsv(`nominatif-kualitas-${sourceMonth}.csv`, exportHeaders, exportData)}
+          onExportXls={() => exportRowsXls(`nominatif-kualitas-${sourceMonth}.xls`, exportHeaders, exportData)}
         />
       </div>
       <TableShell>
@@ -3410,6 +3419,7 @@ function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: Upl
       debtorName: credit.debtorName || item.debtorName || "Nama tidak tersedia",
       mantri: credit.mantri || item.mantri || "-",
       description: credit.description || "Data DI319",
+      loanType: credit.loanType,
       outstanding: credit.outstanding,
       savingsAccount: item.savingsAccount || "-",
       blockedAtStart: item.blockedAtStart,
@@ -3461,7 +3471,7 @@ function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: Upl
         <tbody>
           {filteredRows.map((item) => (
             <tr key={`${item.cif}-${item.accountNumber}-${item.savingsAccount}`} className={cn(item.status === "Tidak Ada Blokiran" && "bg-[#fff7ed]/60", item.status === "Setor dari Blokiran" && "bg-rose-50/60")}>
-              <Td className="font-medium text-[#00529c]">{item.cif}</Td><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td className="font-mono text-[#00529c]">{item.savingsAccount}</Td><Td>{formatCurrency(item.blockedAtStart)}</Td><Td>{formatCurrency(item.currentBlocked)}</Td><Td className={item.installmentFromBlocked ? "font-bold text-rose-700" : "text-muted-foreground"}>{formatCurrency(item.installmentFromBlocked)}</Td><Td>{dateLabel(item.mutationDate)}</Td><Td><Badge variant={item.status === "Tidak Ada Blokiran" ? "warning" : item.status === "Setor dari Blokiran" ? "danger" : "success"}>{item.status}</Badge></Td>
+              <Td className="font-medium text-[#00529c]">{item.cif}</Td><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description, item.loanType)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td className="font-mono text-[#00529c]">{item.savingsAccount}</Td><Td>{formatCurrency(item.blockedAtStart)}</Td><Td>{formatCurrency(item.currentBlocked)}</Td><Td className={item.installmentFromBlocked ? "font-bold text-rose-700" : "text-muted-foreground"}>{formatCurrency(item.installmentFromBlocked)}</Td><Td>{dateLabel(item.mutationDate)}</Td><Td><Badge variant={item.status === "Tidak Ada Blokiran" ? "warning" : item.status === "Setor dari Blokiran" ? "danger" : "success"}>{item.status}</Badge></Td>
             </tr>
           ))}
         </tbody>
@@ -3707,7 +3717,9 @@ function CkpnView({
   setQuality: (value: string) => void;
   mantriNames: string[];
 }) {
-  const rows = getCkpnRows(month).filter((item) => {
+  const sourceMonth = getPreviousMonth(month) ?? month;
+  const comparisonMonth = getPreviousMonth(sourceMonth);
+  const rows = getCkpnRows(sourceMonth).filter((item) => {
     const mantriMatch = mantri === "Semua" || item.mantri === mantri;
     const productMatch = product === "Semua" || item.productType === product;
     const movementMatch = movement === "Semua" || item.movement === movement;
@@ -3722,7 +3734,7 @@ function CkpnView({
     <div className="space-y-4">
       <SectionHeader
         title="CKPN Internal"
-        description="Nominatif nasabah dengan pergerakan kolektibilitas dari bulan lalu ke kondisi terbaru."
+        description={`Pergerakan kolektibilitas LW321 ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke ${getMonthLabel(sourceMonth)}. PUMK tidak masuk perhitungan.`}
         icon={PieChartIcon}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -7364,7 +7376,7 @@ function DetailView({
   setSelectedMantri: (value: string) => void;
   mantriNames: string[];
 }) {
-  const rows = getSnapshots(month).filter((item) => item.mantri === selectedMantri);
+  const rows = getCreditSnapshots(month).filter((item) => item.mantri === selectedMantri);
   const totalOs = rows.reduce((sum, item) => sum + item.outstanding, 0);
   const nplOs = rows.reduce((sum, item) => sum + (isNpl(classifyQuality(item, month)) ? item.outstanding : 0), 0);
 
@@ -7401,7 +7413,7 @@ function DetailView({
               <tr key={item.accountNumber} className={cn(isNpl(bucket) && "bg-rose-50/70", isSml(bucket) && "bg-[#f37021]/5")}>
                 <Td className="font-medium">{item.accountNumber}</Td>
                 <Td>{item.debtorName}</Td>
-                <Td>{getProductType(item.description)}</Td>
+                <Td>{getProductType(item.description, item.loanType)}</Td>
                 <Td>{formatCurrency(item.outstanding)}</Td>
                 <Td><QualityBadge bucket={bucket} /></Td>
                 <Td>{dateLabel(item.nextPaymentDate)}</Td>

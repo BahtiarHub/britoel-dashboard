@@ -12,9 +12,9 @@ if (!fs.existsSync(uploadRoot)) {
 }
 
 const database = new Database(databasePath);
-const updateCif = database.prepare(`
+const updateMetadata = database.prepare(`
   update loan_records
-  set cif = ?
+  set cif = ?, loan_type = ?
   where branch_code = ? and period = ? and account_number = ?
 `);
 let updated = 0;
@@ -32,7 +32,7 @@ const run = database.transaction(() => {
       const period = inferPeriod(sourceKey, fileName, rawRows);
       const imported = mapLoanRows(rawRows, period);
       for (const row of imported.rows) {
-        if (row.cif) updated += updateCif.run(row.cif, branchCode, period, row.accountNumber).changes;
+        updated += updateMetadata.run(row.cif, row.loanType, branchCode, period, row.accountNumber).changes;
       }
     }
   }
@@ -40,7 +40,7 @@ const run = database.transaction(() => {
 
 try {
   run();
-  console.log(`${updated} data pinjaman berhasil dilengkapi dengan No CIF.`);
+  console.log(`${updated} data pinjaman berhasil dilengkapi dengan No CIF dan Loan Type.`);
 } finally {
   database.close();
 }
