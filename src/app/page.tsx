@@ -76,6 +76,7 @@ import {
   formatNumber,
   formatPercent,
   getCkpnRows,
+  getCompareSnapshot,
   getCreditSnapshots,
   getMantriRecap,
   getMonthLabel,
@@ -549,6 +550,18 @@ function usePersistentColumns(storageKey: string, columns: ColumnOption[]) {
   }
 
   return { visibleColumns, toggleColumn };
+}
+
+function useTablePagination<T>(rows: T[], resetKey: string, initialPageSize = 10) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  useEffect(() => setPage(1), [resetKey, pageSize]);
+
+  return { page: safePage, pageSize, pagedRows, setPage, setPageSize };
 }
 
 function TableTools({
@@ -2609,6 +2622,7 @@ function RingkasanView({
     { label: "NPL", current: summary.nplOs, mtd: summary.nplOs - previousSummary.nplOs, ytd: summary.nplOs - yearEndSummary.nplOs, risk: true, tone: "red", icon: ArrowDownRight },
   ] as const;
   const selectedNewRows = newQualityMenu === "SML" ? summary.newSml : summary.newNpl;
+  const newRowsPagination = useTablePagination(selectedNewRows, `${month}-${newQualityMenu}-${selectedNewRows.length}`);
 
   return (
     <div className="space-y-6">
@@ -2637,7 +2651,6 @@ function RingkasanView({
                   {[{ label: "Delta MTD", value: item.mtd }, { label: "Delta YTD", value: item.ytd }].map((delta) => (
                     <div key={delta.label} className="rounded-md border border-[#e3edf6] bg-[#f8fbfe] px-3 py-2">
                       <p className="text-[10px] font-black uppercase text-muted-foreground">{delta.label}</p>
-                      {delta.label === "Delta YTD" ? <p className="mt-0.5 text-[9px] font-semibold text-muted-foreground">vs {getMonthLabel(yearEndMonth)}</p> : null}
                       <p className={cn("mt-1 flex items-center gap-1 text-sm font-black", deltaTone(delta.value))}>{delta.value > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : delta.value < 0 ? <ArrowDownRight className="h-3.5 w-3.5" /> : null}{delta.value > 0 ? "+" : ""}{formatCurrency(delta.value)}</p>
                     </div>
                   ))}
@@ -2649,8 +2662,8 @@ function RingkasanView({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="SML %" value={formatPercent(summary.smlPercent)} helper={`${summary.newSml.length} rekening baru`} tone="warning" icon={LineChart} />
-        <MetricCard label="NPL %" value={formatPercent(summary.nplPercent)} helper={`${summary.newNpl.length} rekening baru`} tone="danger" icon={BarChart3} />
+        <MetricCard label="SML %" value={formatPercent(summary.smlPercent)} helper={`${formatNumber(summary.smlDebtorCount)} debitur posisi terbaru`} tone="warning" icon={LineChart} />
+        <MetricCard label="NPL %" value={formatPercent(summary.nplPercent)} helper={`${formatNumber(summary.nplDebtorCount)} debitur posisi terbaru`} tone="danger" icon={BarChart3} />
         <MetricCard label="Total Dampak CKPN" value={formatCurrency(summary.totalCkpn)} helper={`${ckpnRows.length} rekening bergerak`} tone={summary.totalCkpn >= 0 ? "danger" : "success"} icon={PieChartIcon} />
         <MetricCard label="Portofolio PUMK" value={formatCurrency(summary.pumkOs)} helper={`${summary.pumkCount} rekening LN_TYPE 5G, terpisah dari rekap kredit`} icon={BriefcaseBusiness} />
       </div>
@@ -2665,10 +2678,13 @@ function RingkasanView({
         </div>
         <div className="mt-4">
           {selectedNewRows.length ? (
-            <TableShell minWidth="min-w-[900px]">
-              <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek 2 Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th></tr></thead>
-              <tbody>{selectedNewRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description, item.loanType)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.sourceBucket} /></Td><Td><QualityBadge bucket={item.targetBucket} /></Td></tr>)}</tbody>
-            </TableShell>
+            <>
+              <TableShell minWidth="min-w-[900px]">
+                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek 2 Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th></tr></thead>
+                <tbody>{newRowsPagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description, item.loanType)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.sourceBucket} /></Td><Td><QualityBadge bucket={item.targetBucket} /></Td></tr>)}</tbody>
+              </TableShell>
+              <PaginationControls page={newRowsPagination.page} pageSize={newRowsPagination.pageSize} totalItems={selectedNewRows.length} onPageChange={newRowsPagination.setPage} onPageSizeChange={newRowsPagination.setPageSize} />
+            </>
           ) : <EmptyState title={`Tidak ada New ${newQualityMenu}`} description={`Belum ada rekening yang masuk kategori New ${newQualityMenu} pada ${getMonthLabel(month)}.`} icon={CheckCircle2} />}
         </div>
       </div>
@@ -2759,6 +2775,7 @@ function NominatifView({
 }) {
   const [selectedCustomer, setSelectedCustomer] = useState<(typeof rows)[number] | undefined>();
   const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-nominatif-v2", nominatifColumnOptions);
+  const pagination = useTablePagination(rows, `${month}-${search}-${rows.length}`);
   const visible = (key: string) => visibleColumns.includes(key);
   const exportHeaders = nominatifColumnOptions.filter((column) => visible(column.key)).map((column) => column.label);
   const exportData = rows.map((item) => {
@@ -2809,7 +2826,7 @@ function NominatifView({
           </tr>
         </thead>
         <tbody>
-          {rows.map((item) => {
+          {pagination.pagedRows.map((item) => {
             const bucket = classifyQuality(item, month);
             return (
               <tr key={item.accountNumber} className={cn(isNpl(bucket) && "bg-rose-50/70", isSml(bucket) && "bg-[#f37021]/5")}>
@@ -2833,6 +2850,7 @@ function NominatifView({
           })}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
       {selectedCustomer ? (
         <CustomerQuickPanel
           customer={selectedCustomer}
@@ -2956,7 +2974,7 @@ function KualitasView({
     .map((item) => {
       const latestBucket = classifyQuality(item, sourceMonth);
       const previous = comparisonMonth
-        ? getSnapshots(comparisonMonth).find((row) => row.accountNumber === item.accountNumber)
+        ? getCompareSnapshot(comparisonMonth, item.accountNumber)
         : undefined;
       const previousBucket =
         previous && comparisonMonth ? classifyQuality(previous, comparisonMonth) : "-";
@@ -2973,6 +2991,7 @@ function KualitasView({
         (mantriFilter === "Semua" || item.mantri === mantriFilter) &&
         (productFilter === "Semua" || getProductType(item.description, item.loanType) === productFilter);
     });
+  const pagination = useTablePagination(rows, `${sourceMonth}-${qualityFilter}-${mantriFilter}-${productFilter}-${rows.length}`);
   const exportHeaders = kualitasColumnOptions.filter((column) => visible(column.key)).map((column) => column.label);
   const exportData = rows.map((item) => {
     const values: Record<string, string | number> = {
@@ -3023,7 +3042,7 @@ function KualitasView({
           </tr>
         </thead>
         <tbody>
-          {rows.map((item) => (
+          {pagination.pagedRows.map((item) => (
             <tr key={item.accountNumber} className={cn(isNpl(item.latestBucket) && "bg-rose-50/70", isSml(item.latestBucket) && "bg-[#f37021]/5")}>
               {visible("account") ? <Td className="font-medium">{item.accountNumber}</Td> : null}
               {visible("name") ? <Td><span className="inline-flex items-center gap-2">{item.debtorName}{item.movement !== "Tetap" ? <NewBadge /> : null}</span></Td> : null}
@@ -3037,6 +3056,7 @@ function KualitasView({
           ))}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
     </div>
   );
 }
@@ -3171,6 +3191,7 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
       },
     };
   });
+  const pagination = useTablePagination(rowsWithDelta, `${month}-${mantriFilter}-${rowsWithDelta.length}`);
 
   return (
     <div className="space-y-4">
@@ -3196,7 +3217,7 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
           </tr>
         </thead>
         <tbody>
-          {rowsWithDelta.map((row) => (
+          {pagination.pagedRows.map((row) => (
             <tr key={row.mantri}>
               <Td>
                 <button className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => onSelectMantri(row.mantri)}>
@@ -3212,6 +3233,7 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
           ))}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rowsWithDelta.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
     </div>
   );
 }
@@ -3220,6 +3242,7 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
   const rows = getRealisasiRows(month).filter((row) => mantriFilter === "Semua" || row.mantri === mantriFilter);
   const total = rows.reduce((sum, item) => sum + item.total, 0);
   const count = rows.reduce((sum, item) => sum + item.count, 0);
+  const pagination = useTablePagination(rows, `${month}-${mantriFilter}-${rows.length}`);
 
   return (
     <div className="space-y-4">
@@ -3241,7 +3264,7 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {pagination.pagedRows.map((row) => (
             <tr key={row.mantri}>
               <Td className="font-medium">{row.mantri}</Td>
               <Td>{formatCurrency(row.total)}</Td>
@@ -3250,6 +3273,7 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
           ))}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
     </div>
   );
 }
@@ -3274,6 +3298,7 @@ function PipelineView({
     const mantriMatch = mantri === "Semua" || item.pnPengelolaSinglePn === mantri;
     return productMatch && mantriMatch;
   });
+  const pagination = useTablePagination(rows, `${month}-${product}-${mantri}-${rows.length}`);
 
   function sendWhatsappOffer(item: (typeof rows)[number]) {
     const accountDigits = item.accountNumber.replace(/\D/g, "");
@@ -3330,7 +3355,7 @@ function PipelineView({
           </tr>
         </thead>
         <tbody>
-          {rows.map((item) => (
+          {pagination.pagedRows.map((item) => (
             <tr key={item.accountNumber}>
               <Td className="font-medium">{item.accountNumber}</Td>
               <Td>{item.debtorName}</Td>
@@ -3348,6 +3373,7 @@ function PipelineView({
           ))}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
     </div>
   );
 }
@@ -3433,6 +3459,7 @@ function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: Upl
   const rows = sourceDepositRows.length ? importedRows : mockRows;
   const unmatchedCifCount = Math.max(0, sourceDepositRows.length - importedRows.length);
   const filteredRows = filter === "Semua Data" ? rows : rows.filter((item) => item.status === filter);
+  const pagination = useTablePagination(filteredRows, `${sourceMonth}-${filter}-${filteredRows.length}`);
   const withoutBlock = rows.filter((item) => item.status === "Tidak Ada Blokiran");
   const paidFromBlock = rows.filter((item) => item.status === "Setor dari Blokiran");
   const activeBlock = rows.filter((item) => item.status === "Blokiran Aktif");
@@ -3469,13 +3496,14 @@ function Di319View({ month, uploadedRows }: { month: MonthKey; uploadedRows: Upl
       <TableShell minWidth="min-w-[1550px]">
         <thead><tr><Th>No CIF</Th><Th>No Rekening Pinjaman</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Produk</Th><Th>Outstanding</Th><Th>No Rekening Simpanan</Th><Th>Blokiran Awal</Th><Th>Blokiran Saat Ini</Th><Th>Setoran dari Blokiran</Th><Th>Tanggal Mutasi</Th><Th>Status DI319</Th></tr></thead>
         <tbody>
-          {filteredRows.map((item) => (
+          {pagination.pagedRows.map((item) => (
             <tr key={`${item.cif}-${item.accountNumber}-${item.savingsAccount}`} className={cn(item.status === "Tidak Ada Blokiran" && "bg-[#fff7ed]/60", item.status === "Setor dari Blokiran" && "bg-rose-50/60")}>
               <Td className="font-medium text-[#00529c]">{item.cif}</Td><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{getProductType(item.description, item.loanType)}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td className="font-mono text-[#00529c]">{item.savingsAccount}</Td><Td>{formatCurrency(item.blockedAtStart)}</Td><Td>{formatCurrency(item.currentBlocked)}</Td><Td className={item.installmentFromBlocked ? "font-bold text-rose-700" : "text-muted-foreground"}>{formatCurrency(item.installmentFromBlocked)}</Td><Td>{dateLabel(item.mutationDate)}</Td><Td><Badge variant={item.status === "Tidak Ada Blokiran" ? "warning" : item.status === "Setor dari Blokiran" ? "danger" : "success"}>{item.status}</Badge></Td>
             </tr>
           ))}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={filteredRows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
     </div>
   );
 }
@@ -3534,6 +3562,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       optIn: true,
     }));
   const recipients = campaignType === "pipeline" ? pipelineRecipients : reminderRecipients;
+  const pagination = useTablePagination(recipients, `${month}-${campaignType}-${recipients.length}`);
   const selectedRows = recipients.filter((item) => selectedRecipients.has(item.id));
   const templateName = campaignType === "pipeline" ? "penawaran_suplesi" : "pengingat_setoran";
   const previewRecipient = recipients[0];
@@ -3655,9 +3684,10 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
             <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set())}>Kosongkan</Button><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set(recipients.filter((item) => item.optIn && item.phone).map((item) => item.id)))}>Pilih Semua</Button></div>
           </div>
           {recipients.length ? (
+            <>
             <TableShell minWidth="min-w-[1180px]">
               <thead><tr><Th>Pilih</Th><Th>No Rekening</Th><Th>Nama Nasabah</Th><Th>No HP / WhatsApp</Th><Th>Mantri</Th><Th>Keterangan</Th><Th>Persetujuan</Th><Th>Status</Th></tr></thead>
-              <tbody>{recipients.map((item) => {
+              <tbody>{pagination.pagedRows.map((item) => {
                 const accountKey = normalizeAccount(item.accountNumber);
                 const saveStatus = phoneSaveStatus[accountKey];
                 return (
@@ -3685,6 +3715,8 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
                 );
               })}</tbody>
             </TableShell>
+            <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={recipients.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+            </>
           ) : <EmptyState title="Tidak ada penerima" description="Tidak ada nasabah yang memenuhi kriteria campaign pada periode ini." icon={MessageCircle} />}
         </div>
         <div className="h-fit rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_10px_24px_rgba(0,55,105,0.07)]"><p className="text-xs font-black uppercase text-[#f37021]">Pratinjau Template</p><div className="mt-3 rounded-lg bg-[#e7f7ef] p-4 text-sm leading-6 text-[#173b2d] shadow-inner">{previewMessage}<p className="mt-3 text-right text-[10px] text-emerald-700">BRI Unit Greenvilage</p></div><p className="mt-3 text-xs leading-5 text-muted-foreground">Template pengiriman nyata mengikuti template <strong>{templateName}</strong> yang disetujui Meta.</p><Button type="button" className="mt-4 w-full bg-[#00529c] hover:bg-[#003f78]" disabled={!selectedRows.length} onClick={() => setShowConfirmation(true)}><MessageCircle className="mr-2 h-4 w-4" />Tinjau Pengiriman ({selectedRows.length})</Button>{resultMessage ? <p className="mt-3 rounded-md bg-[#eaf3fb] p-3 text-xs font-semibold text-[#00529c]">{resultMessage}</p> : null}</div>
@@ -3729,6 +3761,7 @@ function CkpnView({
   const tambahan = rows.filter((item) => item.ckpnImpact > 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
   const pemulihan = rows.filter((item) => item.ckpnImpact < 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
   const net = rows.reduce((sum, item) => sum + item.ckpnImpact, 0);
+  const pagination = useTablePagination(rows, `${sourceMonth}-${mantri}-${product}-${movement}-${quality}-${rows.length}`);
 
   return (
     <div className="space-y-4">
@@ -3771,7 +3804,7 @@ function CkpnView({
           </tr>
         </thead>
         <tbody>
-          {rows.map((item) => (
+          {pagination.pagedRows.map((item) => (
             <tr key={item.accountNumber}>
               <Td className="font-medium">{item.accountNumber}</Td>
               <Td>{item.debtorName}</Td>
@@ -3785,6 +3818,7 @@ function CkpnView({
           ))}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
     </div>
   );
 }
@@ -3889,9 +3923,9 @@ function BrimenView({
   reload: () => Promise<void>;
 }) {
   const [dataPage, setDataPage] = useState(1);
-  const [dataPageSize, setDataPageSize] = useState(5);
+  const [dataPageSize, setDataPageSize] = useState(10);
   const [loanPage, setLoanPage] = useState(1);
-  const [loanPageSize, setLoanPageSize] = useState(5);
+  const [loanPageSize, setLoanPageSize] = useState(10);
   const [mobileOperationalOpen, setMobileOperationalOpen] = useState(false);
   const [mobileOperationalPreview, setMobileOperationalPreview] = useState<{ title: string; summary: string } | undefined>();
   const operationalLongPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -6878,6 +6912,7 @@ function UserManagementView({ session }: { session: DashboardSession }) {
   const branchCount = new Set(rows.map((item) => item.branchCode)).size;
   const onlineCount = rows.filter((item) => item.online).length;
   const formatter = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" });
+  const pagination = useTablePagination(rows, `${rows.length}-${loading}`);
   const branchSummaries = [...new Set(rows.map((item) => item.branchCode))].sort().map((branchCode) => {
     const users = rows.filter((item) => item.branchCode === branchCode);
     const lastActive = users.map((item) => item.lastActiveAt ? new Date(item.lastActiveAt) : undefined).filter((item): item is Date => Boolean(item)).sort((a, b) => b.getTime() - a.getTime())[0];
@@ -6905,7 +6940,7 @@ function UserManagementView({ session }: { session: DashboardSession }) {
       <TableShell>
         <thead><tr><Th>Username</Th><Th>Nama Pengguna</Th><Th>Branch</Th><Th>Peran</Th><Th>Status</Th><Th>Last Update</Th><Th>Sesi</Th><Th>Aksi</Th></tr></thead>
         <tbody>
-          {rows.map((item) => (
+          {pagination.pagedRows.map((item) => (
             <tr key={item.id}>
               <Td className="font-black text-[#00529c]">{item.username}</Td><Td>{item.name}</Td><Td>{item.branchCode}</Td><Td><Badge variant="outline">{item.role}</Badge></Td>
               <Td><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold", item.online ? "bg-emerald-50 text-emerald-700" : item.active ? "bg-slate-100 text-slate-600" : "bg-rose-50 text-rose-700")}><span className={cn("h-2 w-2 rounded-full", item.online ? "bg-emerald-500" : item.active ? "bg-slate-400" : "bg-rose-500")} />{item.online ? "Online" : item.active ? "Offline" : "Nonaktif"}</span></Td>
@@ -6916,6 +6951,7 @@ function UserManagementView({ session }: { session: DashboardSession }) {
           {!loading && !rows.length ? <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">Belum ada pengguna yang dapat ditampilkan.</td></tr> : null}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
 
       {createOpen ? <OverlayShell title="Tambah Pengguna Uker" description="Buat akun sesuai branch dan kewenangan pengguna." icon={UserCog} onClose={() => setCreateOpen(false)}>
         <form className="grid gap-4 p-5 sm:grid-cols-2" onSubmit={createUser}>
@@ -7065,6 +7101,11 @@ function UnggahView() {
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<Partial<Record<UploadSlotKey, File>>>({});
   const [validationResults, setValidationResults] = useState<Partial<Record<UploadSlotKey, UploadValidation>>>({});
   const completedCount = Object.values(slotStates).filter((item) => item.status === "Berhasil").length;
+  const historyRows = [
+    ...sessionUploads.map((item) => ({ ...item, status: "Berhasil", uploadedBy: "User Aktif", sourceName: item.source })),
+    ...uploadHistory.map((item) => ({ id: `mock-${item.fileName}`, fileName: item.fileName, sourceName: "LW321", status: item.status, uploadedAt: item.uploadedAt, uploadedBy: item.uploadedBy, rows: item.rows })),
+  ];
+  const historyPagination = useTablePagination(historyRows, `${historyRows.length}`);
 
   useEffect(() => {
     fetch("/api/uploads", { cache: "no-store" })
@@ -7339,19 +7380,9 @@ function UnggahView() {
           </tr>
         </thead>
         <tbody>
-          {sessionUploads.map((item) => (
-            <tr key={item.id} className="bg-emerald-50/50">
-              <Td className="font-medium text-[#00529c]">{item.source}</Td>
-              <Td className="font-medium">{item.fileName}</Td>
-              <Td><Badge variant="success">Berhasil</Badge></Td>
-              <Td>{item.uploadedAt}</Td>
-              <Td>User Aktif</Td>
-              <Td>{formatNumber(item.rows)}</Td>
-            </tr>
-          ))}
-          {uploadHistory.map((item) => (
-            <tr key={item.fileName}>
-              <Td className="font-medium text-[#00529c]">LW321</Td>
+          {historyPagination.pagedRows.map((item) => (
+            <tr key={item.id} className={cn(!String(item.id).startsWith("mock-") && "bg-emerald-50/50")}>
+              <Td className="font-medium text-[#00529c]">{item.sourceName}</Td>
               <Td className="font-medium">{item.fileName}</Td>
               <Td><Badge variant={item.status === "Berhasil" ? "success" : item.status === "Gagal" ? "danger" : "warning"}>{item.status}</Badge></Td>
               <Td>{item.uploadedAt}</Td>
@@ -7361,6 +7392,7 @@ function UnggahView() {
           ))}
         </tbody>
       </TableShell>
+      <PaginationControls page={historyPagination.page} pageSize={historyPagination.pageSize} totalItems={historyRows.length} onPageChange={historyPagination.setPage} onPageSizeChange={historyPagination.setPageSize} />
     </div>
   );
 }
@@ -7379,6 +7411,7 @@ function DetailView({
   const rows = getCreditSnapshots(month).filter((item) => item.mantri === selectedMantri);
   const totalOs = rows.reduce((sum, item) => sum + item.outstanding, 0);
   const nplOs = rows.reduce((sum, item) => sum + (isNpl(classifyQuality(item, month)) ? item.outstanding : 0), 0);
+  const pagination = useTablePagination(rows, `${month}-${selectedMantri}-${rows.length}`);
 
   return (
     <div className="space-y-4">
@@ -7407,7 +7440,7 @@ function DetailView({
           </tr>
         </thead>
         <tbody>
-          {rows.map((item) => {
+          {pagination.pagedRows.map((item) => {
             const bucket = classifyQuality(item, month);
             return (
               <tr key={item.accountNumber} className={cn(isNpl(bucket) && "bg-rose-50/70", isSml(bucket) && "bg-[#f37021]/5")}>
@@ -7422,6 +7455,7 @@ function DetailView({
           })}
         </tbody>
       </TableShell>
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
     </div>
   );
 }

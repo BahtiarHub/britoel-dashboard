@@ -550,9 +550,28 @@ const mockLoanSnapshots: LoanSnapshot[] = [
 
 export let months: { value: MonthKey; label: string }[] = [...mockMonths];
 export let loanSnapshots: LoanSnapshot[] = [...mockLoanSnapshots];
+let snapshotsByMonth = new Map<MonthKey, LoanSnapshot[]>();
+let snapshotsByMonthAndAccount = new Map<MonthKey, Map<string, LoanSnapshot>>();
+
+function rebuildLoanIndexes() {
+  snapshotsByMonth = new Map();
+  snapshotsByMonthAndAccount = new Map();
+  for (const item of loanSnapshots) {
+    const monthRows = snapshotsByMonth.get(item.month) ?? [];
+    monthRows.push(item);
+    snapshotsByMonth.set(item.month, monthRows);
+
+    const accountRows = snapshotsByMonthAndAccount.get(item.month) ?? new Map<string, LoanSnapshot>();
+    accountRows.set(item.accountNumber, item);
+    snapshotsByMonthAndAccount.set(item.month, accountRows);
+  }
+}
+
+rebuildLoanIndexes();
 
 export function applyUploadedLoanData(rows: LoanSnapshot[], periods: string[]) {
   loanSnapshots = rows;
+  rebuildLoanIndexes();
   months = periods.sort().map((value) => {
     const [year, month] = value.split("-").map(Number);
     const label = Number.isFinite(year) && Number.isFinite(month)
@@ -564,6 +583,7 @@ export function applyUploadedLoanData(rows: LoanSnapshot[], periods: string[]) {
 
 export function restoreMockLoanData() {
   loanSnapshots = [...mockLoanSnapshots];
+  rebuildLoanIndexes();
   months = [...mockMonths];
 }
 
@@ -614,7 +634,7 @@ export function getMonthDate(month: MonthKey) {
 }
 
 export function getSnapshots(month: MonthKey) {
-  return loanSnapshots.filter((item) => item.month === month);
+  return snapshotsByMonth.get(month) ?? [];
 }
 
 export function isPumk(item: Pick<LoanSnapshot, "loanType">) {
@@ -744,7 +764,7 @@ export function getLossRate(item: LoanSnapshot, month: MonthKey) {
 }
 
 export function getCompareSnapshot(month: MonthKey, accountNumber: string) {
-  return getSnapshots(month).find((item) => item.accountNumber === accountNumber);
+  return snapshotsByMonthAndAccount.get(month)?.get(accountNumber);
 }
 
 export function getCkpnRows(month: MonthKey) {
@@ -893,13 +913,14 @@ export function getMantriRecap(month: MonthKey) {
 export function getSummary(month: MonthKey) {
   const rows = getCreditSnapshots(month);
   const pumkRows = getSnapshots(month).filter(isPumk);
+  const smlRows = rows.filter((item) => isSml(classifyQuality(item, month)));
+  const nplRows = rows.filter((item) => isNpl(classifyQuality(item, month)));
+  const countDebtors = (items: LoanSnapshot[]) => new Set(
+    items.map((item) => item.cif?.trim() || item.debtorName.trim().toUpperCase() || item.accountNumber),
+  ).size;
   const totalOs = rows.reduce((total, item) => total + item.outstanding, 0);
-  const smlOs = rows.reduce((total, item) => {
-    return total + (isSml(classifyQuality(item, month)) ? item.outstanding : 0);
-  }, 0);
-  const nplOs = rows.reduce((total, item) => {
-    return total + (isNpl(classifyQuality(item, month)) ? item.outstanding : 0);
-  }, 0);
+  const smlOs = smlRows.reduce((total, item) => total + item.outstanding, 0);
+  const nplOs = nplRows.reduce((total, item) => total + item.outstanding, 0);
   const ckpnRows = getCkpnRows(month);
   const totalCkpn = ckpnRows.reduce((total, item) => total + item.ckpnImpact, 0);
 
@@ -909,6 +930,8 @@ export function getSummary(month: MonthKey) {
     nplOs,
     smlPercent: totalOs ? (smlOs / totalOs) * 100 : 0,
     nplPercent: totalOs ? (nplOs / totalOs) * 100 : 0,
+    smlDebtorCount: countDebtors(smlRows),
+    nplDebtorCount: countDebtors(nplRows),
     newSml: getNewRows(month, "SML"),
     newNpl: getNewRows(month, "NPL"),
     totalCkpn,
