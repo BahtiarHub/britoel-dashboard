@@ -740,6 +740,11 @@ type GlobalSearchResult = {
 type UserRole = "SuperAdmin" | "Admin" | "Kaunit / SPV" | "CS" | "Mantri" | "User";
 type ControlPanelKey = "none" | "notifications" | "commands" | "audit" | "presentation";
 
+type PresentationUploads = {
+  almafact: null | { fileName: string; format: string; updatedAt: string; url: string };
+  branchPl: null | { fileName: string; format: string; updatedAt: string; headers: string[]; rows: (string | number)[][]; totalRows: number };
+};
+
 type NotificationItem = {
   id: string;
   title: string;
@@ -1807,11 +1812,23 @@ function AuditTrailPanel({ entries, onClose }: { entries: AuditEntry[]; onClose:
 
 function PresentationMode({ month, summary, brimenRows, role, onClose }: { month: MonthKey; summary: ReturnType<typeof getSummary>; brimenRows: BrimenCustomer[]; role: UserRole; onClose: () => void }) {
   const [slide, setSlide] = useState(0);
-  const slideCount = 6;
+  const [presentationUploads, setPresentationUploads] = useState<PresentationUploads>();
+  const [uploadPresentationStatus, setUploadPresentationStatus] = useState("Memuat file presentasi...");
+  const slideCount = 8;
   useEffect(() => {
     const timer = window.setInterval(() => setSlide((current) => (current + 1) % slideCount), 8000);
     return () => window.clearInterval(timer);
   }, [slideCount]);
+  useEffect(() => {
+    fetch("/api/uploads/presentation", { cache: "no-store" })
+      .then((response) => response.json().then((payload) => ({ response, payload })))
+      .then(({ response, payload }) => {
+        if (!response.ok || !payload.ok) throw new Error(payload.message ?? "File presentasi gagal dimuat.");
+        setPresentationUploads({ almafact: payload.almafact ?? null, branchPl: payload.branchPl ?? null });
+        setUploadPresentationStatus("");
+      })
+      .catch((error) => setUploadPresentationStatus(error instanceof Error ? error.message : "File presentasi gagal dimuat."));
+  }, []);
   const qualityRows = getQualityDistribution(month);
   const maxQualityOs = Math.max(...qualityRows.map((item) => item.os), 1);
   const mantriRows = getMantriRecap(month).map((item) => {
@@ -1838,6 +1855,8 @@ function PresentationMode({ month, summary, brimenRows, role, onClose }: { month
     { title: "Pergerakan Kualitas & CKPN", subtitle: "Dampak perubahan kolektibilitas terhadap biaya risiko" },
     { title: "Realisasi & Potensi Suplesi", subtitle: "Kinerja bulan berjalan dan ruang pertumbuhan" },
     { title: "Kondisi Operasional BRIMEN", subtitle: "Kesiapan arsip, peminjaman, dan pekerjaan prioritas" },
+    { title: "Almafact Unit Kerja", subtitle: "Dokumen Almafact aktif dari Upload Data" },
+    { title: "Branch PL", subtitle: "Ringkasan data posisi dan pencapaian branch" },
   ];
   const active = slides[slide];
   return (
@@ -1908,6 +1927,49 @@ function PresentationMode({ month, summary, brimenRows, role, onClose }: { month
             { label: "Pantau pengembalian berkas", value: `${borrowed} nasabah`, tone: "bg-[#fff7ed] text-[#b54b00]" },
             { label: "Kelengkapan arsip", value: formatPercent(brimenRows.length ? (archived / brimenRows.length) * 100 : 0), tone: "bg-emerald-50 text-emerald-700" },
           ].map((item, index) => <div key={item.label} className="flex items-center gap-3 rounded-md border border-[#e3edf6] p-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#00529c] font-black text-white">{index + 1}</span><div className="min-w-0 flex-1"><p className="font-bold text-[#004077]">{item.label}</p></div><span className={cn("rounded-md px-3 py-1.5 text-sm font-black", item.tone)}>{item.value}</span></div>)}</div></div></div> : null}
+
+          {slide === 6 ? (
+            <div className="mt-6 flex min-h-[52vh] flex-1 flex-col overflow-hidden rounded-lg border border-[#d7e3ef] bg-white shadow-[0_14px_32px_rgba(0,55,105,0.08)]">
+              {presentationUploads?.almafact ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3">
+                    <div><p className="font-black text-[#004077]">{presentationUploads.almafact.fileName}</p><p className="text-xs text-muted-foreground">Format {presentationUploads.almafact.format} | File aktif terakhir</p></div>
+                    <Badge className="bg-[#00529c] text-white hover:bg-[#00529c]">Almafact</Badge>
+                  </div>
+                  {presentationUploads.almafact.format === "PDF" ? (
+                    <iframe title="Dokumen Almafact" src={presentationUploads.almafact.url} className="min-h-[52vh] w-full flex-1 bg-white" />
+                  ) : (
+                    <div className="grid min-h-[52vh] flex-1 place-items-center bg-[#eef5fb] p-3"><img src={presentationUploads.almafact.url} alt="Almafact Unit Kerja" className="max-h-[58vh] max-w-full object-contain" /></div>
+                  )}
+                </>
+              ) : (
+                <EmptyState title="Almafact belum tersedia" description={uploadPresentationStatus || "Unggah file Almafact PNG atau PDF melalui menu Upload Data."} icon={FileText} />
+              )}
+            </div>
+          ) : null}
+
+          {slide === 7 ? (
+            <div className="mt-6 space-y-4">
+              {presentationUploads?.branchPl ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-[#bfd3e5] bg-white p-4"><p className="text-xs font-black uppercase text-muted-foreground">File Aktif</p><p className="mt-2 truncate font-black text-[#00529c]" title={presentationUploads.branchPl.fileName}>{presentationUploads.branchPl.fileName}</p></div>
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-black uppercase text-emerald-700">Jumlah Data</p><p className="mt-2 text-2xl font-black text-emerald-800">{formatNumber(presentationUploads.branchPl.totalRows)} baris</p></div>
+                    <div className="rounded-lg border border-[#f7c9aa] bg-[#fff7ed] p-4"><p className="text-xs font-black uppercase text-[#b54b00]">Struktur</p><p className="mt-2 text-2xl font-black text-[#f37021]">{presentationUploads.branchPl.headers.length} kolom</p></div>
+                  </div>
+                  <div className="max-h-[50vh] overflow-auto rounded-lg border border-[#d7e3ef] bg-white shadow-[0_14px_32px_rgba(0,55,105,0.08)]">
+                    <table className="w-full min-w-[900px] border-collapse text-sm">
+                      <thead className="bg-[#00529c] text-white"><tr>{presentationUploads.branchPl.headers.map((header) => <th key={header} className="whitespace-nowrap border-r border-white/15 px-3 py-3 text-left text-xs font-black uppercase">{header}</th>)}</tr></thead>
+                      <tbody>{presentationUploads.branchPl.rows.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-[#e3edf6] even:bg-[#f8fbfe]">{row.map((cell, cellIndex) => <td key={cellIndex} className="whitespace-nowrap px-3 py-2.5 font-medium text-[#29445c]">{String(cell)}</td>)}</tr>)}</tbody>
+                    </table>
+                  </div>
+                  {presentationUploads.branchPl.totalRows > presentationUploads.branchPl.rows.length ? <p className="text-xs font-semibold text-muted-foreground">Menampilkan {presentationUploads.branchPl.rows.length} baris pertama dari {formatNumber(presentationUploads.branchPl.totalRows)} data.</p> : null}
+                </>
+              ) : (
+                <div className="min-h-[52vh] rounded-lg border border-[#d7e3ef] bg-white"><EmptyState title="Branch PL belum tersedia" description={uploadPresentationStatus || "Unggah file Branch PL CSV atau Excel melalui menu Upload Data."} icon={FileSpreadsheet} /></div>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="flex items-center justify-between border-t border-[#d7e3ef] bg-white px-4 py-3 sm:px-8"><Button type="button" variant="outline" className="border-[#bfd3e5] bg-white text-[#00529c] hover:bg-[#eaf3fb]" onClick={() => setSlide((slide + slideCount - 1) % slideCount)}>Sebelumnya</Button><div className="flex gap-1.5">{slides.map((_, index) => <button key={index} type="button" aria-label={`Slide ${index + 1}`} onClick={() => setSlide(index)} className={cn("h-2.5 rounded-full transition-all", index === slide ? "w-8 bg-[#f37021]" : "w-3 bg-[#bfd3e5]")} />)}</div><Button type="button" className="bg-[#00529c] hover:bg-[#003f78]" onClick={() => setSlide((slide + 1) % slideCount)}>Berikutnya</Button></div>

@@ -245,7 +245,7 @@ function deriveCollectibility(amounts: ReturnType<typeof getQualityAmounts>): Im
   return undefined;
 }
 
-const knownCsvHeaderAliases = [
+const knownCsvHeaderAliases: string[] = [
   ...Object.values(aliases).flat(),
   ...Object.values(qualityAmountAliases).flat(),
   ...Object.values(depositAliases).flat(),
@@ -256,6 +256,7 @@ const knownCsvHeaderAliases = [
 function csvHeaderScore(row: unknown[]) {
   return row.reduce<number>((score, value) => {
     const header = normalizeHeader(String(value ?? ""));
+    if (knownCsvHeaderAliases.includes(header)) return score + 4;
     return score + (knownCsvHeaderAliases.some((alias) => headerMatchesAlias(header, alias)) ? 1 : 0);
   }, 0);
 }
