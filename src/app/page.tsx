@@ -7227,8 +7227,8 @@ const uploadSlots: {
     title: "Branch PL",
     period: "Data pencapaian branch",
     description: "Data Branch PL untuk pemantauan posisi dan pencapaian unit kerja.",
-    accept: ".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel",
-    formatLabel: "Excel",
+    accept: ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel",
+    formatLabel: "CSV / Excel",
   },
   {
     key: "kpi-rka",

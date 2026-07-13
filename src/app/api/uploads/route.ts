@@ -20,7 +20,7 @@ const allowedExtensions: Record<string, string[]> = {
   "nominatif-rekening": [".csv"],
   di319: [".csv"],
   almafact: [".png", ".pdf"],
-  "branch-pl": [".xlsx", ".xls"],
+  "branch-pl": [".csv", ".xlsx", ".xls"],
   "kpi-rka": [".xlsx", ".xls"],
 };
 
