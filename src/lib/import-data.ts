@@ -47,7 +47,7 @@ const aliases = {
   accountNumber: ["no_rekening", "nomor_rekening", "no_rek", "norek", "rekening", "account_number", "account_no", "acctno", "no_rekening_nasabah"],
   debtorName: ["nama_debitur", "nama_nasabah", "nama_debitur_single", "debitur", "customer_name", "nama"],
   nextPaymentDate: ["next_payment_date", "next_pmt_date", "nextpaymentdate", "tanggal_jatuh_tempo", "tgl_jatuh_tempo", "jatuh_tempo", "npd"],
-  outstanding: ["outstanding", "baki_debet", "bakidebet", "os", "saldo_pinjaman", "sisa_pinjaman", "cur_bal", "current_balance", "baki_debet_posisi"],
+  outstanding: ["outstanding", "total_outstanding", "jumlah_outstanding", "baki_debet", "total_baki_debet", "jumlah_baki_debet", "bakidebet", "os", "total_os", "jumlah_os", "saldo", "saldo_pokok", "saldo_pinjaman", "sisa_pinjaman", "cur_bal", "current_balance", "baki_debet_posisi"],
   plafond: ["plafond", "plafon", "loan_amount", "jumlah_plafond"],
   collectibility: ["kolektibilitas", "kolektabilitas", "kolektibilitas_terbaru", "kolek", "kolek_terbaru", "kol", "collectibility", "collectibility_code", "credit_status", "kualitas"],
   restructureFlag: ["flag_restruk", "flag_restrukturisasi", "flaf_restruk", "restruk", "restructure_flag"],
@@ -113,6 +113,24 @@ function pick(row: RawRow, keys: readonly string[]) {
   return "";
 }
 
+function headerMatchesAlias(header: string, alias: string) {
+  if (header === alias) return true;
+  if (alias.length <= 1) return false;
+  if (!alias.includes("_")) return header.split("_").includes(alias);
+  return header.startsWith(`${alias}_`) || header.endsWith(`_${alias}`) || header.includes(`_${alias}_`);
+}
+
+function findMatchingHeaders(headers: Set<string>, names: readonly string[]) {
+  return [...headers].filter((header) => names.some((name) => headerMatchesAlias(header, name)));
+}
+
+function findPreferredHeader(headers: Set<string>, names: readonly string[], excluded = new Set<string>()) {
+  for (const name of names) {
+    if (headers.has(name) && !excluded.has(name)) return name;
+  }
+  return findMatchingHeaders(headers, names).find((header) => !excluded.has(header));
+}
+
 function parseMoney(value: unknown) {
   if (typeof value === "number") return Math.round(value);
   let text = String(value ?? "").trim().replace(/\s/g, "").replace(/rp/gi, "");
@@ -154,13 +172,30 @@ function parseCollectibility(value: unknown): ImportedLoanRow["collectibility"] 
   return undefined;
 }
 
-function getQualityAmounts(row: RawRow) {
+type QualityName = keyof typeof qualityAmountAliases;
+type QualityHeaderMap = Record<QualityName, string[]>;
+
+function resolveQualityHeaders(headers: Set<string>): QualityHeaderMap {
+  const result: QualityHeaderMap = { Lancar: [], DPK: [], KL: [], Diragukan: [], Macet: [] };
+  const used = new Set<string>();
+  const priority: QualityName[] = ["Macet", "Diragukan", "KL", "DPK", "Lancar"];
+  priority.forEach((quality) => {
+    result[quality] = findMatchingHeaders(headers, qualityAmountAliases[quality]).filter((header) => {
+      if (used.has(header)) return false;
+      used.add(header);
+      return true;
+    });
+  });
+  return result;
+}
+
+function getQualityAmounts(row: RawRow, qualityHeaders: QualityHeaderMap) {
   return {
-    Lancar: qualityAmountAliases.Lancar.reduce((total, key) => total + parseMoney(row[key]), 0),
-    DPK: qualityAmountAliases.DPK.reduce((total, key) => total + parseMoney(row[key]), 0),
-    KL: qualityAmountAliases.KL.reduce((total, key) => total + parseMoney(row[key]), 0),
-    Diragukan: qualityAmountAliases.Diragukan.reduce((total, key) => total + parseMoney(row[key]), 0),
-    Macet: qualityAmountAliases.Macet.reduce((total, key) => total + parseMoney(row[key]), 0),
+    Lancar: qualityHeaders.Lancar.reduce((total, key) => total + parseMoney(row[key]), 0),
+    DPK: qualityHeaders.DPK.reduce((total, key) => total + parseMoney(row[key]), 0),
+    KL: qualityHeaders.KL.reduce((total, key) => total + parseMoney(row[key]), 0),
+    Diragukan: qualityHeaders.Diragukan.reduce((total, key) => total + parseMoney(row[key]), 0),
+    Macet: qualityHeaders.Macet.reduce((total, key) => total + parseMoney(row[key]), 0),
   };
 }
 
@@ -219,18 +254,23 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
   if (!rawRows.length) throw new Error("File tidak memiliki baris data.");
   const normalizedRows = rawRows.map(normalizeRow);
   const headers = new Set(Object.keys(normalizedRows[0]));
+  const accountHeader = findPreferredHeader(headers, aliases.accountNumber);
+  const debtorHeader = findPreferredHeader(headers, aliases.debtorName);
+  const mantriHeader = findPreferredHeader(headers, aliases.mantri);
   const required = [
-    ["No Rekening", aliases.accountNumber], ["Nama Debitur", aliases.debtorName], ["Mantri/PN_PENGELOLA_SINGLEPN", aliases.mantri],
+    ["No Rekening", accountHeader], ["Nama Debitur", debtorHeader], ["Mantri/PN_PENGELOLA_SINGLEPN", mantriHeader],
   ] as const;
-  const missing = required.filter(([, keys]) => !keys.some((key) => headers.has(key))).map(([label]) => label);
+  const missing = required.filter(([, header]) => !header).map(([label]) => label);
   if (missing.length) throw new Error(`Kolom wajib tidak ditemukan: ${missing.join(", ")}.`);
-  const hasOutstandingColumn = aliases.outstanding.some((key) => headers.has(key));
-  const hasCollectibilityColumn = aliases.collectibility.some((key) => headers.has(key));
-  const hasQualityAmountColumns = Object.values(qualityAmountAliases).some((keys) => keys.some((key) => headers.has(key)));
-  if (!hasOutstandingColumn && !hasQualityAmountColumns) {
-    throw new Error("Outstanding tidak dapat dihitung. Tambahkan kolom Baki Debet/Outstanding atau kolom nominal Lancar, DPK/SML, KL, Diragukan, dan Macet.");
+  const qualityHeaders = resolveQualityHeaders(headers);
+  const qualityHeaderSet = new Set(Object.values(qualityHeaders).flat());
+  const outstandingHeader = findPreferredHeader(headers, aliases.outstanding, qualityHeaderSet);
+  const collectibilityHeader = findPreferredHeader(headers, aliases.collectibility, qualityHeaderSet);
+  const hasQualityAmountColumns = qualityHeaderSet.size > 0;
+  if (!outstandingHeader && !hasQualityAmountColumns) {
+    throw new Error(`Outstanding tidak dapat dihitung. Header yang terbaca: ${[...headers].slice(0, 15).join(", ")}.`);
   }
-  if (!hasCollectibilityColumn && !hasQualityAmountColumns) {
+  if (!collectibilityHeader && !hasQualityAmountColumns) {
     throw new Error("Kolektibilitas tidak dapat ditentukan. Tambahkan kolom Kolektibilitas atau kolom nominal kualitas Lancar sampai Macet.");
   }
 
@@ -238,22 +278,22 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
   const issues: string[] = [];
   const unique = new Map<string, ImportedLoanRow>();
   normalizedRows.forEach((row, index) => {
-    const accountNumber = String(pick(row, aliases.accountNumber)).trim();
-    const debtorName = String(pick(row, aliases.debtorName)).trim();
-    const qualityAmounts = getQualityAmounts(row);
-    const collectibility = parseCollectibility(pick(row, aliases.collectibility)) ?? deriveCollectibility(qualityAmounts);
-    const mantri = String(pick(row, aliases.mantri)).trim();
+    const accountNumber = String(row[accountHeader!]).trim();
+    const debtorName = String(row[debtorHeader!]).trim();
+    const qualityAmounts = getQualityAmounts(row, qualityHeaders);
+    const collectibility = parseCollectibility(collectibilityHeader ? row[collectibilityHeader] : "") ?? deriveCollectibility(qualityAmounts);
+    const mantri = String(row[mantriHeader!]).trim();
     if (!accountNumber || !debtorName || !collectibility || !mantri) {
       rejected += 1;
       if (issues.length < 5) issues.push(`Baris ${index + 2}: rekening, nama, kolektibilitas, atau mantri tidak valid.`);
       return;
     }
     const plafond = parseMoney(pick(row, aliases.plafond));
-    const outstanding = hasOutstandingColumn
-      ? parseMoney(pick(row, aliases.outstanding))
+    const outstanding = outstandingHeader
+      ? parseMoney(row[outstandingHeader])
       : Object.values(qualityAmounts).reduce((total, value) => total + value, 0);
     const realizedAmount = parseMoney(pick(row, aliases.realizedAmount)) || plafond;
-    const pnPengelola = String(pick(row, aliases.mantri)).trim();
+    const pnPengelola = mantri;
     const flagText = normalizeHeader(String(pick(row, aliases.restructureFlag)));
     unique.set(accountNumber, {
       accountNumber,
