@@ -47,15 +47,23 @@ const aliases = {
   accountNumber: ["no_rekening", "nomor_rekening", "no_rek", "norek", "rekening", "account_number", "account_no", "acctno", "no_rekening_nasabah"],
   debtorName: ["nama_debitur", "nama_nasabah", "nama_debitur_single", "debitur", "customer_name", "nama"],
   nextPaymentDate: ["next_payment_date", "next_pmt_date", "nextpaymentdate", "tanggal_jatuh_tempo", "tgl_jatuh_tempo", "jatuh_tempo", "npd"],
-  outstanding: ["outstanding", "baki_debet", "bakidebet", "os", "saldo_pinjaman", "sisa_pinjaman"],
+  outstanding: ["outstanding", "baki_debet", "bakidebet", "os", "saldo_pinjaman", "sisa_pinjaman", "cur_bal", "current_balance", "baki_debet_posisi"],
   plafond: ["plafond", "plafon", "loan_amount", "jumlah_plafond"],
-  collectibility: ["kolektibilitas", "kolektibilitas_terbaru", "kolek", "kol", "collectibility", "credit_status", "kualitas"],
+  collectibility: ["kolektibilitas", "kolektabilitas", "kolektibilitas_terbaru", "kolek", "kolek_terbaru", "kol", "collectibility", "collectibility_code", "credit_status", "kualitas"],
   restructureFlag: ["flag_restruk", "flag_restrukturisasi", "flaf_restruk", "restruk", "restructure_flag"],
   mantri: ["pn_pengelola_singlepn", "pn_pengelola", "mantri", "nama_mantri", "pengelola"],
   description: ["description", "deskripsi", "tipe_pinjaman", "jenis_pinjaman", "produk", "product_description"],
   realizedDate: ["tanggal_realisasi", "tgl_realisasi", "realized_date", "realisasi_date", "date_realisasi"],
   realizedAmount: ["jumlah_realisasi", "nominal_realisasi", "realized_amount", "realisasi", "plafond_realisasi"],
   period: ["periode", "period", "bulan_data", "posisi_data", "snapshot_date", "tanggal_data", "report_date"],
+} as const;
+
+const qualityAmountAliases = {
+  Lancar: ["lancar", "os_lancar", "baki_debet_lancar", "kolek_1", "kol_1", "kolektibilitas_1"],
+  DPK: ["dpk", "sml", "dpk_1", "dpk_2", "dpk_3", "sml_1", "sml_2", "sml_3", "sml1", "sml2", "sml3", "os_dpk", "os_sml", "baki_debet_dpk", "baki_debet_sml", "kolek_2", "kol_2", "kolektibilitas_2"],
+  KL: ["kl", "kurang_lancar", "os_kl", "baki_debet_kl", "kolek_3", "kol_3", "kolektibilitas_3"],
+  Diragukan: ["diragukan", "os_diragukan", "baki_debet_diragukan", "kolek_4", "kol_4", "kolektibilitas_4"],
+  Macet: ["macet", "os_macet", "baki_debet_macet", "kolek_5", "kol_5", "kolektibilitas_5"],
 } as const;
 
 const depositAliases = {
@@ -139,10 +147,29 @@ function toIsoDate(value: unknown) {
 function parseCollectibility(value: unknown): ImportedLoanRow["collectibility"] | undefined {
   const text = normalizeHeader(String(value ?? ""));
   if (["1", "l", "lancar", "current"].includes(text)) return "Lancar";
-  if (["2", "dpk", "dalam_perhatian_khusus", "sml", "sml1", "sml2", "sml3"].includes(text)) return "DPK";
+  if (["2", "2a", "2b", "2c", "dpk", "dalam_perhatian_khusus", "sml", "sml1", "sml2", "sml3"].includes(text)) return "DPK";
   if (["3", "kl", "kurang_lancar"].includes(text)) return "KL";
   if (["4", "d", "diragukan"].includes(text)) return "Diragukan";
   if (["5", "m", "macet"].includes(text)) return "Macet";
+  return undefined;
+}
+
+function getQualityAmounts(row: RawRow) {
+  return {
+    Lancar: qualityAmountAliases.Lancar.reduce((total, key) => total + parseMoney(row[key]), 0),
+    DPK: qualityAmountAliases.DPK.reduce((total, key) => total + parseMoney(row[key]), 0),
+    KL: qualityAmountAliases.KL.reduce((total, key) => total + parseMoney(row[key]), 0),
+    Diragukan: qualityAmountAliases.Diragukan.reduce((total, key) => total + parseMoney(row[key]), 0),
+    Macet: qualityAmountAliases.Macet.reduce((total, key) => total + parseMoney(row[key]), 0),
+  };
+}
+
+function deriveCollectibility(amounts: ReturnType<typeof getQualityAmounts>): ImportedLoanRow["collectibility"] | undefined {
+  if (amounts.Macet > 0) return "Macet";
+  if (amounts.Diragukan > 0) return "Diragukan";
+  if (amounts.KL > 0) return "KL";
+  if (amounts.DPK > 0) return "DPK";
+  if (amounts.Lancar > 0) return "Lancar";
   return undefined;
 }
 
@@ -193,11 +220,19 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
   const normalizedRows = rawRows.map(normalizeRow);
   const headers = new Set(Object.keys(normalizedRows[0]));
   const required = [
-    ["No Rekening", aliases.accountNumber], ["Nama Debitur", aliases.debtorName], ["Outstanding/Baki Debet", aliases.outstanding],
-    ["Kolektibilitas", aliases.collectibility], ["Mantri/PN_PENGELOLA_SINGLEPN", aliases.mantri],
+    ["No Rekening", aliases.accountNumber], ["Nama Debitur", aliases.debtorName], ["Mantri/PN_PENGELOLA_SINGLEPN", aliases.mantri],
   ] as const;
   const missing = required.filter(([, keys]) => !keys.some((key) => headers.has(key))).map(([label]) => label);
   if (missing.length) throw new Error(`Kolom wajib tidak ditemukan: ${missing.join(", ")}.`);
+  const hasOutstandingColumn = aliases.outstanding.some((key) => headers.has(key));
+  const hasCollectibilityColumn = aliases.collectibility.some((key) => headers.has(key));
+  const hasQualityAmountColumns = Object.values(qualityAmountAliases).some((keys) => keys.some((key) => headers.has(key)));
+  if (!hasOutstandingColumn && !hasQualityAmountColumns) {
+    throw new Error("Outstanding tidak dapat dihitung. Tambahkan kolom Baki Debet/Outstanding atau kolom nominal Lancar, DPK/SML, KL, Diragukan, dan Macet.");
+  }
+  if (!hasCollectibilityColumn && !hasQualityAmountColumns) {
+    throw new Error("Kolektibilitas tidak dapat ditentukan. Tambahkan kolom Kolektibilitas atau kolom nominal kualitas Lancar sampai Macet.");
+  }
 
   let rejected = 0;
   const issues: string[] = [];
@@ -205,7 +240,8 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
   normalizedRows.forEach((row, index) => {
     const accountNumber = String(pick(row, aliases.accountNumber)).trim();
     const debtorName = String(pick(row, aliases.debtorName)).trim();
-    const collectibility = parseCollectibility(pick(row, aliases.collectibility));
+    const qualityAmounts = getQualityAmounts(row);
+    const collectibility = parseCollectibility(pick(row, aliases.collectibility)) ?? deriveCollectibility(qualityAmounts);
     const mantri = String(pick(row, aliases.mantri)).trim();
     if (!accountNumber || !debtorName || !collectibility || !mantri) {
       rejected += 1;
@@ -213,7 +249,9 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
       return;
     }
     const plafond = parseMoney(pick(row, aliases.plafond));
-    const outstanding = parseMoney(pick(row, aliases.outstanding));
+    const outstanding = hasOutstandingColumn
+      ? parseMoney(pick(row, aliases.outstanding))
+      : Object.values(qualityAmounts).reduce((total, value) => total + value, 0);
     const realizedAmount = parseMoney(pick(row, aliases.realizedAmount)) || plafond;
     const pnPengelola = String(pick(row, aliases.mantri)).trim();
     const flagText = normalizeHeader(String(pick(row, aliases.restructureFlag)));
