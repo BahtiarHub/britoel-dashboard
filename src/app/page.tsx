@@ -51,6 +51,8 @@ import {
   UserCog,
   UsersRound,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import {
   Bar,
@@ -1814,6 +1816,7 @@ function PresentationMode({ month, summary, brimenRows, role, onClose }: { month
   const [slide, setSlide] = useState(0);
   const [presentationUploads, setPresentationUploads] = useState<PresentationUploads>();
   const [uploadPresentationStatus, setUploadPresentationStatus] = useState("Memuat file presentasi...");
+  const [almafactZoom, setAlmafactZoom] = useState(100);
   const slideCount = 8;
   useEffect(() => {
     const timer = window.setInterval(() => setSlide((current) => (current + 1) % slideCount), 8000);
@@ -1929,17 +1932,31 @@ function PresentationMode({ month, summary, brimenRows, role, onClose }: { month
           ].map((item, index) => <div key={item.label} className="flex items-center gap-3 rounded-md border border-[#e3edf6] p-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#00529c] font-black text-white">{index + 1}</span><div className="min-w-0 flex-1"><p className="font-bold text-[#004077]">{item.label}</p></div><span className={cn("rounded-md px-3 py-1.5 text-sm font-black", item.tone)}>{item.value}</span></div>)}</div></div></div> : null}
 
           {slide === 6 ? (
-            <div className="mt-6 flex min-h-[52vh] flex-1 flex-col overflow-hidden rounded-lg border border-[#d7e3ef] bg-white shadow-[0_14px_32px_rgba(0,55,105,0.08)]">
+            <div className="mt-4 flex h-[calc(100vh-250px)] min-h-[520px] flex-col overflow-hidden rounded-lg border border-[#d7e3ef] bg-white shadow-[0_14px_32px_rgba(0,55,105,0.08)]">
               {presentationUploads?.almafact ? (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3">
                     <div><p className="font-black text-[#004077]">{presentationUploads.almafact.fileName}</p><p className="text-xs text-muted-foreground">Format {presentationUploads.almafact.format} | File aktif terakhir</p></div>
-                    <Badge className="bg-[#00529c] text-white hover:bg-[#00529c]">Almafact</Badge>
+                    <div className="flex items-center gap-2">
+                      {presentationUploads.almafact.format !== "PDF" ? (
+                        <div className="flex items-center rounded-md border border-[#bfd3e5] bg-white p-1">
+                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-[#00529c]" aria-label="Perkecil Almafact" disabled={almafactZoom <= 75} onClick={() => setAlmafactZoom((value) => Math.max(75, value - 25))}><ZoomOut className="h-4 w-4" /></Button>
+                          <span className="min-w-12 text-center text-xs font-black text-[#004077]">{almafactZoom}%</span>
+                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-[#00529c]" aria-label="Perbesar Almafact" disabled={almafactZoom >= 200} onClick={() => setAlmafactZoom((value) => Math.min(200, value + 25))}><ZoomIn className="h-4 w-4" /></Button>
+                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-[#f37021]" aria-label="Sesuaikan lebar Almafact" onClick={() => setAlmafactZoom(100)}><Maximize2 className="h-4 w-4" /></Button>
+                        </div>
+                      ) : null}
+                      <Badge className="bg-[#00529c] text-white hover:bg-[#00529c]">Almafact</Badge>
+                    </div>
                   </div>
                   {presentationUploads.almafact.format === "PDF" ? (
-                    <iframe title="Dokumen Almafact" src={presentationUploads.almafact.url} className="min-h-[52vh] w-full flex-1 bg-white" />
+                    <iframe title="Dokumen Almafact" src={presentationUploads.almafact.url} className="min-h-0 w-full flex-1 bg-white" />
                   ) : (
-                    <div className="grid min-h-[52vh] flex-1 place-items-center bg-[#eef5fb] p-3"><img src={presentationUploads.almafact.url} alt="Almafact Unit Kerja" className="max-h-[58vh] max-w-full object-contain" /></div>
+                    <div className="min-h-0 flex-1 overflow-auto bg-[#dfeaf3] p-2 sm:p-3">
+                      <div className="mx-auto shadow-[0_12px_30px_rgba(0,55,105,0.18)]" style={{ width: `${almafactZoom}%` }}>
+                        <img src={presentationUploads.almafact.url} alt="Almafact Unit Kerja" className="h-auto w-full max-w-none bg-white" />
+                      </div>
+                    </div>
                   )}
                 </>
               ) : (
