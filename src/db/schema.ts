@@ -94,6 +94,8 @@ export const loanRecords = sqliteTable("loan_records", {
   description: text("description").notNull(),
   realizedDate: text("realized_date").notNull(),
   realizedAmount: integer("realized_amount").notNull().default(0),
+  principalArrears: integer("principal_arrears").notNull().default(0),
+  interestArrears: integer("interest_arrears").notNull().default(0),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
   uniqueIndex("loan_records_branch_period_account_unique").on(table.branchCode, table.period, table.accountNumber),
@@ -200,6 +202,48 @@ export const auditLogs = sqliteTable("audit_logs", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const warningLetters = sqliteTable("warning_letters", {
+  id: text("id").primaryKey(),
+  branchCode: text("branch_code").notNull(),
+  period: text("period").notNull(),
+  accountNumber: text("account_number").notNull(),
+  debtorName: text("debtor_name").notNull(),
+  level: text("level").notNull(),
+  letterNumber: text("letter_number").notNull(),
+  issuedAt: text("issued_at").notNull(),
+  dueDate: text("due_date").notNull(),
+  recipientAddress: text("recipient_address").notNull().default(""),
+  penalty: integer("penalty").notNull().default(0),
+  signerName: text("signer_name").notNull().default(""),
+  signerTitle: text("signer_title").notNull().default("Kepala Unit"),
+  status: text("status").notNull().default("Dibuat"),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("warning_letters_branch_period_account_level_unique").on(table.branchCode, table.period, table.accountNumber, table.level),
+  index("warning_letters_branch_period_idx").on(table.branchCode, table.period),
+]);
+
+export const covenanceRecords = sqliteTable("covenance_records", {
+  id: text("id").primaryKey(),
+  branchCode: text("branch_code").notNull(),
+  period: text("period").notNull(),
+  accountNumber: text("account_number").notNull(),
+  debtorName: text("debtor_name").notNull().default(""),
+  realizedDate: text("realized_date").notNull(),
+  sphNumber: text("sph_number").notNull().default(""),
+  creditApplicationNumber: text("credit_application_number").notNull().default(""),
+  ktpNumber: text("ktp_number").notNull().default(""),
+  kkNumber: text("kk_number").notNull().default(""),
+  skuNibNumber: text("sku_nib_number").notNull().default(""),
+  slikOjk: text("slik_ojk").notNull().default(""),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("covenance_branch_account_realized_unique").on(table.branchCode, table.accountNumber, table.realizedDate),
+  index("covenance_branch_period_idx").on(table.branchCode, table.period),
+]);
+
 export const schema = {
   user,
   session,
@@ -214,5 +258,7 @@ export const schema = {
   depositRecords,
   whatsappCampaigns,
   whatsappCampaignRecipients,
+  warningLetters,
+  covenanceRecords,
   auditLogs,
 };

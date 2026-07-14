@@ -52,6 +52,8 @@ export async function GET(request: Request) {
       description: item.description,
       realizedDate: item.realizedDate,
       realizedAmount: item.realizedAmount,
+      principalArrears: item.principalArrears,
+      interestArrears: item.interestArrears,
     })),
     di319: deposits.map((item) => ({
       period: item.period,
