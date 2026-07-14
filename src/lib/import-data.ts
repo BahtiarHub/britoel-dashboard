@@ -16,6 +16,8 @@ export type ImportedLoanRow = {
   description: string;
   realizedDate: string;
   realizedAmount: number;
+  principalArrears: number;
+  interestArrears: number;
 };
 
 export type ImportedDepositRow = {
@@ -55,10 +57,10 @@ export type ImportedBrimenRow = {
 type RawRow = Record<string, unknown>;
 
 const aliases = {
-  cif: ["cif", "cifno", "cif_no", "no_cif", "nomor_cif", "no_cif_nasabah", "cif_number", "customer_information_file"],
+  cif: ["cif", "cifno", "cif_no", "ciff_no", "ciffno", "no_cif", "nomor_cif", "no_cif_nasabah", "cif_number", "customer_information_file"],
   loanType: ["ln_type", "loan_type", "tipe_kredit", "kode_produk_pinjaman"],
-  accountNumber: ["no_rekening", "nomor_rekening", "no_rek", "norek", "rekening", "account_number", "account_no", "acctno", "no_rekening_nasabah"],
-  debtorName: ["nama_debitur", "nama_nasabah", "nama_debitur_single", "debitur", "customer_name", "nama"],
+  accountNumber: ["no_rekening", "nomor_rekening", "nomor_rekening1", "no_rekening1", "no_rek", "norek", "rekening", "account_number", "account_no", "acctno", "no_rekening_nasabah"],
+  debtorName: ["nama_debitur", "nama_nasabah", "nama_debitur_single", "debitur", "customer_name", "short_name", "nama"],
   nextPaymentDate: ["next_payment_date", "next_pmt_date", "nextpaymentdate", "tanggal_jatuh_tempo", "tgl_jatuh_tempo", "jatuh_tempo", "npd"],
   outstanding: ["outstanding", "total_outstanding", "jumlah_outstanding", "baki_debet", "total_baki_debet", "jumlah_baki_debet", "bakidebet", "os", "total_os", "jumlah_os", "saldo", "saldo_pokok", "saldo_pinjaman", "sisa_pinjaman", "cur_bal", "current_balance", "baki_debet_posisi"],
   plafond: ["plafond", "plafon", "loan_amount", "jumlah_plafond"],
@@ -68,6 +70,8 @@ const aliases = {
   description: ["description", "deskripsi", "tipe_pinjaman", "jenis_pinjaman", "produk", "product_description"],
   realizedDate: ["tanggal_realisasi", "tgl_realisasi", "realized_date", "realisasi_date", "date_realisasi"],
   realizedAmount: ["jumlah_realisasi", "nominal_realisasi", "realized_amount", "realisasi", "plafond_realisasi"],
+  principalArrears: ["tunggakan_pokok", "pokok_tunggakan", "tunggakan_pkk", "tunggakan_principal", "principal_arrears", "past_due_principal", "principal_past_due", "arrears_principal"],
+  interestArrears: ["tunggakan_bunga", "bunga_tunggakan", "tunggakan_bng", "tunggakan_interest", "interest_arrears", "past_due_interest", "interest_past_due", "arrears_interest"],
   period: ["periode", "period", "bulan_data", "posisi_data", "snapshot_date", "tanggal_data", "report_date"],
 } as const;
 
@@ -87,6 +91,8 @@ const depositAliases = {
   savingsAccount: ["no_rekening_simpanan", "nomor_rekening_simpanan", "rekening_simpanan", "savings_account", "saving_account", "rekening_blokiran", "no_rekening", "nomor_rekening", "rekening", "account_number", "account_no"],
   blockedAtStart: ["blokiran_awal", "saldo_blokir_awal", "saldo_blokiran_awal", "nominal_blokir_awal", "blokir_awal"],
   currentBlocked: ["blokiran_saat_ini", "saldo_blokir", "saldo_blokiran", "nominal_blokir", "current_blocked"],
+  balance: ["balance", "saldo", "ledger_balance", "current_balance"],
+  availableBalance: ["available_balance", "saldo_tersedia", "available_bal", "avail_balance"],
   installmentFromBlocked: ["setoran_dari_blokiran", "setor_dari_blokiran", "debet_blokiran", "nominal_setoran_blokir", "installment_from_blocked"],
   mutationDate: ["tanggal_mutasi", "tgl_mutasi", "mutation_date", "tanggal_transaksi", "tgl_transaksi"],
   status: ["status_di319", "status_blokiran", "status"],
@@ -149,6 +155,7 @@ function pick(row: RawRow, keys: readonly string[]) {
 function headerMatchesAlias(header: string, alias: string) {
   if (header === alias) return true;
   if (alias.length <= 1) return false;
+  if (header.startsWith(alias) && /^\d+$/.test(header.slice(alias.length))) return true;
   if (!alias.includes("_")) return header.split("_").includes(alias);
   return header.startsWith(`${alias}_`) || header.endsWith(`_${alias}`) || header.includes(`_${alias}_`);
 }
@@ -291,13 +298,27 @@ function parseCsv(buffer: Buffer) {
   )) as RawRow[];
 }
 
+function parseWorksheet(sheet: XLSX.WorkSheet) {
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true });
+  const inspected = matrix.slice(0, 30);
+  const headerIndex = inspected.reduce((bestIndex, row, index) => (
+    csvHeaderScore(row) > csvHeaderScore(inspected[bestIndex] ?? []) ? index : bestIndex
+  ), 0);
+  const rawHeaders = matrix[headerIndex] ?? [];
+  const headers = rawHeaders.map((value, index) => String(value ?? "").trim() || `Kolom ${index + 1}`);
+  return matrix.slice(headerIndex + 1).map((row) => Object.fromEntries(
+    headers.map((header, index) => [header, row[index] ?? ""]),
+  )) as RawRow[];
+}
+
 export function parseTabularFile(fileName: string, buffer: Buffer) {
   const extension = fileName.toLowerCase().split(".").pop();
   if (extension === "csv") return parseCsv(buffer);
   if (extension === "xlsx" || extension === "xls") {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    return XLSX.utils.sheet_to_json<RawRow>(sheet, { defval: "", raw: true });
+    if (!sheet) throw new Error("File Excel tidak memiliki sheet yang dapat dibaca.");
+    return parseWorksheet(sheet);
   }
   throw new Error("Format tabel belum didukung.");
 }
@@ -387,6 +408,8 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
       description: String(pick(row, aliases.description)).trim() || "Lainnya",
       realizedDate: toIsoDate(pick(row, aliases.realizedDate)),
       realizedAmount,
+      principalArrears: parseMoney(pick(row, aliases.principalArrears)),
+      interestArrears: parseMoney(pick(row, aliases.interestArrears)),
     });
   });
   if (!unique.size) throw new Error("Tidak ada baris pinjaman yang valid untuk disimpan.");
@@ -414,8 +437,13 @@ export function mapDepositRows(rawRows: RawRow[], period: string) {
       if (issues.length < 5) issues.push(`Baris ${index + 2}: No CIF atau No Rekening Simpanan kosong.`);
       return;
     }
-    const blockedAtStart = parseMoney(pick(row, depositAliases.blockedAtStart));
-    const currentBlocked = parseMoney(pick(row, depositAliases.currentBlocked));
+    const rawBlockedAtStart = pick(row, depositAliases.blockedAtStart);
+    const rawCurrentBlocked = pick(row, depositAliases.currentBlocked);
+    const balance = parseMoney(pick(row, depositAliases.balance));
+    const availableBalance = parseMoney(pick(row, depositAliases.availableBalance));
+    const derivedBlocked = Math.max(0, balance - availableBalance);
+    const blockedAtStart = String(rawBlockedAtStart).trim() ? parseMoney(rawBlockedAtStart) : derivedBlocked;
+    const currentBlocked = String(rawCurrentBlocked).trim() ? parseMoney(rawCurrentBlocked) : derivedBlocked;
     const installmentFromBlocked = parseMoney(pick(row, depositAliases.installmentFromBlocked));
     const rawStatus = normalizeHeader(String(pick(row, depositAliases.status)));
     const status: ImportedDepositRow["status"] = rawStatus.includes("setor") || installmentFromBlocked > 0
@@ -446,7 +474,7 @@ export function mapNominativeCkpnRows(rawRows: RawRow[]) {
   const headers = new Set(Object.keys(normalizedRows[0]));
   const accountHeader = findPreferredHeader(headers, nominativeCkpnAliases.accountNumber);
   const formedCkpnHeader = findPreferredHeader(headers, nominativeCkpnAliases.formedCkpn);
-  if (!accountHeader) throw new Error("Kolom No Rekening tidak ditemukan pada file Nominatif Per Rekening.");
+  if (!accountHeader) throw new Error(`Kolom No Rekening tidak ditemukan pada file Nominatif Per Rekening. Header yang terbaca: ${[...headers].slice(0, 15).join(", ") || "tidak ada"}.`);
   if (!formedCkpnHeader) throw new Error("Kolom CKPN/CKPN Terbentuk tidak ditemukan pada file Nominatif Per Rekening.");
 
   let rejected = 0;

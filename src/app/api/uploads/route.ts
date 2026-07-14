@@ -18,7 +18,7 @@ const allowedExtensions: Record<string, string[]> = {
   "lw321-dua-bulan": [".csv"],
   brimen: [".csv", ".xlsx", ".xls"],
   "nominatif-rekening": [".csv"],
-  di319: [".csv"],
+  di319: [".csv", ".xlsx", ".xls"],
   almafact: [".png", ".pdf"],
   "branch-pl": [".csv", ".xlsx", ".xls"],
   "kpi-rka": [".xlsx", ".xls"],
@@ -112,7 +112,8 @@ export async function POST(request: Request) {
             cif: row.cif, loanType: row.loanType, accountNumber: row.accountNumber, debtorName: row.debtorName, nextPaymentDate: row.nextPaymentDate,
             outstanding: row.outstanding, plafond: row.plafond, collectibility: row.collectibility,
             restructureFlag: row.restructureFlag, mantri: row.mantri, pnPengelola: row.pnPengelola,
-            description: row.description, realizedDate: row.realizedDate, realizedAmount: row.realizedAmount, createdAt: now,
+            description: row.description, realizedDate: row.realizedDate, realizedAmount: row.realizedAmount,
+            principalArrears: row.principalArrears, interestArrears: row.interestArrears, createdAt: now,
           }))).run();
         }
       }

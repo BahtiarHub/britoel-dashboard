@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -14,6 +14,7 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   ClipboardList,
@@ -39,9 +40,11 @@ import {
   Menu,
   MessageCircle,
   PieChart as PieChartIcon,
+  Printer,
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   Settings2,
   Shield,
   Star,
@@ -78,10 +81,12 @@ import {
   formatCurrency,
   formatNumber,
   formatPercent,
+  getArrearsRows,
   getCkpnRows,
   getCompareSnapshot,
   getCreditSnapshots,
   getMantriRecap,
+  getMonthlyCkpnDeltaByMantri,
   getMissingLoanDisplayStatus,
   getMonthLabel,
   getPipelineRows,
@@ -100,7 +105,9 @@ import {
   months,
   restoreMockLoanData,
   setCkpnForecast,
+  setMissingLoanResolution,
   type MenuKey,
+  type LoanSnapshot,
   type MonthKey,
   type PrognosaCollectibility,
   type QualityBucket,
@@ -134,7 +141,7 @@ type MantriViewKey =
   | "kualitas"
   | "rekap"
   | "realisasi"
-  | "pipeline"
+  | "tunggakan"
   | "ckpn"
   | "di319"
   | "wa";
@@ -145,7 +152,7 @@ const mantriTabs: { key: MantriViewKey; label: string; icon: React.ElementType }
   { key: "kualitas", label: "Nominatif Kualitas", icon: Layers3 },
   { key: "rekap", label: "Rekap Mantri", icon: BarChart3 },
   { key: "realisasi", label: "Realisasi", icon: TrendingUp },
-  { key: "pipeline", label: "Pipeline Suplesi", icon: Gauge },
+  { key: "tunggakan", label: "Tunggakan", icon: AlertTriangle },
   { key: "ckpn", label: "Prognosa CKPN", icon: PieChartIcon },
   { key: "di319", label: "Monitoring Simpanan", icon: Banknote },
   { key: "wa", label: "WA Blast", icon: MessageCircle },
@@ -157,10 +164,18 @@ const mantriTabTones: Record<MantriViewKey, string> = {
   kualitas: "bg-emerald-600 text-white border-emerald-600/20 shadow-[0_10px_18px_rgba(5,150,105,0.20)]",
   rekap: "bg-sky-600 text-white border-sky-600/20 shadow-[0_10px_18px_rgba(2,132,199,0.20)]",
   realisasi: "bg-teal-600 text-white border-teal-600/20 shadow-[0_10px_18px_rgba(13,148,136,0.20)]",
-  pipeline: "bg-amber-500 text-white border-amber-500/20 shadow-[0_10px_18px_rgba(245,158,11,0.20)]",
+  tunggakan: "bg-amber-500 text-white border-amber-500/20 shadow-[0_10px_18px_rgba(245,158,11,0.20)]",
   ckpn: "bg-rose-600 text-white border-rose-600/20 shadow-[0_10px_18px_rgba(225,29,72,0.20)]",
   di319: "bg-indigo-600 text-white border-indigo-600/20 shadow-[0_10px_18px_rgba(79,70,229,0.20)]",
   wa: "bg-emerald-600 text-white border-emerald-600/20 shadow-[0_10px_18px_rgba(5,150,105,0.20)]",
+};
+
+const operationalTabTones: Record<string, string> = {
+  orange: "bg-[#f37021] text-white border-[#f37021]/20 shadow-[0_10px_18px_rgba(243,112,33,0.20)]",
+  blue: "bg-[#00529c] text-white border-[#00529c]/20 shadow-[0_10px_18px_rgba(0,82,156,0.20)]",
+  navy: "bg-sky-700 text-white border-sky-700/20 shadow-[0_10px_18px_rgba(3,105,161,0.20)]",
+  red: "bg-rose-600 text-white border-rose-600/20 shadow-[0_10px_18px_rgba(225,29,72,0.20)]",
+  green: "bg-emerald-600 text-white border-emerald-600/20 shadow-[0_10px_18px_rgba(5,150,105,0.20)]",
 };
 
 type BrimenCustomer = {
@@ -218,6 +233,32 @@ type BorrowedFileRow = {
   borrowerName: string;
   borrowerUsername: string;
   loan?: BrimenLoan;
+};
+
+type CovenanceRecord = {
+  id: string;
+  period: string;
+  accountNumber: string;
+  debtorName: string;
+  realizedDate: string;
+  sphNumber: string;
+  creditApplicationNumber: string;
+  ktpNumber: string;
+  kkNumber: string;
+  skuNibNumber: string;
+  slikOjk: string;
+  updatedAt?: string;
+};
+
+type CovenanceFormState = Pick<CovenanceRecord, "sphNumber" | "creditApplicationNumber" | "ktpNumber" | "kkNumber" | "skuNibNumber" | "slikOjk">;
+
+const emptyCovenanceForm: CovenanceFormState = {
+  sphNumber: "",
+  creditApplicationNumber: "",
+  ktpNumber: "",
+  kkNumber: "",
+  skuNibNumber: "",
+  slikOjk: "",
 };
 
 type BrimenFormState = {
@@ -623,14 +664,15 @@ function SectionHeader({
   icon: React.ElementType;
 }) {
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div className="page-heading flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       <div className="flex items-start gap-3">
-        <div className="mt-1 rounded-md border border-[#f37021]/25 bg-[#f37021]/10 p-2 text-[#00529c] shadow-[0_8px_18px_rgba(243,112,33,0.12)]">
-          <Icon className="h-5 w-5" />
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#00529c] text-white shadow-[inset_0_-3px_0_#f37021,0_8px_18px_rgba(0,82,156,0.16)]">
+          <Icon className="h-5 w-5" strokeWidth={2.25} />
         </div>
-        <div>
-          <h1 className="text-xl font-black tracking-normal text-[#00529c] sm:text-2xl">{title}</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase text-[#f37021]">BRI Tool Workspace</p>
+          <h1 className="mt-0.5 text-xl font-black tracking-normal text-[#004077] sm:text-2xl">{title}</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-5 text-muted-foreground sm:leading-6">{description}</p>
         </div>
       </div>
     </div>
@@ -664,16 +706,16 @@ function MetricCard({
   }[tone];
 
   return (
-    <Card className="bri-card group overflow-hidden border-[#d7e3ef] transition hover:-translate-y-0.5 hover:border-[#00529c]/35">
+    <Card className="bri-card group min-h-[138px] overflow-hidden border-[#d7e3ef] transition hover:-translate-y-0.5 hover:border-[#00529c]/35">
       <div className={cn("h-1 w-full", stripClass)} />
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-muted-foreground">{label}</p>
-            <p className="mt-2 text-xl font-black text-[#0f2942]">{value}</p>
-            {helper ? <p className="mt-1 text-xs text-muted-foreground">{helper}</p> : null}
+      <CardContent className="flex h-[134px] items-stretch p-4">
+        <div className="flex w-full items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
+            <p className="metric-value mt-2 break-words text-xl font-black leading-tight text-[#0f2942]">{value}</p>
+            {helper ? <p className="mt-auto pt-2 text-xs font-medium text-muted-foreground">{helper}</p> : null}
           </div>
-          <div className={cn("rounded-md p-2 transition group-hover:scale-105", toneClass)}>
+          <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-md transition group-hover:scale-105", toneClass)}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
@@ -690,7 +732,7 @@ function TableShell({
   minWidth?: string;
 }) {
   return (
-    <div className="table-scroll bri-card relative isolate z-0 max-h-[70vh] overflow-auto rounded-lg border border-[#d7e3ef] bg-card">
+    <div className="table-scroll bri-card relative isolate z-0 max-h-[68vh] overflow-auto rounded-lg border border-[#cbddeb] bg-card">
       <div className="sticky left-0 top-0 z-20 border-b border-[#d7e3ef] bg-[#f8fbfe] px-3 py-2 text-[11px] font-bold uppercase text-muted-foreground sm:hidden">
         Geser tabel untuk melihat semua kolom
       </div>
@@ -721,14 +763,14 @@ function EmptyState({
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th className="sticky top-0 z-10 whitespace-nowrap border-b border-[#d7e3ef] bg-[#eaf3fb] px-3 py-3 text-left text-xs font-semibold uppercase text-[#004077] shadow-[inset_0_-1px_0_#d7e3ef]">
+    <th className="sticky top-0 z-10 whitespace-nowrap border-b border-[#c9dbea] bg-[#eaf3fb] px-3 py-3.5 text-left text-[11px] font-black uppercase text-[#004077] shadow-[inset_0_-1px_0_#c9dbea]">
       {children}
     </th>
   );
 }
 
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <td className={cn("whitespace-nowrap border-b border-[#e3edf6] px-3 py-3 align-middle", className)}>{children}</td>;
+  return <td className={cn("whitespace-nowrap border-b border-[#e3edf6] px-3 py-3.5 align-middle text-[13px]", className)}>{children}</td>;
 }
 
 type GlobalSearchResult = {
@@ -896,8 +938,8 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   const [favoriteMenus, setFavoriteMenus] = useState<MenuKey[]>(["mantri", "brimen"]);
   const [recentMenus, setRecentMenus] = useState<MenuKey[]>(["dashboard"]);
   const [search, setSearch] = useState("");
-  const [pipelineProduct, setPipelineProduct] = useState("Semua");
-  const [pipelineMantri, setPipelineMantri] = useState("Semua");
+  const deferredSearch = useDeferredValue(search);
+  const [arrearsMantri, setArrearsMantri] = useState("Semua");
   const [ckpnMantri, setCkpnMantri] = useState("Semua");
   const [ckpnProduct, setCkpnProduct] = useState("Semua");
   const [ckpnMovement, setCkpnMovement] = useState("Semua");
@@ -1050,6 +1092,8 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   }, []);
 
   const snapshots = useMemo(() => getSnapshots(selectedMonth), [selectedMonth, loanDataVersion]);
+  const latestLoanPeriod = useMemo(() => months.at(-1)?.value ?? selectedMonth, [loanDataVersion, selectedMonth]);
+  const latestLoanRows = useMemo(() => getSnapshots(latestLoanPeriod), [latestLoanPeriod, loanDataVersion]);
   const summary = useMemo(() => getSummary(selectedMonth), [selectedMonth, loanDataVersion]);
   const mantriNames = useMemo(
     () => [...new Set(loanSnapshots.map((item) => item.mantri))].sort(),
@@ -1059,7 +1103,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     return new Map(brimenRows.map((row) => [normalizeAccount(row.accountNumber), row]));
   }, [brimenRows]);
   const filteredNominatif = useMemo(() => {
-    const lower = search.toLowerCase();
+    const lower = deferredSearch.toLowerCase();
     return snapshots.filter(
       (item) =>
         (item.accountNumber.toLowerCase().includes(lower) ||
@@ -1074,7 +1118,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
           (globalQuality === "NPL" && isNpl(classifyQuality(item, selectedMonth))) ||
           classifyQuality(item, selectedMonth) === globalQuality),
     );
-  }, [globalMantri, globalProduct, globalQuality, search, selectedMonth, snapshots]);
+  }, [deferredSearch, globalMantri, globalProduct, globalQuality, selectedMonth, snapshots]);
 
   const globalResults = useMemo<GlobalSearchResult[]>(() => {
     const query = globalSearch.trim().toLowerCase();
@@ -1103,7 +1147,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   }, [brimenRows, globalSearch, snapshots]);
 
   function openMenu(menu: MenuKey) {
-    setActiveMenu(menu);
+    startTransition(() => setActiveMenu(menu));
     setMobileMenuOpen(false);
     setRecentMenus((current) => {
       const next = [menu, ...current.filter((item) => item !== menu)].slice(0, 3);
@@ -1142,7 +1186,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   }
 
   function openMantriTab(tab: MantriViewKey) {
-    setMantriView(tab);
+    startTransition(() => setMantriView(tab));
     openMenu("mantri");
     setActiveControlPanel("none");
   }
@@ -1228,7 +1272,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     { id: "nominatif", label: "Cari Nominatif Nasabah", description: "Buka tabel rekening pinjaman", icon: ClipboardList, action: () => openMantriTab("nominatif") },
     { id: "quality", label: "Lihat Perubahan Kualitas", description: "Upgrade, downgrade, dan tetap", icon: Layers3, action: () => openMantriTab("kualitas") },
     { id: "ckpn", label: "Buka Prognosa CKPN", description: "Simulasi dampak perubahan kolektibilitas", icon: PieChartIcon, action: () => openMantriTab("ckpn") },
-    { id: "pipeline", label: "Buka Pipeline Suplesi", description: "Nasabah potensial untuk suplesi", icon: Gauge, action: () => openMantriTab("pipeline") },
+    { id: "tunggakan", label: "Buka Data Tunggakan", description: "Tunggakan pokok dan bunga dari LW321 terbaru", icon: AlertTriangle, action: () => openMantriTab("tunggakan") },
     { id: "di319", label: "Buka Monitoring Simpanan", description: "Blokiran simpanan dan setoran akhir periode", icon: Banknote, action: () => openMantriTab("di319") },
     { id: "wa-campaign", label: "Buka WA Blast", description: "Penawaran suplesi dan pengingat jatuh tempo", icon: MessageCircle, action: () => openMantriTab("wa") },
     { id: "covenance", label: "Buka Covenance Day", description: "Agenda dan tenggat operasional", icon: CalendarDays, action: () => { setBrimenFilter("Covenance Day"); openMenu("brimen"); setActiveControlPanel("none"); } },
@@ -1275,22 +1319,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       />
     ),
     realisasi: <RealisasiView month={selectedMonth} mantriFilter={globalMantri} />,
-    pipeline: (
-      <PipelineView
-        month={selectedMonth}
-        product={globalProduct === "Semua" ? pipelineProduct : globalProduct}
-        setProduct={(value) => {
-          setPipelineProduct(value);
-          setGlobalProduct(value);
-        }}
-        mantri={globalMantri === "Semua" ? pipelineMantri : globalMantri}
-        setMantri={(value) => {
-          setPipelineMantri(value);
-          setGlobalMantri(value);
-        }}
-        mantriNames={mantriNames}
-      />
-    ),
+    tunggakan: <TunggakanView month={selectedMonth} mantri={arrearsMantri} setMantri={setArrearsMantri} mantriNames={mantriNames} branchCode={activeBranchCode} branchName={activeBranchName} />,
     ckpn: (
       <CkpnView
         month={selectedMonth}
@@ -1344,7 +1373,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     mantri: (
       <DashboardMantriView
         activeTab={mantriView}
-        setActiveTab={setMantriView}
+        setActiveTab={(value) => startTransition(() => setMantriView(value))}
         month={selectedMonth}
       >
         {mantriContent}
@@ -1360,6 +1389,8 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         filter={brimenFilter}
         setFilter={setBrimenFilter}
         creditAccounts={snapshots.map((item) => item.accountNumber)}
+        latestLoanPeriod={latestLoanPeriod}
+        latestLoanRows={latestLoanRows}
         loans={brimenLoans}
         formMode={brimenFormMode}
         setFormMode={setBrimenFormMode}
@@ -1418,6 +1449,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
               </div>
             </div>
             <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+              <p className="px-3 pb-2 pt-1 text-[10px] font-black uppercase text-slate-400">Navigasi Utama</p>
               {visibleSidebarItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -1425,13 +1457,18 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                     <button
                       onClick={() => openMenu(item.key)}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-md border border-transparent px-3 py-2.5 pr-11 text-left text-sm font-medium transition-colors",
+                        "group relative flex w-full items-center gap-3 overflow-hidden rounded-md border border-transparent px-2.5 py-2.5 pr-11 text-left text-sm font-semibold transition-colors before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-transparent",
                         activeMenu === item.key
-                          ? "border-[#f37021]/50 bg-[#00529c] text-white shadow-sm"
-                          : "text-muted-foreground hover:border-[#d7e3ef] hover:bg-[#00529c]/10 hover:text-[#00529c]",
+                          ? "border-[#00529c] bg-[#00529c] text-white shadow-[0_8px_18px_rgba(0,82,156,0.18)] before:bg-[#f37021]"
+                          : "text-muted-foreground hover:border-[#d7e3ef] hover:bg-[#eef6fc] hover:text-[#00529c]",
                       )}
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className={cn(
+                        "grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors",
+                        activeMenu === item.key ? "bg-white/12 text-white" : "bg-[#eaf3fb] text-[#00529c] group-hover:bg-white",
+                      )}>
+                        <Icon className="h-4 w-4" />
+                      </span>
                       <span>{item.label}</span>
                     </button>
                     <button
@@ -1453,8 +1490,12 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                 );
               })}
             </nav>
-            <div className="border-t border-[#d7e3ef] p-4 text-xs text-muted-foreground">
-              Data upload kredit terhubung dengan database BRIMEN lokal.
+            <div className="border-t border-[#d7e3ef] bg-[#f8fbfe] p-4 text-xs text-muted-foreground">
+              <div className="mb-2 flex items-center gap-2 font-bold text-emerald-700">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]" />
+                Sistem terhubung
+              </div>
+              Data kredit dan database BRIMEN unit kerja siap digunakan.
             </div>
           </div>
         </aside>
@@ -1468,7 +1509,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         ) : null}
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-40 border-b border-[#d7e3ef] bg-white/95 px-3 py-2 backdrop-blur md:px-6">
+          <header className="sticky top-0 z-40 border-b border-[#cbddeb] bg-white/95 px-3 py-2 shadow-[0_4px_18px_rgba(0,55,105,0.055)] backdrop-blur-md md:px-6">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <Button
@@ -1485,8 +1526,8 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                     <span className="rounded-md bg-[#00529c] px-2 py-1 text-xs font-black text-white">{activeBranchCode}</span>
                     <span className="truncate text-sm font-black text-[#00529c]">{activeBranchName}</span>
                   </div>
-                  <p className="hidden text-xs font-medium text-[#f37021] md:block">Menu aktif</p>
-                  <p className="truncate text-xs font-semibold text-muted-foreground md:text-base md:text-[#00529c]">{currentTitle?.label}</p>
+                  <p className="hidden text-[10px] font-black uppercase text-[#f37021] md:block">Ruang Kerja Aktif</p>
+                  <p className="truncate text-xs font-semibold text-muted-foreground md:text-base md:font-black md:text-[#004077]">{currentTitle?.label}</p>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
@@ -1688,15 +1729,16 @@ function DashboardApp({ session }: { session: DashboardSession }) {
             </> : null}
           </header>
 
-          <div className="w-full min-w-0 space-y-6 p-4 md:p-6 xl:p-8">
+          <div className="app-content mx-auto w-full max-w-[1920px] min-w-0 space-y-6 p-3 sm:p-4 md:p-6 xl:p-7 2xl:p-8">
             {content}
-            <footer className="rounded-lg border border-[#d7e3ef] bg-white px-4 py-3 text-xs text-muted-foreground shadow-[0_10px_22px_rgba(0,55,105,0.05)]">
+            <footer className="surface-panel overflow-hidden px-4 py-3 text-xs text-muted-foreground">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <span className="font-black text-[#00529c]">BRI Tool</span>
                   <span className="mx-2 text-[#f37021]">|</span>
                   <span>8014 - Unit Greenvilage</span>
                 </div>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Data unit kerja aktif</span>
               </div>
             </footer>
           </div>
@@ -1914,8 +1956,8 @@ function PresentationMode({ month, summary, brimenRows, role, onClose }: { month
           {slide === 3 ? <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[
             { label: "New SML", value: `${summary.newSml.length} rekening`, helper: formatCurrency(summary.newSml.reduce((total, item) => total + item.outstanding, 0)), color: "border-[#f37021] bg-[#fff7ed] text-[#b54b00]" },
             { label: "New NPL", value: `${summary.newNpl.length} rekening`, helper: formatCurrency(summary.newNpl.reduce((total, item) => total + item.outstanding, 0)), color: "border-rose-500 bg-rose-50 text-rose-700" },
-            { label: "Tambahan CKPN", value: formatCurrency(ckpnAddition), helper: `${ckpnRows.filter((item) => item.ckpnImpact > 0).length} rekening memburuk`, color: "border-rose-500 bg-white text-rose-700" },
-            { label: "Pemulihan CKPN", value: formatCurrency(ckpnRecovery), helper: `${ckpnRows.filter((item) => item.ckpnImpact < 0).length} rekening membaik`, color: "border-emerald-500 bg-white text-emerald-700" },
+            { label: "Downgrade CKPN", value: formatCurrency(ckpnAddition), helper: `${ckpnRows.filter((item) => item.ckpnImpact > 0).length} rekening memburuk`, color: "border-rose-500 bg-white text-rose-700" },
+            { label: "Upgrade CKPN", value: formatCurrency(ckpnRecovery), helper: `${ckpnRows.filter((item) => item.ckpnImpact < 0).length} rekening membaik`, color: "border-emerald-500 bg-white text-emerald-700" },
           ].map((item) => <div key={item.label} className={cn("rounded-lg border-t-4 p-5 shadow-[0_10px_24px_rgba(0,55,105,0.07)]", item.color)}><p className="text-xs font-black uppercase">{item.label}</p><p className="mt-3 break-words text-2xl font-black">{item.value}</p><p className="mt-2 text-xs font-semibold opacity-75">{item.helper}</p></div>)}<div className="sm:col-span-2 lg:col-span-4 rounded-lg bg-[#00529c] p-5 text-white"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase text-white/65">Net Dampak CKPN</p><p className="mt-1 text-3xl font-black">{formatCurrency(summary.totalCkpn)}</p></div><p className="max-w-xl text-sm leading-6 text-white/75">Nilai positif menunjukkan tambahan biaya risiko. Prioritaskan rekening dengan penurunan kualitas dan outstanding terbesar.</p></div></div></div> : null}
 
           {slide === 4 ? <div className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]"><div className="rounded-lg border border-[#d7e3ef] bg-white p-5"><div className="flex items-end justify-between"><div><p className="text-xs font-black uppercase text-[#f37021]">Realisasi Bulan Ini</p><p className="mt-2 text-3xl font-black text-[#00529c]">{formatCurrency(realisasiTotal)}</p></div><p className="font-bold text-muted-foreground">{realisasiCount} rekening</p></div><div className="mt-6 space-y-4">{realisasiRows.map((item) => <div key={item.mantri}><div className="flex justify-between gap-4 text-sm"><span className="font-bold text-[#004077]">{item.mantri}</span><span className="font-black text-[#00529c]">{formatCurrency(item.total)}</span></div><div className="mt-1.5 h-3 rounded-full bg-[#eaf3fb]"><div className="h-3 rounded-full bg-[linear-gradient(90deg,#00529c,#2f80c2)]" style={{ width: `${Math.max(5, (item.total / maxRealisasi) * 100)}%` }} /></div></div>)}</div></div><div className="flex flex-col justify-between rounded-lg border border-emerald-200 bg-emerald-50 p-6"><div><p className="text-xs font-black uppercase text-emerald-700">Pipeline Suplesi</p><p className="mt-3 text-4xl font-black text-emerald-800">{pipelineRows.length}</p><p className="mt-1 font-bold text-emerald-700">rekening potensial</p></div><div className="mt-6 rounded-md bg-white/75 p-4"><p className="text-xs font-bold uppercase text-emerald-700">Potensi Sisa Plafond</p><p className="mt-2 text-2xl font-black text-emerald-800">{formatCurrency(pipelinePotential)}</p></div></div></div> : null}
@@ -2485,7 +2527,7 @@ function DashboardMantriView({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const longPressTriggered = useRef(false);
   const rekap = getMantriRecap(month);
-  const pipeline = getPipelineRows(month);
+  const arrears = getArrearsRows(month);
   const realisasi = getRealisasiRows(month);
   const topOs = [...rekap].sort((a, b) => b.totalOs - a.totalOs)[0];
   const topRisk = [...rekap]
@@ -2503,7 +2545,7 @@ function DashboardMantriView({
     kualitas: "Perbandingan kolektibilitas bulan lalu dengan posisi terbaru.",
     rekap: `${rekap.length} mantri dengan rincian OS dan delta pencapaian.`,
     realisasi: `${realisasi.reduce((total, item) => total + item.count, 0)} rekening realisasi bulan ini.`,
-    pipeline: `${pipeline.length} rekening siap dipertimbangkan untuk suplesi.`,
+    tunggakan: `${arrears.length} rekening memiliki tunggakan pokok atau bunga pada posisi terbaru.`,
     ckpn: `${getPrognosaCkpnRows(month).filter((item) => item.targetCollectibility).length} rekening telah diisi kolektibilitas prognosanya.`,
     di319: "Monitoring pinjaman tanpa blokiran dan setoran yang menggunakan dana blokiran.",
     wa: "Kampanye penawaran suplesi dan pengingat setoran menjelang jatuh tempo.",
@@ -2537,11 +2579,11 @@ function DashboardMantriView({
       action: "realisasi",
     },
     {
-      label: "Pipeline",
-      value: `${pipeline.length} rekening`,
-      helper: "siap ditawari",
+      label: "Tunggakan",
+      value: `${arrears.length} rekening`,
+      helper: formatCurrency(arrears.reduce((total, item) => total + item.totalArrears, 0)),
       tone: "warning",
-      action: "pipeline",
+      action: "tunggakan",
     },
   ];
 
@@ -2574,7 +2616,7 @@ function DashboardMantriView({
     <div className="space-y-5">
       <SectionHeader
         title="Dashboard Pinjaman"
-        description="Seluruh data kredit, kualitas, realisasi, pipeline, CKPN, dan monitoring simpanan."
+        description="Seluruh data kredit, kualitas, realisasi, tunggakan, CKPN, dan monitoring simpanan."
         icon={UsersRound}
       />
       <div className={cn("flex gap-2 overflow-x-auto pb-1 min-[520px]:grid min-[520px]:grid-cols-2 min-[520px]:overflow-visible min-[520px]:pb-0 md:grid-cols-4", mobilePinjamanOpen ? "hidden sm:grid" : "flex min-[520px]:grid")}>
@@ -2584,7 +2626,7 @@ function DashboardMantriView({
             type="button"
             onClick={() => openPinjamanTab(item.action)}
             className={cn(
-              "min-w-[138px] rounded-lg border bg-white px-3 py-2 text-left shadow-[0_8px_18px_rgba(0,55,105,0.06)] transition hover:-translate-y-0.5 sm:min-w-0",
+              "bri-card relative min-w-[138px] overflow-hidden rounded-lg border bg-white px-3 py-2.5 text-left transition hover:-translate-y-0.5 sm:min-w-0",
               item.tone === "danger"
                 ? "border-rose-200"
                 : item.tone === "success"
@@ -2600,11 +2642,11 @@ function DashboardMantriView({
           </button>
         ))}
       </div>
-      <div className={cn("bri-card rounded-lg border border-[#d7e3ef] bg-white p-3", mobilePinjamanOpen ? "hidden sm:block" : "block")}>
+      <div className={cn("surface-panel p-3 sm:p-4", mobilePinjamanOpen ? "hidden sm:block" : "block")}>
         <div className="mb-2 rounded-md border border-[#d7e3ef] bg-[#fffaf6] px-3 py-2 sm:hidden">
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama Pinjaman</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-9">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-9">
         {mantriTabs.map((item) => {
           const Icon = item.icon;
           return (
@@ -2619,10 +2661,10 @@ function DashboardMantriView({
                 setMobilePreview(item.key);
               }}
               className={cn(
-                "group flex min-h-[82px] flex-col items-center justify-center gap-1 rounded-lg border bg-white px-2 py-2 text-center text-[9px] font-black uppercase leading-tight tracking-normal transition active:scale-[0.99] sm:h-[88px] sm:min-h-[88px] sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-2 sm:text-xs sm:font-bold sm:normal-case",
+                "group flex min-h-[82px] flex-col items-center justify-center gap-1 rounded-lg border bg-white px-2 py-2 text-center text-[9px] font-black uppercase leading-tight tracking-normal transition active:scale-[0.99] sm:h-[86px] sm:min-h-[86px] sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-2 sm:text-xs sm:font-bold sm:normal-case",
                 activeTab === item.key
-                  ? "border-[#f37021]/50 bg-[#f7fbff] text-[#00529c] sm:bg-[#00529c] sm:text-white"
-                  : "border-[#d7e3ef] text-[#004077] shadow-[0_8px_18px_rgba(0,55,105,0.07)] hover:border-[#00529c]/35 hover:bg-[#f7fbff] sm:text-muted-foreground sm:shadow-none sm:hover:bg-[#00529c]/10 sm:hover:text-[#00529c]",
+                  ? "border-[#f37021] bg-[#f7fbff] text-[#00529c] shadow-[inset_0_-3px_0_#f37021,0_8px_18px_rgba(0,82,156,0.10)] sm:bg-[#00529c] sm:text-white"
+                  : "border-[#d7e3ef] text-[#004077] shadow-[0_6px_14px_rgba(0,55,105,0.045)] hover:-translate-y-0.5 hover:border-[#00529c]/35 hover:bg-[#f7fbff] sm:text-muted-foreground sm:hover:bg-[#00529c]/10 sm:hover:text-[#00529c]",
               )}
             >
               <span
@@ -2833,7 +2875,7 @@ function RingkasanView({
       <div className="grid gap-3 md:grid-cols-3">
         <Button variant="outline" onClick={() => onOpenMenu("kualitas")}>Lihat Nominatif Kualitas</Button>
         <Button variant="outline" onClick={() => onOpenMenu("ckpn")}>Lihat Dampak CKPN</Button>
-        <Button variant="outline" onClick={() => onOpenMenu("pipeline")}>Lihat Pipeline Suplesi</Button>
+        <Button variant="outline" onClick={() => onOpenMenu("tunggakan")}>Lihat Data Tunggakan</Button>
       </div>
     </div>
   );
@@ -3055,27 +3097,28 @@ function KualitasView({
   mantriFilter: string;
   productFilter: string;
 }) {
+  const [qualitySearch, setQualitySearch] = useState("");
+  const [savingResolution, setSavingResolution] = useState("");
+  const [resolutionMessage, setResolutionMessage] = useState("");
+  const [resolutionVersion, setResolutionVersion] = useState(0);
+  const deferredQualitySearch = useDeferredValue(qualitySearch);
   const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-kualitas-v2", kualitasColumnOptions);
   const visible = (key: string) => visibleColumns.includes(key);
   const sourceMonth = month;
   const comparisonMonth = getPreviousMonth(sourceMonth);
-  const actualCkpnByAccount = new Map(
-    getCkpnRows(sourceMonth).map((item) => [normalizeAccount(item.accountNumber), item]),
-  );
-  const latestRows = getSnapshots(sourceMonth)
-    .map((item) => {
+  const baseRows = useMemo(() => {
+    const actualCkpnByAccount = new Map(
+      getCkpnRows(sourceMonth).map((item) => [normalizeAccount(item.accountNumber), item]),
+    );
+    const latestRows = getSnapshots(sourceMonth).map((item) => {
       const latestBucket = classifyQuality(item, sourceMonth);
-      const previous = comparisonMonth
-        ? getCompareSnapshot(comparisonMonth, item.accountNumber)
-        : undefined;
-      const previousBucket =
-        previous && comparisonMonth ? classifyQuality(previous, comparisonMonth) : "-";
+      const previous = comparisonMonth ? getCompareSnapshot(comparisonMonth, item.accountNumber) : undefined;
+      const previousBucket = previous && comparisonMonth ? classifyQuality(previous, comparisonMonth) : "-";
       const movement = getQualityMovement(previousBucket, latestBucket);
       return { ...item, latestBucket, previousBucket, movement, missingLatest: false };
     });
-  const latestAccounts = new Set(latestRows.map((item) => normalizeAccount(item.accountNumber)));
-  const missingRows = comparisonMonth
-    ? getSnapshots(comparisonMonth)
+    const latestAccounts = new Set(latestRows.map((item) => normalizeAccount(item.accountNumber)));
+    const missingRows = comparisonMonth ? getSnapshots(comparisonMonth)
       .filter((item) => !latestAccounts.has(normalizeAccount(item.accountNumber)))
       .map((item) => {
         const previousBucket = classifyQuality(item, comparisonMonth);
@@ -3088,21 +3131,37 @@ function KualitasView({
           movement: getQualityMovement(previousBucket, latestBucket),
           missingLatest: true,
         };
-      })
-    : [];
-  const rows = [...latestRows, ...missingRows]
-    .map((item) => ({ ...item, actualCkpn: actualCkpnByAccount.get(normalizeAccount(item.accountNumber)) }))
-    .filter((item) => {
+      }) : [];
+    return [...latestRows, ...missingRows]
+      .map((item) => ({ ...item, actualCkpn: actualCkpnByAccount.get(normalizeAccount(item.accountNumber)) }));
+  }, [comparisonMonth, resolutionVersion, sourceMonth]);
+  const rows = useMemo(() => {
+    const searchValue = deferredQualitySearch.trim().toLowerCase();
+    return baseRows.filter((item) => {
+      const searchMatch = !searchValue ||
+        item.accountNumber.toLowerCase().includes(searchValue) ||
+        item.debtorName.toLowerCase().includes(searchValue) ||
+        item.mantri.toLowerCase().includes(searchValue) ||
+        item.description.toLowerCase().includes(searchValue) ||
+        getProductType(item.description, item.loanType).toLowerCase().includes(searchValue);
       const qualityMatch =
         qualityFilter === "Semua" ||
         (qualityFilter === "PL" && item.previousBucket !== "-" && isPl(item.previousBucket)) ||
         (qualityFilter === "NPL" && item.previousBucket !== "-" && isNpl(item.previousBucket)) ||
         item.previousBucket === qualityFilter;
-      return qualityMatch &&
+      return searchMatch && qualityMatch &&
         (mantriFilter === "Semua" || item.mantri === mantriFilter) &&
         (productFilter === "Semua" || getProductType(item.description, item.loanType) === productFilter);
     });
-  const pagination = useTablePagination(rows, `${sourceMonth}-${qualityFilter}-${mantriFilter}-${productFilter}-${rows.length}`);
+  }, [baseRows, deferredQualitySearch, mantriFilter, productFilter, qualityFilter]);
+  const filteredOutstanding = rows.reduce((total, item) => total + item.outstanding, 0);
+  const filteredDebtors = new Set(
+    rows.map((item) => item.cif?.trim() || item.debtorName.trim().toUpperCase() || normalizeAccount(item.accountNumber)),
+  ).size;
+  const filteredCkpn = rows.reduce((total, item) => total + (item.actualCkpn?.ckpnImpact ?? 0), 0);
+  const filteredCkpnAddition = rows.reduce((total, item) => total + Math.max(0, item.actualCkpn?.ckpnImpact ?? 0), 0);
+  const filteredCkpnRecovery = rows.reduce((total, item) => total + Math.abs(Math.min(0, item.actualCkpn?.ckpnImpact ?? 0)), 0);
+  const pagination = useTablePagination(rows, `${sourceMonth}-${qualityFilter}-${mantriFilter}-${productFilter}-${deferredQualitySearch}-${rows.length}-${resolutionVersion}`);
   const exportHeaders = kualitasColumnOptions.filter((column) => visible(column.key)).map((column) => column.label);
   const exportData = rows.map((item) => {
     const values: Record<string, string | number> = {
@@ -3121,6 +3180,27 @@ function KualitasView({
     return visibleColumns.map((key) => values[key]);
   });
 
+  async function saveMissingResolution(accountNumber: string, status: "PH" | "Lunas") {
+    setSavingResolution(accountNumber);
+    setResolutionMessage("");
+    try {
+      const response = await fetch("/api/loan-resolutions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountNumber, period: sourceMonth, status }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Status rekening belum dapat disimpan.");
+      setMissingLoanResolution(sourceMonth, accountNumber, status);
+      setResolutionVersion((current) => current + 1);
+      setResolutionMessage(`Status rekening ${accountNumber} berhasil disimpan sebagai ${status}.`);
+    } catch (error) {
+      setResolutionMessage(error instanceof Error ? error.message : "Status rekening belum dapat disimpan.");
+    } finally {
+      setSavingResolution("");
+    }
+  }
+
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -3128,7 +3208,7 @@ function KualitasView({
         description={`Perubahan status dihitung dari kolektibilitas bulan lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke posisi terbaru ${getMonthLabel(sourceMonth)}.`}
         icon={Layers3}
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="grid gap-3 md:grid-cols-[minmax(240px,0.8fr)_minmax(280px,1fr)_auto] md:items-end">
         <Field label={`Filter Kolektibilitas Bulan Lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)}`}>
           <Select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="min-w-64">
             {qualityOptions.map((option) => (
@@ -3136,12 +3216,48 @@ function KualitasView({
             ))}
           </Select>
         </Field>
-        <TableTools
-          columns={kualitasColumnOptions}
-          visibleColumns={visibleColumns}
-          onToggleColumn={toggleColumn}
-          onExportCsv={() => exportRowsCsv(`nominatif-kualitas-${sourceMonth}.csv`, exportHeaders, exportData)}
-          onExportXls={() => exportRowsXls(`nominatif-kualitas-${sourceMonth}.xls`, exportHeaders, exportData)}
+        <Field label="Cari Nominatif Kualitas">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#00529c]" />
+            <Input
+              value={qualitySearch}
+              onChange={(event) => setQualitySearch(event.target.value)}
+              placeholder="No rekening, nama, mantri, atau produk..."
+              className="pl-9"
+            />
+          </div>
+        </Field>
+        <div className="md:justify-self-end">
+          <TableTools
+            columns={kualitasColumnOptions}
+            visibleColumns={visibleColumns}
+            onToggleColumn={toggleColumn}
+            onExportCsv={() => exportRowsCsv(`nominatif-kualitas-${sourceMonth}.csv`, exportHeaders, exportData)}
+            onExportXls={() => exportRowsXls(`nominatif-kualitas-${sourceMonth}.xls`, exportHeaders, exportData)}
+          />
+        </div>
+      </div>
+      {resolutionMessage ? <p className="rounded-md border border-[#b8d8f2] bg-[#eef7ff] px-3 py-2 text-sm font-semibold text-[#00529c]">{resolutionMessage}</p> : null}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricCard
+          label="Jumlah OS"
+          value={formatCurrency(filteredOutstanding)}
+          helper={`${qualityFilter === "Semua" ? "Semua kolektibilitas bulan lalu" : `Kolektibilitas ${qualityFilter} bulan lalu`}`}
+          icon={Banknote}
+        />
+        <MetricCard
+          label="Jumlah Debitur"
+          value={formatNumber(filteredDebtors)}
+          helper={`${formatNumber(rows.length)} rekening sesuai filter`}
+          tone="warning"
+          icon={UsersRound}
+        />
+        <MetricCard
+          label="Biaya CKPN"
+          value={formatCurrency(filteredCkpn)}
+          helper={`Downgrade ${formatCurrency(filteredCkpnAddition)} | Upgrade ${formatCurrency(filteredCkpnRecovery)}`}
+          tone={filteredCkpn > 0 ? "danger" : "success"}
+          icon={PieChartIcon}
         />
       </div>
       <TableShell>
@@ -3167,7 +3283,22 @@ function KualitasView({
               {visible("outstanding") ? <Td>{formatCurrency(item.outstanding)}</Td> : null}
               {visible("nextPayment") ? <Td>{dateLabel(item.nextPaymentDate)}</Td> : null}
               {visible("previous") ? <Td>{typeof item.previousBucket === "string" && item.previousBucket !== "-" ? <QualityBadge bucket={item.previousBucket} /> : "-"}</Td> : null}
-              {visible("latest") ? <Td><QualityBadge bucket={item.latestBucket} /></Td> : null}
+              {visible("latest") ? (
+                <Td>
+                  {item.missingLatest && item.previousBucket === "Macet" ? (
+                    <Select
+                      value={item.actualCkpn?.resolutionStatus ?? ""}
+                      disabled={savingResolution === item.accountNumber}
+                      onChange={(event) => event.target.value && saveMissingResolution(item.accountNumber, event.target.value as "PH" | "Lunas")}
+                      className="h-9 min-w-36"
+                    >
+                      <option value="">Pilih PH / Lunas</option>
+                      <option value="PH">PH</option>
+                      <option value="Lunas">Lunas</option>
+                    </Select>
+                  ) : <QualityBadge bucket={item.latestBucket} />}
+                </Td>
+              ) : null}
               {visible("movement") ? <Td><MovementBadge movement={item.movement} /></Td> : null}
               {visible("deltaCkpn") ? (
                 <Td className={cn("font-bold", (item.actualCkpn?.ckpnImpact ?? 0) > 0 ? "text-rose-700" : (item.actualCkpn?.ckpnImpact ?? 0) < 0 ? "text-emerald-700" : "text-slate-600")}>
@@ -3292,6 +3423,7 @@ function PortfolioDeltaCell({ delta }: { delta: PortfolioPosition }) {
 
 function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; mantriFilter: string; onSelectMantri: (mantri: string) => void }) {
   const rows = getMantriRecap(month).filter((row) => mantriFilter === "Semua" || row.mantri === mantriFilter);
+  const monthlyCkpnDeltaByMantri = getMonthlyCkpnDeltaByMantri(month);
   const previousMonth = getPreviousMonth(month);
   const yearEndComparisonMonth = getYearEndComparisonMonth(month);
   const previousRecap = new Map(
@@ -3304,6 +3436,7 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
     const previous = getPortfolioPosition(previousRecap.get(row.mantri));
     return {
       ...row,
+      monthlyCkpnDelta: monthlyCkpnDeltaByMantri.get(row.mantri) ?? { amount: 0, accountCount: 0 },
       latest,
       yearEnd,
       previous,
@@ -3325,7 +3458,7 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
     <div className="space-y-4">
       <SectionHeader
         title="Rekap Pencapaian Mantri"
-        description="Perbandingan posisi OS, SML, dan NPL pada akhir tahun, bulan lalu, dan kondisi terbaru per mantri."
+        description="Perbandingan posisi OS, SML, dan NPL serta Delta CKPN yang terjadi pada bulan berjalan per mantri."
         icon={BarChart3}
       />
       <div className="flex flex-wrap gap-2 text-xs">
@@ -3333,7 +3466,7 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
         <Badge variant="outline">MTD: dibanding akhir bulan lalu</Badge>
         <Badge variant="secondary">Posisi akhir tahun: {getMonthLabel(yearEndComparisonMonth)}</Badge>
       </div>
-      <TableShell minWidth="min-w-[1260px]">
+      <TableShell minWidth="min-w-[1480px]">
         <thead>
           <tr>
             <Th>Mantri</Th>
@@ -3342,6 +3475,7 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
             <Th>Posisi Terbaru</Th>
             <Th>Delta YTD</Th>
             <Th>Delta MTD</Th>
+            <Th>Delta CKPN Bulan Berjalan</Th>
           </tr>
         </thead>
         <tbody>
@@ -3357,6 +3491,20 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
               <Td><PositionCell position={row.latest} /></Td>
               <Td><PortfolioDeltaCell delta={row.ytd} /></Td>
               <Td><PortfolioDeltaCell delta={row.mtd} /></Td>
+              <Td>
+                <div className={cn(
+                  "min-w-[190px] rounded-md border px-3 py-2.5",
+                  row.monthlyCkpnDelta.amount > 0
+                    ? "border-rose-200 bg-rose-50"
+                    : row.monthlyCkpnDelta.amount < 0
+                      ? "border-emerald-200 bg-emerald-50"
+                      : "border-slate-200 bg-slate-50",
+                )}>
+                  <p className={cn("text-[10px] font-black uppercase", row.monthlyCkpnDelta.amount > 0 ? "text-rose-700" : row.monthlyCkpnDelta.amount < 0 ? "text-emerald-700" : "text-slate-600")}>Delta Bulan Berjalan</p>
+                  <p className={cn("metric-value mt-1 text-base font-black", row.monthlyCkpnDelta.amount > 0 ? "text-rose-800" : row.monthlyCkpnDelta.amount < 0 ? "text-emerald-800" : "text-slate-700")}>{formatCurrency(row.monthlyCkpnDelta.amount)}</p>
+                  <p className="mt-1 text-xs font-semibold text-muted-foreground">{formatNumber(row.monthlyCkpnDelta.accountCount)} rekening bergerak</p>
+                </div>
+              </Td>
             </tr>
           ))}
         </tbody>
@@ -3446,102 +3594,593 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
   );
 }
 
-function PipelineView({
+type ArrearsBand = "Semua" | "Tucil";
+
+type WarningLetterRecord = {
+  id: string;
+  period: string;
+  accountNumber: string;
+  debtorName: string;
+  level: "SP1" | "SP2" | "SP3";
+  letterNumber: string;
+  issuedAt: string;
+  dueDate: string;
+  recipientAddress: string;
+  penalty: number;
+  signerName: string;
+  signerTitle: string;
+  status: string;
+};
+
+type WarningLetterForm = Omit<WarningLetterRecord, "id" | "period" | "accountNumber" | "debtorName" | "status">;
+
+function TunggakanView({
   month,
-  product,
-  setProduct,
   mantri,
   setMantri,
   mantriNames,
+  branchCode,
+  branchName,
 }: {
   month: MonthKey;
-  product: string;
-  setProduct: (value: string) => void;
   mantri: string;
   setMantri: (value: string) => void;
   mantriNames: string[];
+  branchCode: string;
+  branchName: string;
 }) {
-  const rows = getPipelineRows(month).filter((item) => {
-    const productMatch = product === "Semua" || item.productType === product;
-    const mantriMatch = mantri === "Semua" || item.pnPengelolaSinglePn === mantri;
-    return productMatch && mantriMatch;
+  const [arrearsBand, setArrearsBand] = useState<ArrearsBand>("Semua");
+  const [warningLetters, setWarningLetters] = useState<WarningLetterRecord[]>([]);
+  const [warningCustomer, setWarningCustomer] = useState<ReturnType<typeof getArrearsRows>[number]>();
+  const [completedWarning, setCompletedWarning] = useState<WarningLetterRecord>();
+  const [warningMessage, setWarningMessage] = useState("");
+  const [savingWarning, setSavingWarning] = useState(false);
+  const [warningForm, setWarningForm] = useState<WarningLetterForm>({
+    level: "SP1",
+    letterNumber: "",
+    issuedAt: new Date().toISOString().slice(0, 10),
+    dueDate: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),
+    recipientAddress: "di Tempat",
+    penalty: 0,
+    signerName: "",
+    signerTitle: "Kepala Unit",
   });
-  const pagination = useTablePagination(rows, `${month}-${product}-${mantri}-${rows.length}`);
+  const allRows = getArrearsRows(month);
+  const matchesBand = (total: number, band: ArrearsBand) =>
+    band === "Semua" ||
+    (band === "Tucil" && total < 100_000);
+  const segmentedRows = allRows.filter((item) => matchesBand(item.totalArrears, arrearsBand));
+  const rows = segmentedRows.filter((item) => mantri === "Semua" || item.mantri === mantri);
+  const mantriRecap = [...segmentedRows.reduce((map, item) => {
+    const current = map.get(item.mantri) ?? { mantri: item.mantri, debtors: new Set<string>(), outstanding: 0 };
+    current.debtors.add(item.cif?.trim() || item.debtorName.trim().toUpperCase() || item.accountNumber);
+    current.outstanding += item.outstanding;
+    map.set(item.mantri, current);
+    return map;
+  }, new Map<string, { mantri: string; debtors: Set<string>; outstanding: number }>()).values()]
+    .map((item) => ({ ...item, debtorCount: item.debtors.size }))
+    .sort((a, b) => b.outstanding - a.outstanding);
+  const pagination = useTablePagination(rows, `${month}-${arrearsBand}-${mantri}-${rows.length}`);
+  const exportHeaders = ["No Rekening", "Nama Debitur", "Mantri", "Outstanding", "Kolektibilitas", "Total Tunggakan (Pokok + Bunga)"];
+  const exportData = rows.map((item) => [
+    item.accountNumber,
+    item.debtorName,
+    item.mantri,
+    item.outstanding,
+    classifyQuality(item, month),
+    item.totalArrears,
+  ]);
+  const warningHistoryByAccount = new Map<string, WarningLetterRecord[]>();
+  warningLetters.forEach((item) => {
+    const key = normalizeAccount(item.accountNumber);
+    warningHistoryByAccount.set(key, [...(warningHistoryByAccount.get(key) ?? []), item]);
+  });
+  const warningLevelOrder = { SP1: 1, SP2: 2, SP3: 3 } as const;
+  warningHistoryByAccount.forEach((items) => items.sort((a, b) => warningLevelOrder[a.level] - warningLevelOrder[b.level]));
 
-  function sendWhatsappOffer(item: (typeof rows)[number]) {
-    const accountDigits = item.accountNumber.replace(/\D/g, "");
-    const whatsappNumber = `62812${accountDigits.slice(-8).padStart(8, "0")}`;
-    const message = [
-      `Yth. Bapak/Ibu ${item.debtorName},`,
-      "",
-      `Kami dari BRI Unit Greenvilage ingin menyampaikan penawaran suplesi pinjaman ${item.productType} untuk mendukung kebutuhan usaha Bapak/Ibu.`,
-      "",
-      `Silakan menghubungi Mantri ${item.pnPengelolaSinglePn} untuk informasi dan simulasi lebih lanjut.`,
-      "",
-      "Terima kasih.",
-    ].join("\n");
-    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  useEffect(() => {
+    fetch(`/api/warning-letters?period=${encodeURIComponent(month)}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => { if (payload.ok) setWarningLetters(payload.data ?? []); })
+      .catch(() => undefined);
+  }, [month]);
+
+  function getWarningLevelLabel(level: WarningLetterForm["level"]) {
+    return level === "SP1" ? "Surat Peringatan Pertama" : level === "SP2" ? "Surat Peringatan Kedua" : "Surat Peringatan Ketiga";
+  }
+
+  function buildWarningForm(customer: ReturnType<typeof getArrearsRows>[number], level: WarningLetterForm["level"]): WarningLetterForm {
+    const existing = warningLetters.find((item) => normalizeAccount(item.accountNumber) === normalizeAccount(customer.accountNumber) && item.level === level);
+    if (existing) return {
+      level,
+      letterNumber: existing.letterNumber,
+      issuedAt: existing.issuedAt,
+      dueDate: existing.dueDate,
+      recipientAddress: "di Tempat",
+      penalty: existing.penalty,
+      signerName: existing.signerName,
+      signerTitle: existing.signerTitle,
+    };
+    const issueDate = new Date();
+    const monthCode = new Intl.DateTimeFormat("id-ID", { month: "short" }).format(issueDate).replace(".", "");
+    const sequence = String(warningLetters.length + 1).padStart(4, "0");
+    return {
+      level,
+      letterNumber: `${sequence}/${level}/${branchCode}/${monthCode}/${issueDate.getFullYear()}`,
+      issuedAt: issueDate.toISOString().slice(0, 10),
+      dueDate: new Date(issueDate.getTime() + 3 * 86_400_000).toISOString().slice(0, 10),
+      recipientAddress: "di Tempat",
+      penalty: 0,
+      signerName: "",
+      signerTitle: "Kepala Unit",
+    };
+  }
+
+  function openWarningDialog(customer: ReturnType<typeof getArrearsRows>[number]) {
+    const issuedLevels = new Set(warningLetters.filter((item) => normalizeAccount(item.accountNumber) === normalizeAccount(customer.accountNumber)).map((item) => item.level));
+    const nextLevel: WarningLetterForm["level"] = !issuedLevels.has("SP1") ? "SP1" : !issuedLevels.has("SP2") ? "SP2" : "SP3";
+    setWarningCustomer(customer);
+    setCompletedWarning(undefined);
+    setWarningForm(buildWarningForm(customer, nextLevel));
+    setWarningMessage("");
+  }
+
+  function printWarningLetter(printWindow: Window, record: WarningLetterRecord, customer: ReturnType<typeof getArrearsRows>[number]) {
+    const escapeHtml = (value: unknown) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const dateText = (value: string) => new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+    const briLogoUrl = `${window.location.origin}/brand/bri-symbol.svg`;
+    const previousLevels = record.level === "SP1" ? [] : record.level === "SP2" ? ["SP1"] : ["SP1", "SP2"];
+    const previousReferences = previousLevels.map((level) => warningLetters.find((item) => normalizeAccount(item.accountNumber) === normalizeAccount(customer.accountNumber) && item.level === level)).filter(Boolean) as WarningLetterRecord[];
+    const totalObligation = customer.totalArrears + record.penalty;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(record.level)} - ${escapeHtml(customer.debtorName)}</title><style>
+      @page{size:A4;margin:18mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111;font-size:12px;line-height:1.45;margin:0}.head{display:grid;grid-template-columns:82px 1fr 82px;align-items:center;border-bottom:3px solid #00529c;padding-bottom:14px}.logo{display:grid;place-items:center;width:64px;height:58px}.logo img{display:block;width:58px;height:58px;object-fit:contain}.bank{text-align:center}.bank h1{font-size:17px;margin:0;color:#003f78}.bank p{margin:4px 0 0;font-weight:700;color:#00529c}.meta{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:22px}.meta table td{padding:2px 5px;vertical-align:top}.meta strong,.recipient strong{color:#00529c}.recipient{padding-left:20px}.refs{margin:25px 0 14px;padding-bottom:12px;border-bottom:1px solid #777}.body-copy{text-align:justify}.loan{width:100%;border-collapse:collapse;margin:18px 0;background:#fff}.loan th,.loan td{border:1px solid #222;background:#fff;padding:9px 6px;text-align:center;color:#111;font-size:12px;font-weight:700}.loan th{font-size:11px;font-weight:800}.sign{margin-top:28px;margin-left:auto;width:310px;text-align:center}.sign-space{height:72px}.small{font-size:10px}.copies{margin-top:45px}.print-actions{position:fixed;right:18px;top:18px}@media print{.print-actions{display:none}}
+    </style></head><body><button class="print-actions" onclick="window.print()">Cetak / Simpan PDF</button>
+      <header class="head"><div class="logo"><img id="bri-letter-logo" src="${escapeHtml(briLogoUrl)}" alt="Logo BRI"></div><div class="bank"><h1>PT. BANK RAKYAT INDONESIA (PERSERO) TBK.</h1><p>${escapeHtml(branchName.toUpperCase())}</p></div><div></div></header>
+      <section class="meta"><table><tr><td>Nomor</td><td>:</td><td><strong>${escapeHtml(record.letterNumber)}</strong></td></tr><tr><td>Perihal</td><td>:</td><td><strong>${escapeHtml(getWarningLevelLabel(record.level))}</strong></td></tr></table><div class="recipient"><div>Kab. Karawang, ${dateText(record.issuedAt)}</div><br><div>Kepada Yth.</div><strong>${escapeHtml(customer.debtorName)}</strong><div>di Tempat</div></div></section>
+      <section class="refs"><div>1. Surat Pengakuan Hutang / Perjanjian Kredit Nomor ${escapeHtml(customer.accountNumber)}</div>${previousReferences.map((item, index) => `<div>${index + 2}. ${escapeHtml(getWarningLevelLabel(item.level))} Nomor ${escapeHtml(item.letterNumber)} tanggal ${dateText(item.issuedAt)}</div>`).join("")}</section>
+      <p class="body-copy">Menunjuk surat perjanjian kredit${previousReferences.length ? " dan surat peringatan sebelumnya" : ""}, kami sampaikan bahwa sampai dengan saat ini Saudara masih belum menyelesaikan kewajiban di BRI. Posisi kewajiban kredit Saudara tanggal ${dateText(record.issuedAt)} adalah sebagai berikut:</p>
+      <table class="loan"><thead><tr><th>Nomor Rekening</th><th>Outstanding</th><th>Tunggakan Pokok</th><th>Tunggakan Bunga</th><th>Penalty</th><th>Total Kewajiban Tunggakan</th></tr></thead><tbody><tr><td>${escapeHtml(customer.accountNumber)}</td><td>${formatCurrency(customer.outstanding)}</td><td>${formatCurrency(customer.principalArrears)}</td><td>${formatCurrency(customer.interestArrears)}</td><td>${formatCurrency(record.penalty)}</td><td>${formatCurrency(totalObligation)}</td></tr></tbody></table>
+      <p class="small">Catatan: Kewajiban tersebut di atas belum termasuk bunga berjalan dan biaya lain yang akan timbul kemudian hari.</p>
+      <p class="body-copy">Sehubungan dengan hal tersebut di atas, maka diharapkan Saudara segera menyelesaikan kewajiban tunggakan tersebut selambat-lambatnya tanggal <strong>${dateText(record.dueDate)}</strong>.</p><p>Demikian, atas perhatian dan kerja samanya kami sampaikan terima kasih.</p>
+      <section class="sign"><strong>PT. BANK RAKYAT INDONESIA (Persero) Tbk.<br>${escapeHtml(branchName.toUpperCase())}</strong><div class="sign-space"></div><u><strong>${escapeHtml(record.signerName || "Nama Pejabat")}</strong></u><div>${escapeHtml(record.signerTitle)}</div></section>
+      <section class="copies small"><strong>Tindasan:</strong><div>- Arsip</div><div>- Branch Office</div></section>
+    </body></html>`;
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    const logo = printWindow.document.getElementById("bri-letter-logo") as HTMLImageElement | null;
+    let printed = false;
+    const triggerPrint = () => {
+      if (printed) return;
+      printed = true;
+      printWindow.focus();
+      printWindow.print();
+    };
+    if (logo && !logo.complete) {
+      logo.addEventListener("load", triggerPrint, { once: true });
+      logo.addEventListener("error", triggerPrint, { once: true });
+    } else {
+      setTimeout(triggerPrint, 200);
+    }
+    setTimeout(triggerPrint, 1200);
+  }
+
+  async function loadBriLogoPng() {
+    const response = await fetch("/brand/bri-symbol.svg");
+    if (!response.ok) throw new Error("Logo BRI belum dapat dimuat.");
+    const svg = await response.text();
+    const objectUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 720;
+          canvas.height = 720;
+          const context = canvas.getContext("2d");
+          if (!context) {
+            reject(new Error("Logo BRI belum dapat diproses."));
+            return;
+          }
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/png"));
+        };
+        image.onerror = () => reject(new Error("Logo BRI belum dapat diproses."));
+        image.src = objectUrl;
+      });
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  async function exportWarningPdf(record: WarningLetterRecord, customer: ReturnType<typeof getArrearsRows>[number]) {
+    const { jsPDF } = await import("jspdf");
+    const briLogo = await loadBriLogoPng();
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const dateText = (value: string) => new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+    const accountHistory = warningHistoryByAccount.get(normalizeAccount(customer.accountNumber)) ?? [];
+    const priorHistory = accountHistory.filter((item) => warningLevelOrder[item.level] < warningLevelOrder[record.level]);
+    const pageWidth = 210;
+    const left = 18;
+    const contentWidth = 174;
+    let y = 16;
+
+    pdf.addImage(briLogo, "PNG", left, y, 20, 20);
+    pdf.setTextColor(15, 41, 66);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(13);
+    pdf.text("PT. BANK RAKYAT INDONESIA (PERSERO) TBK.", pageWidth / 2 + 8, y + 7, { align: "center" });
+    pdf.setFontSize(10);
+    pdf.text(branchName.toUpperCase(), pageWidth / 2 + 8, y + 14, { align: "center" });
+    pdf.setDrawColor(0, 82, 156);
+    pdf.setLineWidth(0.8);
+    pdf.line(left, y + 23, pageWidth - left, y + 23);
+    y += 32;
+
+    pdf.setTextColor(20, 20, 20);
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    pdf.text("Nomor", left, y);
+    pdf.text(":", left + 19, y);
+    pdf.setTextColor(0, 82, 156);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(record.letterNumber, left + 23, y);
+    pdf.setTextColor(20, 20, 20);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Kab. Karawang, ${dateText(record.issuedAt)}`, 118, y);
+    y += 6;
+    pdf.text("Perihal", left, y);
+    pdf.text(":", left + 19, y);
+    pdf.setTextColor(0, 82, 156);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(getWarningLevelLabel(record.level), left + 23, y);
+    pdf.setTextColor(20, 20, 20);
+    pdf.setFont("helvetica", "normal");
+    pdf.text("Kepada Yth.", 118, y);
+    y += 5;
+    pdf.setTextColor(0, 82, 156);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(customer.debtorName, 118, y);
+    pdf.setTextColor(20, 20, 20);
+    pdf.setFont("helvetica", "normal");
+    const addressLines = ["di Tempat"];
+    pdf.text(addressLines, 118, y + 4);
+    y = Math.max(y + 6 + addressLines.length * 4, 72);
+
+    pdf.setFontSize(8.5);
+    pdf.text(`1. Surat Pengakuan Hutang / Perjanjian Kredit Nomor ${customer.accountNumber}`, left, y);
+    priorHistory.forEach((item, index) => {
+      y += 5;
+      pdf.text(`${index + 2}. ${getWarningLevelLabel(item.level)} Nomor ${item.letterNumber} tanggal ${dateText(item.issuedAt)}`, left, y);
+    });
+    y += 4;
+    pdf.setDrawColor(140, 140, 140);
+    pdf.setLineWidth(0.25);
+    pdf.line(left, y, pageWidth - left, y);
+    y += 8;
+
+    const opening = `Menunjuk surat perjanjian kredit${priorHistory.length ? " dan surat peringatan sebelumnya" : ""}, kami sampaikan bahwa sampai dengan saat ini Saudara masih belum menyelesaikan kewajiban di BRI. Posisi kewajiban kredit Saudara tanggal ${dateText(record.issuedAt)} adalah sebagai berikut:`;
+    const openingLines = pdf.splitTextToSize(opening, contentWidth) as string[];
+    pdf.setFontSize(9);
+    pdf.text(openingLines, left, y, { align: "justify", maxWidth: contentWidth });
+    y += openingLines.length * 4.5 + 6;
+
+    const headers = ["Nomor Rekening", "Outstanding", "Tunggakan Pokok", "Tunggakan Bunga", "Penalty", "Total Kewajiban"];
+    const values = [customer.accountNumber, formatCurrency(customer.outstanding), formatCurrency(customer.principalArrears), formatCurrency(customer.interestArrears), formatCurrency(record.penalty), formatCurrency(customer.totalArrears + record.penalty)];
+    const widths = [34, 30, 28, 28, 24, 30];
+    let x = left;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    headers.forEach((header, index) => {
+      pdf.setDrawColor(30, 30, 30);
+      pdf.rect(x, y, widths[index], 13, "S");
+      pdf.setTextColor(15, 15, 15);
+      const lines = pdf.splitTextToSize(header, widths[index] - 2) as string[];
+      pdf.text(lines, x + widths[index] / 2, y + 5, { align: "center" });
+      x += widths[index];
+    });
+    y += 13;
+    x = left;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7.8);
+    values.forEach((value, index) => {
+      pdf.setDrawColor(30, 30, 30);
+      pdf.rect(x, y, widths[index], 12, "S");
+      pdf.setTextColor(15, 15, 15);
+      const lines = pdf.splitTextToSize(value, widths[index] - 2) as string[];
+      pdf.text(lines, x + widths[index] / 2, y + 5, { align: "center" });
+      x += widths[index];
+    });
+    pdf.setTextColor(20, 20, 20);
+    y += 18;
+    pdf.setFontSize(7.5);
+    pdf.text("Catatan: Kewajiban tersebut belum termasuk bunga berjalan dan biaya lain yang akan timbul kemudian hari.", left, y);
+    y += 9;
+    pdf.setFontSize(9);
+    const closing = `Sehubungan dengan hal tersebut di atas, maka diharapkan Saudara segera menyelesaikan kewajiban tunggakan tersebut selambat-lambatnya tanggal ${dateText(record.dueDate)}.\n\nDemikian, atas perhatian dan kerja samanya kami sampaikan terima kasih.`;
+    const closingLines = pdf.splitTextToSize(closing, contentWidth) as string[];
+    pdf.text(closingLines, left, y, { maxWidth: contentWidth });
+    y += closingLines.length * 4.5 + 12;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9);
+    pdf.text("PT. BANK RAKYAT INDONESIA (Persero) Tbk.", 147, y, { align: "center" });
+    pdf.text(branchName.toUpperCase(), 147, y + 5, { align: "center" });
+    y += 28;
+    pdf.text(record.signerName || "Nama Pejabat", 147, y, { align: "center" });
+    pdf.setDrawColor(20, 20, 20);
+    pdf.line(125, y + 1, 169, y + 1);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(record.signerTitle, 147, y + 6, { align: "center" });
+    pdf.setFontSize(7.5);
+    pdf.text(["Tindasan:", "- Arsip", "- Branch Office"], left, Math.max(y + 12, 267));
+
+    const safeAccount = customer.accountNumber.replace(/[^a-zA-Z0-9]/g, "");
+    pdf.save(`${record.level}-${safeAccount}-${record.issuedAt}.pdf`);
+  }
+
+  async function processWarning() {
+    if (!warningCustomer) return;
+    setSavingWarning(true);
+    setWarningMessage("");
+    try {
+      const response = await fetch("/api/warning-letters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...warningForm, status: "Dikirim", period: month, accountNumber: warningCustomer.accountNumber, debtorName: warningCustomer.debtorName }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Surat peringatan belum dapat disimpan.");
+      const saved = payload.data as WarningLetterRecord;
+      setWarningLetters((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      setCompletedWarning(saved);
+      try {
+        await exportWarningPdf(saved, warningCustomer);
+        setWarningMessage(`${saved.level} berhasil dikirim, disimpan, dan diekspor ke PDF.`);
+      } catch (exportError) {
+        setWarningMessage(`${saved.level} berhasil dikirim dan disimpan, tetapi PDF belum dapat diekspor. ${exportError instanceof Error ? exportError.message : ""}`.trim());
+      }
+    } catch (error) {
+      setWarningMessage(error instanceof Error ? error.message : "Surat peringatan belum dapat disimpan.");
+    } finally {
+      setSavingWarning(false);
+    }
+  }
+
+  function printCompletedWarning() {
+    if (!warningCustomer || !completedWarning) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setWarningMessage("Jendela print diblokir browser. Izinkan pop-up lalu coba kembali.");
+      return;
+    }
+    printWarningLetter(printWindow, completedWarning, warningCustomer);
   }
 
   return (
     <div className="space-y-4">
       <SectionHeader
-        title="Pipeline Suplesi"
-        description="Nasabah Kupedes/Kupedes Rakyat dari LW321 bulan lalu yang lancar, belum restruk, dan baki debet di bawah 50% plafond."
-        icon={Gauge}
+        title="Tunggakan"
+        description={`Rekening dengan tunggakan pokok atau bunga berdasarkan LW321 terbaru posisi ${getMonthLabel(month)}.`}
+        icon={AlertTriangle}
       />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Potensi Pipeline" value={`${rows.length} rekening`} helper={formatCurrency(rows.reduce((sum, item) => sum + item.remainingPlafond, 0))} tone="success" icon={UsersRound} />
-        <div>
-          <p className="mb-1 text-sm text-muted-foreground">Tipe Pinjaman</p>
-          <Select value={product} onChange={(event) => setProduct(event.target.value)}>
-            {["Semua", "Kupedes", "Kupedes Rakyat"].map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </Select>
+      <section className="surface-panel p-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase text-[#f37021]">Rekap Mantri Menunggak</p>
+            <h2 className="mt-1 font-black text-[#004077]">Debitur dan OS per Mantri</h2>
+          </div>
+          <Badge variant="outline">{formatNumber(mantriRecap.length)} mantri</Badge>
         </div>
-        <div>
-          <p className="mb-1 text-sm text-muted-foreground">Mantri</p>
-          <Select value={mantri} onChange={(event) => setMantri(event.target.value)}>
-            {["Semua", ...mantriNames].map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </Select>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {mantriRecap.map((item, index) => (
+            <button
+              key={item.mantri}
+              type="button"
+              onClick={() => setMantri(mantri === item.mantri ? "Semua" : item.mantri)}
+              className={cn(
+                "relative overflow-hidden rounded-lg border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md",
+                mantri === item.mantri ? "border-[#f37021] bg-[#fff7ed] shadow-[inset_0_-3px_0_#f37021]" : "border-[#d7e3ef] bg-white hover:border-[#00529c]/35",
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-black text-[#00529c]">{item.mantri || "Mantri belum terisi"}</p>
+                  <p className="mt-1 text-xs font-semibold text-muted-foreground">{formatNumber(item.debtorCount)} debitur menunggak</p>
+                </div>
+                <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-md text-xs font-black text-white", index === 0 ? "bg-[#f37021]" : "bg-[#00529c]")}>{index + 1}</span>
+              </div>
+              <div className="mt-3 border-t border-[#e3edf6] pt-2">
+                <p className="text-[10px] font-black uppercase text-muted-foreground">Outstanding</p>
+                <p className="metric-value mt-1 font-black text-[#0f2942]">{formatCurrency(item.outstanding)}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+      <div className="surface-panel flex flex-col gap-3 p-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Field label="Filter Tunggakan">
+            <Select value={arrearsBand} onChange={(event) => setArrearsBand(event.target.value as ArrearsBand)} className="min-w-48">
+              <option value="Semua">Semua Tunggakan</option>
+              <option value="Tucil">Tucil (di bawah Rp100 ribu)</option>
+            </Select>
+          </Field>
+          <Field label="Filter Mantri">
+            <Select value={mantri} onChange={(event) => setMantri(event.target.value)} className="min-w-64">
+              {["Semua", ...mantriNames].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Mantri" : item}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => exportRowsCsv(`tunggakan-${month}.csv`, exportHeaders, exportData)} disabled={!rows.length}>
+            <Download className="h-4 w-4" />CSV
+          </Button>
+          <Button type="button" variant="outline" onClick={() => exportRowsXls(`tunggakan-${month}.xls`, exportHeaders, exportData)} disabled={!rows.length}>
+            <FileSpreadsheet className="h-4 w-4" />Excel
+          </Button>
         </div>
       </div>
-      <TableShell minWidth="min-w-[1050px]">
-        <thead>
-          <tr>
-            <Th>No Rekening</Th>
-            <Th>Nama Debitur</Th>
-            <Th>Tipe Pinjaman</Th>
-            <Th>Mantri</Th>
-            <Th>Plafond</Th>
-            <Th>Outstanding</Th>
-            <Th>Kolektibilitas</Th>
-            <Th>Aksi</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {pagination.pagedRows.map((item) => (
-            <tr key={item.accountNumber}>
-              <Td className="font-medium">{item.accountNumber}</Td>
-              <Td>{item.debtorName}</Td>
-              <Td>{item.productType}</Td>
-              <Td>{item.pnPengelolaSinglePn}</Td>
-              <Td>{formatCurrency(item.plafond)}</Td>
-              <Td>{formatCurrency(item.outstanding)}</Td>
-              <Td><QualityBadge bucket={classifyQuality(item, item.sourceMonth)} /></Td>
-              <Td>
-                <Button type="button" size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => sendWhatsappOffer(item)}>
-                  <MessageCircle className="mr-2 h-4 w-4" />Kirim Penawaran
-                </Button>
-              </Td>
-            </tr>
-          ))}
-        </tbody>
-      </TableShell>
-      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+      {rows.length ? (
+        <>
+          <TableShell minWidth="min-w-[1240px]">
+            <thead>
+              <tr>
+                <Th>No Rekening</Th>
+                <Th>Nama Debitur</Th>
+                <Th>Mantri</Th>
+                <Th>Outstanding</Th>
+                <Th>Kolektibilitas</Th>
+                <Th>Total Tunggakan (Pokok + Bunga)</Th>
+                <Th>Status SP</Th>
+                <Th>Aksi</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {pagination.pagedRows.map((item) => {
+                const warningHistory = warningHistoryByAccount.get(normalizeAccount(item.accountNumber)) ?? [];
+                return (
+                  <tr key={item.accountNumber}>
+                    <Td className="font-medium">{item.accountNumber}</Td>
+                    <Td>{item.debtorName}</Td>
+                    <Td>{item.mantri}</Td>
+                    <Td>{formatCurrency(item.outstanding)}</Td>
+                    <Td><QualityBadge bucket={classifyQuality(item, month)} /></Td>
+                    <Td className="font-black text-rose-700">{formatCurrency(item.totalArrears)}</Td>
+                    <Td>
+                      {warningHistory.length ? (
+                        <div className="flex min-w-max flex-col gap-1.5">
+                          {warningHistory.map((record) => (
+                            <div key={record.id} className="flex items-center gap-2">
+                              <Badge className={cn("w-11 justify-center border-0", record.level === "SP3" ? "bg-rose-100 text-rose-700" : record.level === "SP2" ? "bg-amber-100 text-amber-800" : "bg-sky-100 text-sky-700")}>{record.level}</Badge>
+                              <span className="text-[10px] font-bold text-muted-foreground">{safeDateLabel(record.issuedAt)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <Badge variant="outline">Belum Ada SP</Badge>}
+                    </Td>
+                    <Td>
+                      <Button type="button" size="sm" variant="outline" className="whitespace-nowrap border-[#00529c]/25 text-[#00529c]" onClick={() => openWarningDialog(item)}>
+                        <FileText className="h-4 w-4" />Kirim SP
+                      </Button>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </TableShell>
+          <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+        </>
+      ) : (
+        <EmptyState
+          title="Belum ada data tunggakan"
+          description="Tidak ada tunggakan untuk filter terpilih. Jika LW321 belum memuat tunggakan pokok dan bunga, unggah ulang file terbaru setelah kolom tersedia."
+          icon={AlertTriangle}
+        />
+      )}
+      {warningCustomer ? (
+        <OverlayShell
+          title={`Kirim Surat Peringatan - ${warningCustomer.debtorName}`}
+          description="Pilih tingkat peringatan, lengkapi tujuan surat, lalu simpan dan cetak dokumen."
+          icon={FileText}
+          onClose={() => setWarningCustomer(undefined)}
+        >
+          <div className="max-h-[75vh] space-y-4 overflow-y-auto p-4 sm:p-5">
+            <section className="rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] p-3">
+              <div className="grid gap-3 text-sm sm:grid-cols-3">
+                <div><p className="text-[10px] font-black uppercase text-muted-foreground">No Rekening</p><p className="mt-1 font-mono font-bold text-[#004077]">{warningCustomer.accountNumber}</p></div>
+                <div><p className="text-[10px] font-black uppercase text-muted-foreground">Outstanding</p><p className="mt-1 font-black text-[#004077]">{formatCurrency(warningCustomer.outstanding)}</p></div>
+                <div><p className="text-[10px] font-black uppercase text-muted-foreground">Total Tunggakan</p><p className="mt-1 font-black text-rose-700">{formatCurrency(warningCustomer.totalArrears)}</p></div>
+              </div>
+            </section>
+            {(warningHistoryByAccount.get(normalizeAccount(warningCustomer.accountNumber)) ?? []).length ? (
+              <section className="rounded-lg border border-[#d7e3ef] bg-white p-3">
+                <p className="text-[10px] font-black uppercase text-[#00529c]">Riwayat Surat Peringatan</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(warningHistoryByAccount.get(normalizeAccount(warningCustomer.accountNumber)) ?? []).map((record) => (
+                    <button key={record.id} type="button" onClick={() => { setWarningForm(buildWarningForm(warningCustomer, record.level)); setCompletedWarning(undefined); setWarningMessage(""); }} className="flex items-center gap-2 rounded-md border border-[#d7e3ef] bg-[#f8fbfe] px-2.5 py-2 text-left hover:border-[#00529c]/40">
+                      <Badge className={cn("border-0", record.level === "SP3" ? "bg-rose-100 text-rose-700" : record.level === "SP2" ? "bg-amber-100 text-amber-800" : "bg-sky-100 text-sky-700")}>{record.level}</Badge>
+                      <span><span className="block text-xs font-bold text-[#004077]">{safeDateLabel(record.issuedAt)}</span><span className="block max-w-40 truncate text-[9px] text-muted-foreground">{record.letterNumber}</span></span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <div>
+              <p className="mb-2 text-xs font-black uppercase text-[#00529c]">Tingkat Surat Peringatan</p>
+              <div className="grid grid-cols-3 gap-2">
+                {(["SP1", "SP2", "SP3"] as const).map((level) => {
+                  const existing = warningLetters.find((item) => normalizeAccount(item.accountNumber) === normalizeAccount(warningCustomer.accountNumber) && item.level === level);
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => { setWarningForm(buildWarningForm(warningCustomer, level)); setCompletedWarning(undefined); setWarningMessage(""); }}
+                      className={cn(
+                        "rounded-lg border px-3 py-3 text-left transition",
+                        warningForm.level === level ? "border-[#00529c] bg-[#eaf3fb] shadow-[inset_0_-3px_0_#f37021]" : "border-[#d7e3ef] bg-white hover:border-[#00529c]/40",
+                      )}
+                    >
+                      <span className="block font-black text-[#00529c]">{level}</span>
+                      <span className="mt-1 block text-[10px] font-semibold text-muted-foreground">{existing ? `Tersimpan ${safeDateLabel(existing.issuedAt)}` : "Belum dibuat"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Nomor Surat">
+                <Input value={warningForm.letterNumber} onChange={(event) => setWarningForm((current) => ({ ...current, letterNumber: event.target.value }))} placeholder="0001/SP1/8014/Jul/2026" />
+              </Field>
+              <Field label="Penalty">
+                <Input type="number" min="0" value={warningForm.penalty} onChange={(event) => setWarningForm((current) => ({ ...current, penalty: Number(event.target.value) || 0 }))} />
+              </Field>
+              <Field label="Tanggal Surat">
+                <Input type="date" value={warningForm.issuedAt} onChange={(event) => setWarningForm((current) => ({ ...current, issuedAt: event.target.value }))} />
+              </Field>
+              <Field label="Batas Pembayaran">
+                <Input type="date" value={warningForm.dueDate} onChange={(event) => setWarningForm((current) => ({ ...current, dueDate: event.target.value }))} />
+              </Field>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Nama Penandatangan">
+                <Input value={warningForm.signerName} onChange={(event) => setWarningForm((current) => ({ ...current, signerName: event.target.value }))} placeholder="Nama Kepala Unit/Pejabat" />
+              </Field>
+              <Field label="Jabatan">
+                <Input value={warningForm.signerTitle} onChange={(event) => setWarningForm((current) => ({ ...current, signerTitle: event.target.value }))} placeholder="Kepala Unit" />
+              </Field>
+            </div>
+            {warningMessage ? <p className={cn("rounded-md px-3 py-2 text-sm font-bold", warningMessage.includes("berhasil") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>{warningMessage}</p> : null}
+            <div className="flex flex-col-reverse gap-2 border-t border-[#d7e3ef] pt-4 sm:flex-row sm:flex-wrap sm:justify-end">
+              {completedWarning ? (
+                <>
+                  <Button type="button" variant="outline" onClick={printCompletedWarning} className="border-[#00529c]/25 text-[#00529c]">
+                    <Printer className="h-4 w-4" />Print
+                  </Button>
+                  <Button type="button" onClick={() => setWarningCustomer(undefined)} className="bg-[#00529c] text-white hover:bg-[#004077]">
+                    <Check className="h-4 w-4" />Selesai
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button type="button" variant="outline" onClick={() => setWarningCustomer(undefined)}>Batal</Button>
+                  <Button
+                    type="button"
+                    onClick={processWarning}
+                    disabled={savingWarning || !warningForm.letterNumber.trim() || !warningForm.issuedAt || !warningForm.dueDate || !warningForm.signerName.trim()}
+                    className="bg-[#00529c] text-white hover:bg-[#004077]"
+                  >
+                    <Send className="h-4 w-4" />{savingWarning ? "Memproses & Export PDF..." : "Kirim & Simpan"}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </OverlayShell>
+      ) : null}
     </div>
   );
 }
@@ -3996,8 +4635,8 @@ function CkpnView({
         icon={PieChartIcon}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Tambahan CKPN" value={formatCurrency(tambahan)} tone="danger" icon={ArrowUpRight} />
-        <MetricCard label="Pemulihan CKPN" value={formatCurrency(pemulihan)} tone="success" icon={ArrowDownRight} />
+        <MetricCard label="Downgrade CKPN" value={formatCurrency(tambahan)} tone="danger" icon={ArrowUpRight} />
+        <MetricCard label="Upgrade CKPN" value={formatCurrency(pemulihan)} tone="success" icon={ArrowDownRight} />
         <MetricCard label="Net Dampak CKPN" value={formatCurrency(net)} tone={net >= 0 ? "danger" : "success"} icon={PieChartIcon} />
         <MetricCard label="Prognosa Terisi" value={`${filledRows.length} rekening`} helper={`dari ${rows.length} rekening`} icon={UsersRound} />
       </div>
@@ -4139,6 +4778,8 @@ function BrimenView({
   filter,
   setFilter,
   creditAccounts,
+  latestLoanPeriod,
+  latestLoanRows,
   loans,
   formMode,
   setFormMode,
@@ -4162,6 +4803,8 @@ function BrimenView({
   filter: string;
   setFilter: (value: string) => void;
   creditAccounts: string[];
+  latestLoanPeriod: MonthKey;
+  latestLoanRows: LoanSnapshot[];
   loans: BrimenLoan[];
   formMode: BrimenFormMode;
   setFormMode: (value: BrimenFormMode) => void;
@@ -4187,6 +4830,20 @@ function BrimenView({
   const operationalLongPressTriggered = useRef(false);
   const [quickDocFilter, setQuickDocFilter] = useState("Semua");
   const [initialProcess, setInitialProcess] = useState<BrimenOperationType | null>(null);
+  const [covenanceRecords, setCovenanceRecords] = useState<CovenanceRecord[]>([]);
+  const [covenanceDateFrom, setCovenanceDateFrom] = useState("");
+  const [covenanceDateTo, setCovenanceDateTo] = useState("");
+  const [covenanceSelected, setCovenanceSelected] = useState<(LoanSnapshot & { record?: CovenanceRecord; dataStatus: "Lengkap" | "Belum Lengkap" })>();
+  const [covenanceMode, setCovenanceMode] = useState<"detail" | "edit">();
+  const [covenanceForm, setCovenanceForm] = useState<CovenanceFormState>(emptyCovenanceForm);
+  const [covenanceMessage, setCovenanceMessage] = useState("");
+  const [savingCovenance, setSavingCovenance] = useState(false);
+  useEffect(() => {
+    fetch("/api/covenance", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => { if (payload.ok) setCovenanceRecords(payload.data ?? []); })
+      .catch(() => undefined);
+  }, [latestLoanPeriod]);
   const creditAccountSet = useMemo(
     () => new Set(creditAccounts.map((account) => normalizeAccount(account))),
     [creditAccounts],
@@ -4297,60 +4954,26 @@ function BrimenView({
   });
   const readyProcessRows = archivedActiveRows;
   const incompleteRows = rows.filter(needsBrimenCompletion);
-  const addDays = (value: string, days: number) => {
-    const date = new Date(`${value.slice(0, 10)}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-    date.setDate(date.getDate() + days);
-    return date.toISOString().slice(0, 10);
-  };
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const covenantRows = [
-    ...borrowedLoans.map((loan) => ({
-      id: `loan-${loan.id}`,
-      accountNumber: loan.accountNumber,
-      customerName: loan.customerName,
-      agenda: "Pengembalian Berkas",
-      dueDate: addDays(loan.loanDate, 3),
-      source: "Peminjaman",
-      target: "Dipinjam",
-      note: `Dipinjam oleh ${loan.borrowerName}`,
-    })),
-    ...unarchivedActiveRows.map((item) => ({
-      id: `archive-${item.id}`,
-      accountNumber: item.accountNumber,
-      customerName: item.name,
-      agenda: "Arsipkan Berkas Aktif",
-      dueDate: addDays(item.realizationDate, 7),
-      source: "BRIMEN",
-      target: "Belum Arsip",
-      note: "No BRIMEN berkas belum tersedia",
-    })),
-    ...incompleteRows
-      .filter((item) => Boolean(item.brimenBerkas?.trim()))
-      .map((item) => ({
-        id: `complete-${item.id}`,
-        accountNumber: item.accountNumber,
-        customerName: item.name,
-        agenda: "Lengkapi Data Arsip",
-        dueDate: addDays(item.realizationDate, 10),
-        source: "BRIMEN",
-        target: "Semua",
-        note: "Alamat atau data jaminan perlu dilengkapi",
-      })),
-  ]
+  const covenanceRecordMap = new Map(covenanceRecords.map((item) => [`${normalizeAccount(item.accountNumber)}|${item.realizedDate}`, item]));
+  const isCovenanceComplete = (record?: CovenanceRecord | CovenanceFormState) => Boolean(record && [
+    record.sphNumber,
+    record.creditApplicationNumber,
+    record.ktpNumber,
+    record.kkNumber,
+    record.skuNibNumber,
+    record.slikOjk,
+  ].every((value) => value.trim()));
+  const covenantRows = latestLoanRows
     .map((item) => {
-      const daysLate = Math.floor((new Date(`${todayIso}T00:00:00`).getTime() - new Date(`${item.dueDate}T00:00:00`).getTime()) / 86_400_000);
-      return {
-        ...item,
-        daysLate,
-        status: daysLate > 0 ? "Lewat Tenggat" : daysLate === 0 ? "Hari Ini" : "Terjadwal",
-        priority: daysLate >= 7 ? "Tinggi" : daysLate > 0 ? "Sedang" : "Normal",
-      };
+      const record = covenanceRecordMap.get(`${normalizeAccount(item.accountNumber)}|${item.realizedDate}`);
+      return { ...item, record, dataStatus: isCovenanceComplete(record) ? "Lengkap" as const : "Belum Lengkap" as const };
     })
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    .sort((a, b) => b.realizedDate.localeCompare(a.realizedDate) || a.debtorName.localeCompare(b.debtorName));
   const filteredCovenantRows = covenantRows.filter((item) => {
+    if (covenanceDateFrom && (!item.realizedDate || item.realizedDate < covenanceDateFrom)) return false;
+    if (covenanceDateTo && (!item.realizedDate || item.realizedDate > covenanceDateTo)) return false;
     if (!lower) return true;
-    return [item.accountNumber, item.customerName, item.agenda, item.note].some((value) => String(value ?? "").toLowerCase().includes(lower));
+    return [item.accountNumber, item.debtorName, item.mantri, item.dataStatus].some((value) => String(value ?? "").toLowerCase().includes(lower));
   });
   const covenantTotalPages = Math.max(1, Math.ceil(filteredCovenantRows.length / dataPageSize));
   const safeCovenantPage = Math.min(dataPage, covenantTotalPages);
@@ -4446,17 +5069,20 @@ function BrimenView({
 
     if (showingCovenance) {
       exportFile(
-        "covenance-day-brimen",
-        ["Tanggal Tenggat", "No Rekening", "Nama Nasabah", "Agenda", "Sumber", "Prioritas", "Status", "Keterangan"],
+        `covenance-day-${latestLoanPeriod}`,
+        ["No Rekening", "Nama Debitur", "Plafond", "Tanggal Realisasi", "Status Data", "No SPH", "No Surat Permohonan Kredit", "No KTP", "No KK", "No SKU/NIB", "SLIK OJK Saat Pengajuan"],
         filteredCovenantRows.map((item) => [
-          item.dueDate,
           formatAccountNumber(item.accountNumber),
-          item.customerName,
-          item.agenda,
-          item.source,
-          item.priority,
-          item.status,
-          item.note,
+          item.debtorName,
+          item.plafond,
+          item.realizedDate,
+          item.dataStatus,
+          item.record?.sphNumber,
+          item.record?.creditApplicationNumber,
+          item.record?.ktpNumber,
+          item.record?.kkNumber,
+          item.record?.skuNibNumber,
+          item.record?.slikOjk,
         ]),
       );
       return;
@@ -4518,6 +5144,49 @@ function BrimenView({
         row.updatedAt,
       ]),
     );
+  }
+
+  function openCovenanceForm(item: LoanSnapshot & { record?: CovenanceRecord; dataStatus: "Lengkap" | "Belum Lengkap" }, mode: "detail" | "edit") {
+    setCovenanceSelected(item);
+    setCovenanceMode(mode);
+    setCovenanceForm(item.record ? {
+      sphNumber: item.record.sphNumber,
+      creditApplicationNumber: item.record.creditApplicationNumber,
+      ktpNumber: item.record.ktpNumber,
+      kkNumber: item.record.kkNumber,
+      skuNibNumber: item.record.skuNibNumber,
+      slikOjk: item.record.slikOjk,
+    } : emptyCovenanceForm);
+    setCovenanceMessage("");
+  }
+
+  async function saveCovenance() {
+    if (!covenanceSelected) return;
+    setSavingCovenance(true);
+    setCovenanceMessage("");
+    try {
+      const response = await fetch("/api/covenance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          period: latestLoanPeriod,
+          accountNumber: covenanceSelected.accountNumber,
+          debtorName: covenanceSelected.debtorName,
+          realizedDate: covenanceSelected.realizedDate,
+          ...covenanceForm,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Data Covenance belum dapat disimpan.");
+      const saved = payload.data as CovenanceRecord;
+      setCovenanceRecords((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      setCovenanceSelected((current) => current ? { ...current, record: saved, dataStatus: isCovenanceComplete(saved) ? "Lengkap" : "Belum Lengkap" } : current);
+      setCovenanceMessage(isCovenanceComplete(saved) ? "Seluruh data berhasil disimpan. Status sekarang Lengkap." : "Data berhasil disimpan. Status masih Belum Lengkap karena masih ada field yang kosong.");
+    } catch (error) {
+      setCovenanceMessage(error instanceof Error ? error.message : "Data Covenance belum dapat disimpan.");
+    } finally {
+      setSavingCovenance(false);
+    }
   }
 
   async function submitCustomer() {
@@ -4701,7 +5370,7 @@ function BrimenView({
               if (item.label === "Perlu Lengkap") setQuickDocFilter("Perlu Lengkap");
             }}
             className={cn(
-              "min-w-[138px] rounded-lg border bg-white px-3 py-2 text-left shadow-[0_8px_18px_rgba(0,55,105,0.06)] transition hover:-translate-y-0.5 sm:min-w-0",
+              "bri-card min-w-[138px] rounded-lg border bg-white px-3 py-2.5 text-left transition hover:-translate-y-0.5 sm:min-w-0",
               item.tone === "danger"
                 ? "border-rose-200"
                 : item.tone === "success"
@@ -4718,12 +5387,12 @@ function BrimenView({
         ))}
       </div>
 
-      <div className={cn("rounded-lg border border-[#d7e3ef] bg-white p-3 shadow-[0_12px_28px_rgba(0,55,105,0.07)]", mobileOperationalOpen ? "hidden sm:block" : "block")}>
+      <div className={cn("surface-panel p-3 sm:p-4", mobileOperationalOpen ? "hidden sm:block" : "block")}>
         <div className="mb-2 rounded-md border border-[#d7e3ef] bg-[#fffaf6] px-3 py-2 sm:hidden">
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama</p>
         </div>
-        <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:flex 2xl:flex-wrap">
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
             {tabItems.map((item) => {
               const Icon = item.icon;
               const active = filter === item.value;
@@ -4745,39 +5414,23 @@ function BrimenView({
                     setMobileOperationalPreview({ title: item.label, summary: `${item.count} data tersedia pada menu ini.` });
                   }}
                   className={cn(
-                    "group flex min-h-[78px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border bg-white px-2 py-1.5 text-[9px] font-black uppercase leading-tight tracking-normal text-[#004077] shadow-[0_8px_18px_rgba(0,55,105,0.07)] transition active:scale-[0.99] sm:h-10 sm:min-h-0 sm:w-full sm:flex-row sm:gap-1 sm:rounded-md sm:border sm:px-3 sm:py-0 sm:text-xs sm:font-semibold sm:tracking-[0.06em] sm:shadow-none 2xl:w-auto",
+                    "group flex min-h-[82px] flex-col items-center justify-center gap-1 rounded-lg border bg-white px-2 py-2 text-center text-[9px] font-black uppercase leading-tight tracking-normal transition active:scale-[0.99] sm:h-[86px] sm:min-h-[86px] sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-2 sm:text-xs sm:font-bold sm:normal-case",
                     item.value === "Covenance Day" && "hidden sm:flex",
                     active
-                      ? "border-[#f37021]/50 bg-[#f7fbff] sm:bg-[#00529c] sm:text-white"
-                      : "border-[#d7e3ef] hover:border-[#00529c]/35 hover:bg-[#f7fbff] sm:bg-white sm:text-muted-foreground sm:hover:bg-[#00529c]/10 sm:hover:text-[#00529c]",
+                      ? "border-[#f37021] bg-[#f7fbff] text-[#00529c] shadow-[inset_0_-3px_0_#f37021,0_8px_18px_rgba(0,82,156,0.10)] sm:bg-[#00529c] sm:text-white"
+                      : "border-[#d7e3ef] text-[#004077] shadow-[0_6px_14px_rgba(0,55,105,0.045)] hover:-translate-y-0.5 hover:border-[#00529c]/35 hover:bg-[#f7fbff] sm:text-muted-foreground sm:hover:bg-[#00529c]/10 sm:hover:text-[#00529c]",
                   )}
                 >
                   <span
                     className={cn(
-                      "grid h-10 w-10 place-items-center rounded-xl border shadow-sm transition group-hover:-translate-y-0.5 sm:h-6 sm:w-6 sm:rounded-md sm:border",
-                      active
-                        ? "border-[#00529c]/20 bg-[#00529c] text-white sm:border-white/25 sm:bg-white/15 sm:text-white"
-                        : item.tone === "orange"
-                          ? "border-[#f37021]/20 bg-[#fff7ed] text-[#f37021]"
-                          : item.tone === "red"
-                            ? "border-red-200 bg-red-50 text-red-600"
-                            : item.tone === "green"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-[#00529c]/20 bg-[#eaf3fb] text-[#00529c]",
+                      "grid h-11 w-11 shrink-0 place-items-center rounded-lg border text-white transition sm:h-8 sm:w-8 sm:shadow-sm",
+                      operationalTabTones[item.tone],
+                      active && "ring-2 ring-[#f37021]/45 ring-offset-2",
                     )}
                   >
-                    <Icon className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
+                    <Icon className="h-5 w-5 sm:h-4 sm:w-4" />
                   </span>
-                  <span className="max-w-[144px] text-center sm:hidden">{item.label}</span>
-                  <span className="hidden sm:inline">{item.label}</span>
-                  <span
-                    className={cn(
-                      "hidden min-w-7 justify-center rounded-full px-2 py-0.5 text-[11px] sm:ml-1 sm:inline-flex sm:min-w-7 sm:px-2 sm:text-[11px]",
-                      filter === item.value ? "bg-white/20 text-white" : "bg-[#00529c]/10 text-[#00529c]",
-                    )}
-                  >
-                    {item.count}
-                  </span>
+                  <span className="max-w-[150px] sm:flex sm:min-h-7 sm:max-w-none sm:items-center sm:justify-center sm:text-center sm:leading-tight">{item.label}</span>
                 </button>
               );
             })}
@@ -4824,7 +5477,7 @@ function BrimenView({
                   >
                     <span
                       className={cn(
-                        "grid h-10 w-10 place-items-center rounded-xl border shadow-sm transition group-hover:-translate-y-0.5",
+                        "grid h-10 w-10 place-items-center rounded-lg border shadow-sm transition group-hover:-translate-y-0.5",
                         item.tone === "orange"
                           ? "border-[#f37021]/20 bg-[#fff7ed] text-[#f37021]"
                           : item.tone === "green"
@@ -4966,16 +5619,16 @@ function BrimenView({
               </p>
             </div>
             <div className="rounded-md border border-[#d7e3ef] bg-[#fff7ed] p-2">
-              <p className="text-[10px] font-bold uppercase text-muted-foreground">{showingCovenance ? "Lewat" : showingRegister ? "Dipinjam" : "Belum Arsip"}</p>
+              <p className="text-[10px] font-bold uppercase text-muted-foreground">{showingCovenance ? "Belum Lengkap" : showingRegister ? "Dipinjam" : "Belum Arsip"}</p>
               <p className="text-base font-black text-[#f37021]">
-                {showingCovenance ? filteredCovenantRows.filter((item) => item.status === "Lewat Tenggat").length : showingRegister ? filteredLoans.filter((loan) => loan.status === "Dipinjam").length : unarchivedActiveFiltered.length}
+                {showingCovenance ? filteredCovenantRows.filter((item) => item.dataStatus === "Belum Lengkap").length : showingRegister ? filteredLoans.filter((loan) => loan.status === "Dipinjam").length : unarchivedActiveFiltered.length}
               </p>
             </div>
             <div className="rounded-md border border-[#d7e3ef] bg-emerald-50 p-2">
-              <p className="text-[10px] font-bold uppercase text-muted-foreground">{showingCovenance ? "Terjadwal" : showingRegister ? "Selesai" : showingBorrowed ? "Jaminan" : "Lengkap"}</p>
+              <p className="text-[10px] font-bold uppercase text-muted-foreground">{showingCovenance ? "Lengkap" : showingRegister ? "Selesai" : showingBorrowed ? "Jaminan" : "Lengkap"}</p>
               <p className="text-base font-black text-emerald-700">
                 {showingCovenance
-                  ? filteredCovenantRows.filter((item) => item.status === "Terjadwal").length
+                  ? filteredCovenantRows.filter((item) => item.dataStatus === "Lengkap").length
                   : showingRegister
                   ? filteredLoans.filter((loan) => loan.status === "Sudah Dikembalikan").length
                   : showingBorrowed
@@ -5134,107 +5787,92 @@ function BrimenView({
       ) : null}
 
       {showingCovenance ? (
-        <Card className="bri-card border-[#d7e3ef]">
-          <CardHeader className="border-b border-[#d7e3ef] bg-[#fffaf6]">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-[#00529c]">
-                  <CalendarDays className="h-5 w-5 text-[#f37021]" />
-                  Covenance Day
-                </CardTitle>
-                <CardDescription className="mt-1">
-                  Agenda tenggat pengembalian, pengarsipan, dan kelengkapan data BRIMEN.
-                </CardDescription>
+        <>
+          <Card className="bri-card border-[#d7e3ef]">
+            <CardHeader className="border-b border-[#d7e3ef] bg-[#fffaf6]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-[#00529c]"><CalendarDays className="h-5 w-5 text-[#f37021]" />Covenance Day</CardTitle>
+                  <CardDescription className="mt-1">Kelengkapan dokumen pengajuan kredit dari LW321 terbaru posisi {getMonthLabel(latestLoanPeriod)}.</CardDescription>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="success">{covenantRows.filter((item) => item.dataStatus === "Lengkap").length} lengkap</Badge>
+                  <Badge variant="warning">{covenantRows.filter((item) => item.dataStatus === "Belum Lengkap").length} belum lengkap</Badge>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="danger">{covenantRows.filter((item) => item.status === "Lewat Tenggat").length} lewat tenggat</Badge>
-                <Badge variant="warning">{covenantRows.filter((item) => item.status === "Hari Ini").length} hari ini</Badge>
-                <Badge variant="success">{covenantRows.filter((item) => item.status === "Terjadwal").length} terjadwal</Badge>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="mb-4 grid gap-3 rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] p-3 sm:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_auto] sm:items-end">
+                <Field label="Tanggal Realisasi Dari"><Input type="date" value={covenanceDateFrom} onChange={(event) => { setCovenanceDateFrom(event.target.value); setDataPage(1); }} /></Field>
+                <Field label="Tanggal Realisasi Sampai"><Input type="date" value={covenanceDateTo} onChange={(event) => { setCovenanceDateTo(event.target.value); setDataPage(1); }} /></Field>
+                <Button type="button" variant="outline" onClick={() => { setCovenanceDateFrom(""); setCovenanceDateTo(""); setDataPage(1); }} disabled={!covenanceDateFrom && !covenanceDateTo}><FilterX className="h-4 w-4" />Reset Tanggal</Button>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <TableShell minWidth="min-w-[1250px]">
-              <thead>
-                <tr>
-                  <Th>Tanggal Tenggat</Th>
-                  <Th>No Rekening</Th>
-                  <Th>Nama Nasabah</Th>
-                  <Th>Agenda</Th>
-                  <Th>Sumber</Th>
-                  <Th>Prioritas</Th>
-                  <Th>Status</Th>
-                  <Th>Keterangan</Th>
-                  <Th>Aksi</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagedCovenantRows.map((item) => (
-                  <tr
-                    key={item.id}
-                    className={cn(
-                      "border-l-4",
-                      item.priority === "Tinggi" && "border-l-rose-600 bg-rose-50/60",
-                      item.priority === "Sedang" && "border-l-[#f37021] bg-[#fff7ed]/60",
-                      item.priority === "Normal" && "border-l-emerald-500 bg-emerald-50/40",
-                    )}
-                  >
-                    <Td className="font-semibold">{safeDateLabel(item.dueDate)}</Td>
-                    <Td className="font-mono font-semibold text-[#00529c]">{formatAccountNumber(item.accountNumber)}</Td>
-                    <Td className="font-semibold">{item.customerName}</Td>
-                    <Td>{item.agenda}</Td>
-                    <Td><Badge variant="outline">{item.source}</Badge></Td>
-                    <Td>
-                      <Badge variant={item.priority === "Tinggi" ? "danger" : item.priority === "Sedang" ? "warning" : "success"}>
-                        {item.priority}
-                      </Badge>
-                    </Td>
-                    <Td>
-                      <Badge variant={item.status === "Lewat Tenggat" ? "danger" : item.status === "Hari Ini" ? "warning" : "success"}>
-                        {item.status}
-                      </Badge>
-                    </Td>
-                    <Td className="max-w-[280px] whitespace-normal">{item.note}</Td>
-                    <Td>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 border-[#00529c]/25 text-xs text-[#00529c]"
-                        onClick={() => {
-                          openOperationalTab(item.target);
-                          if (item.agenda === "Lengkapi Data Arsip") setQuickDocFilter("Perlu Lengkap");
-                        }}
-                      >
-                        Buka Data
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Button>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </TableShell>
-            {!pagedCovenantRows.length ? (
-              <div className="mt-3">
-                <EmptyState
-                  title="Tidak ada agenda Covenance Day"
-                  description="Tidak ada tenggat operasional yang sesuai dengan pencarian saat ini."
-                  icon={CalendarDays}
-                />
+              <TableShell minWidth="min-w-[1050px]">
+                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Plafond</Th><Th>Tanggal Realisasi</Th><Th>Status Data</Th><Th>Aksi</Th></tr></thead>
+                <tbody>
+                  {pagedCovenantRows.map((item) => (
+                    <tr key={`${item.accountNumber}-${item.realizedDate}`}>
+                      <Td className="font-mono font-bold text-[#00529c]">{normalizeAccount(item.accountNumber)}</Td>
+                      <Td className="font-semibold">{item.debtorName}</Td>
+                      <Td className="font-bold">{formatCurrency(item.plafond)}</Td>
+                      <Td>{safeDateLabel(item.realizedDate)}</Td>
+                      <Td><Badge variant={item.dataStatus === "Lengkap" ? "success" : "warning"}>{item.dataStatus}</Badge></Td>
+                      <Td>
+                        <div className="flex min-w-max gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => openCovenanceForm(item, "detail")}><Eye className="h-4 w-4" />Detail</Button>
+                          <Button type="button" size="sm" className="bg-[#00529c] text-white hover:bg-[#004077]" onClick={() => openCovenanceForm(item, "edit")}><FilePlus2 className="h-4 w-4" />Isi Data</Button>
+                        </div>
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </TableShell>
+              {!pagedCovenantRows.length ? <div className="mt-3"><EmptyState title="Data tidak ditemukan" description="Tidak ada data LW321 terbaru yang sesuai dengan tanggal realisasi atau pencarian." icon={CalendarDays} /></div> : null}
+              <PaginationControls page={safeCovenantPage} pageSize={dataPageSize} totalItems={filteredCovenantRows.length} onPageChange={setDataPage} onPageSizeChange={(value) => { setDataPageSize(value); setDataPage(1); }} />
+            </CardContent>
+          </Card>
+
+          {covenanceSelected && covenanceMode ? (
+            <OverlayShell
+              title={covenanceMode === "detail" ? `Detail Covenance - ${covenanceSelected.debtorName}` : `Isi Data Covenance - ${covenanceSelected.debtorName}`}
+              description={`No Rekening ${normalizeAccount(covenanceSelected.accountNumber)} | Realisasi ${safeDateLabel(covenanceSelected.realizedDate)}`}
+              icon={covenanceMode === "detail" ? Eye : FilePlus2}
+              onClose={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); setCovenanceMessage(""); }}
+            >
+              <div className="max-h-[75vh] space-y-4 overflow-y-auto p-4 sm:p-5">
+                <div className="grid gap-3 rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] p-3 sm:grid-cols-3">
+                  <div><p className="text-[10px] font-black uppercase text-muted-foreground">Plafond</p><p className="mt-1 font-black text-[#00529c]">{formatCurrency(covenanceSelected.plafond)}</p></div>
+                  <div><p className="text-[10px] font-black uppercase text-muted-foreground">Tanggal Realisasi</p><p className="mt-1 font-bold text-[#004077]">{safeDateLabel(covenanceSelected.realizedDate)}</p></div>
+                  <div><p className="text-[10px] font-black uppercase text-muted-foreground">Status Data</p><div className="mt-1"><Badge variant={isCovenanceComplete(covenanceForm) ? "success" : "warning"}>{isCovenanceComplete(covenanceForm) ? "Lengkap" : "Belum Lengkap"}</Badge></div></div>
+                </div>
+                {covenanceMode === "detail" ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <ReadOnlyField label="No SPH" value={covenanceForm.sphNumber || "-"} />
+                    <ReadOnlyField label="No Surat Permohonan Kredit" value={covenanceForm.creditApplicationNumber || "-"} />
+                    <ReadOnlyField label="No KTP" value={covenanceForm.ktpNumber || "-"} />
+                    <ReadOnlyField label="No KK" value={covenanceForm.kkNumber || "-"} />
+                    <ReadOnlyField label="No SKU/NIB" value={covenanceForm.skuNibNumber || "-"} />
+                    <ReadOnlyField label="SLIK OJK Saat Pengajuan Kredit" value={covenanceForm.slikOjk || "-"} />
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="No SPH"><Input value={covenanceForm.sphNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, sphNumber: event.target.value }))} /></Field>
+                    <Field label="No Surat Permohonan Kredit"><Input value={covenanceForm.creditApplicationNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, creditApplicationNumber: event.target.value }))} /></Field>
+                    <Field label="No KTP"><Input inputMode="numeric" value={covenanceForm.ktpNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, ktpNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
+                    <Field label="No KK"><Input inputMode="numeric" value={covenanceForm.kkNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, kkNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
+                    <Field label="No SKU/NIB"><Input value={covenanceForm.skuNibNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, skuNibNumber: event.target.value }))} /></Field>
+                    <Field label="SLIK OJK Saat Pengajuan Kredit"><Input value={covenanceForm.slikOjk} onChange={(event) => setCovenanceForm((current) => ({ ...current, slikOjk: event.target.value }))} /></Field>
+                  </div>
+                )}
+                {covenanceMessage ? <p className={cn("rounded-md px-3 py-2 text-sm font-bold", covenanceMessage.includes("berhasil") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>{covenanceMessage}</p> : null}
+                <div className="flex justify-end gap-2 border-t border-[#d7e3ef] pt-4">
+                  <Button type="button" variant="outline" onClick={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); setCovenanceMessage(""); }}>{covenanceMode === "detail" ? "Tutup" : "Batal"}</Button>
+                  {covenanceMode === "edit" ? <Button type="button" onClick={saveCovenance} disabled={savingCovenance} className="bg-[#00529c] text-white hover:bg-[#004077]"><Check className="h-4 w-4" />{savingCovenance ? "Menyimpan..." : "Simpan Data"}</Button> : null}
+                </div>
               </div>
-            ) : null}
-            <PaginationControls
-              page={safeCovenantPage}
-              pageSize={dataPageSize}
-              totalItems={filteredCovenantRows.length}
-              onPageChange={setDataPage}
-              onPageSizeChange={(value) => {
-                setDataPageSize(value);
-                setDataPage(1);
-              }}
-            />
-          </CardContent>
-        </Card>
+            </OverlayShell>
+          ) : null}
+        </>
       ) : showingBorrowed ? (
         <Card className="bri-card border-[#d7e3ef]">
           <CardHeader>
@@ -6867,9 +7505,9 @@ function PaginationControls({
   const end = Math.min(totalItems, page * pageSize);
 
   return (
-    <div className="bri-card mt-3 flex flex-col gap-3 rounded-lg border border-[#d7e3ef] bg-white p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+    <div className="surface-panel mt-3 flex flex-col gap-3 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="text-muted-foreground">
-        Menampilkan <span className="font-semibold text-[#00529c]">{start}-{end}</span> dari <span className="font-semibold text-[#00529c]">{totalItems}</span> data
+        Menampilkan <span className="metric-value font-black text-[#00529c]">{start}-{end}</span> dari <span className="metric-value font-black text-[#00529c]">{totalItems}</span> data
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground">Data per halaman</span>
@@ -6882,14 +7520,14 @@ function PaginationControls({
             <option key={size} value={size}>{size}</option>
           ))}
         </Select>
-        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
-          Sebelumnya
+        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)} aria-label="Halaman sebelumnya">
+          <ChevronLeft className="h-4 w-4" /><span className="hidden md:inline">Sebelumnya</span>
         </Button>
-        <span className="rounded-md border border-[#d7e3ef] px-3 py-1 text-xs font-semibold text-[#00529c]">
+        <span className="metric-value rounded-md border border-[#d7e3ef] bg-[#f8fbfe] px-3 py-1.5 text-xs font-black text-[#00529c]">
           {page} / {totalPages}
         </span>
-        <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
-          Berikutnya
+        <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)} aria-label="Halaman berikutnya">
+          <span className="hidden md:inline">Berikutnya</span><ChevronRight className="h-4 w-4" />
         </Button>
       </div>
     </div>
@@ -7290,8 +7928,8 @@ const uploadSlots: {
     title: "DI319 Akhir Bulan Lalu",
     period: "Posisi akhir bulan sebelumnya",
     description: "Data pendukung realisasi dan informasi pinjaman per rekening.",
-    accept: ".csv",
-    formatLabel: "CSV",
+    accept: ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel",
+    formatLabel: "CSV / Excel",
   },
   {
     key: "almafact",
