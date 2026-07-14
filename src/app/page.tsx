@@ -4973,8 +4973,15 @@ function BrimenView({
     if (covenanceDateFrom && (!item.realizedDate || item.realizedDate < covenanceDateFrom)) return false;
     if (covenanceDateTo && (!item.realizedDate || item.realizedDate > covenanceDateTo)) return false;
     if (!lower) return true;
-    return [item.accountNumber, item.debtorName, item.mantri, item.dataStatus].some((value) => String(value ?? "").toLowerCase().includes(lower));
+    return [
+      item.accountNumber,
+      item.debtorName,
+      item.mantri,
+      getProductType(item.description, item.loanType),
+      item.dataStatus,
+    ].some((value) => String(value ?? "").toLowerCase().includes(lower));
   });
+  const covenanceCompletionCount = Object.values(covenanceForm).filter((value) => value.trim()).length;
   const covenantTotalPages = Math.max(1, Math.ceil(filteredCovenantRows.length / dataPageSize));
   const safeCovenantPage = Math.min(dataPage, covenantTotalPages);
   const pagedCovenantRows = filteredCovenantRows.slice((safeCovenantPage - 1) * dataPageSize, safeCovenantPage * dataPageSize);
@@ -5070,12 +5077,13 @@ function BrimenView({
     if (showingCovenance) {
       exportFile(
         `covenance-day-${latestLoanPeriod}`,
-        ["No Rekening", "Nama Debitur", "Plafond", "Tanggal Realisasi", "Status Data", "No SPH", "No Surat Permohonan Kredit", "No KTP", "No KK", "No SKU/NIB", "SLIK OJK Saat Pengajuan"],
+        ["No Rekening", "Nama Debitur", "Plafond", "Tanggal Realisasi", "Produk", "Status Data", "No SPH", "No Surat Permohonan Kredit", "No KTP", "No KK", "No SKU/NIB", "SLIK OJK Saat Pengajuan"],
         filteredCovenantRows.map((item) => [
           formatAccountNumber(item.accountNumber),
           item.debtorName,
           item.plafond,
           item.realizedDate,
+          getProductType(item.description, item.loanType),
           item.dataStatus,
           item.record?.sphNumber,
           item.record?.creditApplicationNumber,
@@ -5180,8 +5188,11 @@ function BrimenView({
       if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Data Covenance belum dapat disimpan.");
       const saved = payload.data as CovenanceRecord;
       setCovenanceRecords((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
-      setCovenanceSelected((current) => current ? { ...current, record: saved, dataStatus: isCovenanceComplete(saved) ? "Lengkap" : "Belum Lengkap" } : current);
-      setCovenanceMessage(isCovenanceComplete(saved) ? "Seluruh data berhasil disimpan. Status sekarang Lengkap." : "Data berhasil disimpan. Status masih Belum Lengkap karena masih ada field yang kosong.");
+      setActionMessage(isCovenanceComplete(saved) ? `Data Covenance ${saved.debtorName} berhasil disimpan dengan status Lengkap.` : `Data Covenance ${saved.debtorName} berhasil disimpan dengan status Belum Lengkap.`);
+      setCovenanceSelected(undefined);
+      setCovenanceMode(undefined);
+      setCovenanceForm(emptyCovenanceForm);
+      setCovenanceMessage("");
     } catch (error) {
       setCovenanceMessage(error instanceof Error ? error.message : "Data Covenance belum dapat disimpan.");
     } finally {
@@ -5808,7 +5819,7 @@ function BrimenView({
                 <Button type="button" variant="outline" onClick={() => { setCovenanceDateFrom(""); setCovenanceDateTo(""); setDataPage(1); }} disabled={!covenanceDateFrom && !covenanceDateTo}><FilterX className="h-4 w-4" />Reset Tanggal</Button>
               </div>
               <TableShell minWidth="min-w-[1050px]">
-                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Plafond</Th><Th>Tanggal Realisasi</Th><Th>Status Data</Th><Th>Aksi</Th></tr></thead>
+                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Plafond</Th><Th>Tanggal Realisasi</Th><Th>Produk</Th><Th>Status Data</Th><Th>Aksi</Th></tr></thead>
                 <tbody>
                   {pagedCovenantRows.map((item) => (
                     <tr key={`${item.accountNumber}-${item.realizedDate}`}>
@@ -5816,6 +5827,7 @@ function BrimenView({
                       <Td className="font-semibold">{item.debtorName}</Td>
                       <Td className="font-bold">{formatCurrency(item.plafond)}</Td>
                       <Td>{safeDateLabel(item.realizedDate)}</Td>
+                      <Td><Badge variant="outline">{getProductType(item.description, item.loanType)}</Badge></Td>
                       <Td><Badge variant={item.dataStatus === "Lengkap" ? "success" : "warning"}>{item.dataStatus}</Badge></Td>
                       <Td>
                         <div className="flex min-w-max gap-2">
@@ -5839,36 +5851,56 @@ function BrimenView({
               icon={covenanceMode === "detail" ? Eye : FilePlus2}
               onClose={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); setCovenanceMessage(""); }}
             >
-              <div className="max-h-[75vh] space-y-4 overflow-y-auto p-4 sm:p-5">
-                <div className="grid gap-3 rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] p-3 sm:grid-cols-3">
-                  <div><p className="text-[10px] font-black uppercase text-muted-foreground">Plafond</p><p className="mt-1 font-black text-[#00529c]">{formatCurrency(covenanceSelected.plafond)}</p></div>
-                  <div><p className="text-[10px] font-black uppercase text-muted-foreground">Tanggal Realisasi</p><p className="mt-1 font-bold text-[#004077]">{safeDateLabel(covenanceSelected.realizedDate)}</p></div>
-                  <div><p className="text-[10px] font-black uppercase text-muted-foreground">Status Data</p><div className="mt-1"><Badge variant={isCovenanceComplete(covenanceForm) ? "success" : "warning"}>{isCovenanceComplete(covenanceForm) ? "Lengkap" : "Belum Lengkap"}</Badge></div></div>
-                </div>
-                {covenanceMode === "detail" ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <ReadOnlyField label="No SPH" value={covenanceForm.sphNumber || "-"} />
-                    <ReadOnlyField label="No Surat Permohonan Kredit" value={covenanceForm.creditApplicationNumber || "-"} />
-                    <ReadOnlyField label="No KTP" value={covenanceForm.ktpNumber || "-"} />
-                    <ReadOnlyField label="No KK" value={covenanceForm.kkNumber || "-"} />
-                    <ReadOnlyField label="No SKU/NIB" value={covenanceForm.skuNibNumber || "-"} />
-                    <ReadOnlyField label="SLIK OJK Saat Pengajuan Kredit" value={covenanceForm.slikOjk || "-"} />
+              <div className="max-h-[75vh] overflow-y-auto bg-[#f4f8fc]">
+                <section className="relative overflow-hidden border-t-4 border-[#f37021] bg-[#00529c] px-4 py-5 text-white sm:px-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md border border-white/20 bg-white/10"><UserRound className="h-5 w-5" /></span>
+                      <div className="min-w-0"><p className="text-[10px] font-black uppercase text-[#ffd2b5]">Data Debitur LW321</p><p className="mt-1 truncate text-lg font-black">{covenanceSelected.debtorName}</p><p className="mt-0.5 font-mono text-xs font-semibold text-blue-100">{normalizeAccount(covenanceSelected.accountNumber)}</p></div>
+                    </div>
+                    <span className={cn("inline-flex w-fit items-center gap-1.5 rounded-md px-3 py-2 text-xs font-black", isCovenanceComplete(covenanceForm) ? "bg-emerald-400 text-emerald-950" : "bg-[#f37021] text-white")}>
+                      {isCovenanceComplete(covenanceForm) ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}{isCovenanceComplete(covenanceForm) ? "DATA LENGKAP" : "BELUM LENGKAP"}
+                    </span>
                   </div>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="No SPH"><Input value={covenanceForm.sphNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, sphNumber: event.target.value }))} /></Field>
-                    <Field label="No Surat Permohonan Kredit"><Input value={covenanceForm.creditApplicationNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, creditApplicationNumber: event.target.value }))} /></Field>
-                    <Field label="No KTP"><Input inputMode="numeric" value={covenanceForm.ktpNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, ktpNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
-                    <Field label="No KK"><Input inputMode="numeric" value={covenanceForm.kkNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, kkNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
-                    <Field label="No SKU/NIB"><Input value={covenanceForm.skuNibNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, skuNibNumber: event.target.value }))} /></Field>
-                    <Field label="SLIK OJK Saat Pengajuan Kredit"><Input value={covenanceForm.slikOjk} onChange={(event) => setCovenanceForm((current) => ({ ...current, slikOjk: event.target.value }))} /></Field>
+                  <div className="mt-4 grid grid-cols-2 divide-x divide-white/20 border-t border-white/20 pt-3 sm:grid-cols-3">
+                    <div className="pr-3"><p className="text-[9px] font-bold uppercase text-blue-200">Plafond</p><p className="mt-1 text-sm font-black">{formatCurrency(covenanceSelected.plafond)}</p></div>
+                    <div className="px-3"><p className="text-[9px] font-bold uppercase text-blue-200">Tanggal Realisasi</p><p className="mt-1 text-sm font-black">{safeDateLabel(covenanceSelected.realizedDate)}</p></div>
+                    <div className="hidden pl-3 sm:block"><p className="text-[9px] font-bold uppercase text-blue-200">Dokumen Terisi</p><p className="mt-1 text-sm font-black">{covenanceCompletionCount} dari 6</p></div>
                   </div>
-                )}
-                {covenanceMessage ? <p className={cn("rounded-md px-3 py-2 text-sm font-bold", covenanceMessage.includes("berhasil") ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>{covenanceMessage}</p> : null}
-                <div className="flex justify-end gap-2 border-t border-[#d7e3ef] pt-4">
-                  <Button type="button" variant="outline" onClick={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); setCovenanceMessage(""); }}>{covenanceMode === "detail" ? "Tutup" : "Batal"}</Button>
-                  {covenanceMode === "edit" ? <Button type="button" onClick={saveCovenance} disabled={savingCovenance} className="bg-[#00529c] text-white hover:bg-[#004077]"><Check className="h-4 w-4" />{savingCovenance ? "Menyimpan..." : "Simpan Data"}</Button> : null}
-                </div>
+                </section>
+
+                <section className="p-4 sm:p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#d7e3ef] pb-3">
+                    <div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-md bg-[#eaf3fb] text-[#00529c]"><ClipboardList className="h-4 w-4" /></span><div><p className="text-xs font-black uppercase text-[#00529c]">Dokumen Pengajuan Kredit</p><p className="text-[11px] text-muted-foreground">{covenanceMode === "detail" ? "Data tersimpan pada Covenance Day" : "Lengkapi identitas dokumen debitur"}</p></div></div>
+                    <span className="text-xs font-black text-[#f37021]">{Math.round((covenanceCompletionCount / 6) * 100)}%</span>
+                  </div>
+                  <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-[#dbe8f3]"><div className={cn("h-full rounded-full transition-all", covenanceCompletionCount === 6 ? "bg-emerald-500" : "bg-[#f37021]")} style={{ width: `${(covenanceCompletionCount / 6) * 100}%` }} /></div>
+
+                  {covenanceMode === "detail" ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <ReadOnlyField label="No SPH" value={covenanceForm.sphNumber || "-"} />
+                      <ReadOnlyField label="No Surat Permohonan Kredit" value={covenanceForm.creditApplicationNumber || "-"} />
+                      <ReadOnlyField label="No KTP" value={covenanceForm.ktpNumber || "-"} />
+                      <ReadOnlyField label="No KK" value={covenanceForm.kkNumber || "-"} />
+                      <ReadOnlyField label="No SKU/NIB" value={covenanceForm.skuNibNumber || "-"} />
+                      <ReadOnlyField label="SLIK OJK Saat Pengajuan Kredit" value={covenanceForm.slikOjk || "-"} />
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2 [&_input]:h-11 [&_input]:border-[#b9cfe2] [&_input]:bg-white [&_input]:font-semibold [&_input]:text-[#0f2942] focus-within:[&_input]:border-[#00529c]">
+                      <Field label="No SPH"><Input placeholder="Masukkan nomor SPH" value={covenanceForm.sphNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, sphNumber: event.target.value }))} /></Field>
+                      <Field label="No Surat Permohonan Kredit"><Input placeholder="Masukkan nomor surat permohonan" value={covenanceForm.creditApplicationNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, creditApplicationNumber: event.target.value }))} /></Field>
+                      <Field label="No KTP"><Input inputMode="numeric" placeholder="Nomor identitas debitur" value={covenanceForm.ktpNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, ktpNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
+                      <Field label="No KK"><Input inputMode="numeric" placeholder="Nomor kartu keluarga" value={covenanceForm.kkNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, kkNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
+                      <Field label="No SKU/NIB"><Input placeholder="Nomor SKU atau NIB" value={covenanceForm.skuNibNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, skuNibNumber: event.target.value }))} /></Field>
+                      <Field label="SLIK OJK Saat Pengajuan Kredit"><Input placeholder="Nomor referensi SLIK OJK" value={covenanceForm.slikOjk} onChange={(event) => setCovenanceForm((current) => ({ ...current, slikOjk: event.target.value }))} /></Field>
+                    </div>
+                  )}
+                  {covenanceMessage ? <p className={cn("mt-4 rounded-md border px-3 py-2 text-sm font-bold", covenanceMessage.includes("berhasil") ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700")}>{covenanceMessage}</p> : null}
+                  <div className="mt-5 flex justify-end gap-2 border-t border-[#d7e3ef] pt-4">
+                    <Button type="button" variant="outline" className="border-[#b9cfe2] text-[#004077]" onClick={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); setCovenanceMessage(""); }}>{covenanceMode === "detail" ? "Tutup" : "Batal"}</Button>
+                    {covenanceMode === "edit" ? <Button type="button" onClick={saveCovenance} disabled={savingCovenance} className="bg-[#00529c] text-white shadow-[0_8px_16px_rgba(0,82,156,0.18)] hover:bg-[#004077]"><Check className="h-4 w-4" />{savingCovenance ? "Menyimpan..." : "Simpan Data"}</Button> : null}
+                  </div>
+                </section>
               </div>
             </OverlayShell>
           ) : null}
@@ -6266,24 +6298,29 @@ function BrimenCustomerForm({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm">
       <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg shadow-2xl">
-    <Card className="bri-card border-[#d7e3ef]">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+    <Card className="bri-card overflow-hidden border-[#d7e3ef]">
+      <CardHeader className="border-t-4 border-[#f37021] bg-[#00529c] text-white">
+        <div className="flex items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md border border-white/20 bg-white/10"><FilePlus2 className="h-5 w-5" /></span>
+          <div><p className="text-[10px] font-black uppercase text-[#ffd2b5]">BRI Tool Operasional</p><CardTitle className="mt-1 text-lg font-black text-white">{title}</CardTitle><CardDescription className="mt-1 text-blue-100">{description}</CardDescription></div>
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="bg-[#f4f8fc] p-4 pt-5 sm:p-5">
         {mode === "add" ? (
-          <div className="mb-4 rounded-lg border border-[#f37021]/25 bg-[#fff7ed] px-3 py-2 text-sm text-[#7a3200]">
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-[#f37021]/30 bg-[#fff7ed] px-3 py-3 text-sm font-semibold text-[#7a3200]">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#f37021]" />
             Menu ini hanya untuk menambah data pinjaman baru yang belum punya riwayat pinjam dan belum punya No BRIMEN Berkas/Jaminan. Untuk suplesi, gunakan proses di menu Berkas Aktif Dalam Arsip.
           </div>
         ) : null}
         <form
-          className="space-y-4"
+          className="space-y-4 [&_input]:h-11 [&_input]:border-[#b9cfe2] [&_input]:bg-white [&_input]:font-semibold [&_input]:text-[#0f2942] [&_select]:h-11 [&_select]:border-[#b9cfe2] [&_select]:bg-white"
           onSubmit={(event) => {
             event.preventDefault();
             onSubmit();
           }}
         >
+          <section className="rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_6px_16px_rgba(0,55,105,0.04)]">
+            <div className="mb-4 flex items-center gap-2 border-b border-[#e3edf6] pb-3"><span className="grid h-8 w-8 place-items-center rounded-md bg-[#eaf3fb] text-[#00529c]"><Banknote className="h-4 w-4" /></span><div><p className="text-xs font-black uppercase text-[#00529c]">Data Pinjaman</p><p className="text-[11px] text-muted-foreground">Identitas debitur dan informasi kredit</p></div></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="No Rekening">
               <Input
@@ -6366,7 +6403,10 @@ function BrimenCustomerForm({
               />
             </Field>
           </div>
+          </section>
 
+          <section className="rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_6px_16px_rgba(0,55,105,0.04)]">
+            <div className="mb-4 flex items-center gap-2 border-b border-[#e3edf6] pb-3"><span className="grid h-8 w-8 place-items-center rounded-md bg-[#fff1e8] text-[#f37021]"><FolderArchive className="h-4 w-4" /></span><div><p className="text-xs font-black uppercase text-[#00529c]">Arsip BRIMEN & Jaminan</p><p className="text-[11px] text-muted-foreground">Lokasi penyimpanan dan detail jaminan kredit</p></div></div>
           <div className="grid gap-3 lg:grid-cols-[1fr_1fr_2fr]">
             <Field label="No BRIMEN Berkas">
               <Input
@@ -6390,12 +6430,13 @@ function BrimenCustomerForm({
               />
             </Field>
           </div>
+          </section>
 
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onCancel}>
+          <div className="flex flex-wrap justify-end gap-2 border-t border-[#d7e3ef] pt-4">
+            <Button type="button" variant="outline" className="border-[#b9cfe2] text-[#004077]" onClick={onCancel}>
               Batal
             </Button>
-            <Button type="submit">
+            <Button type="submit" className="bg-[#00529c] text-white shadow-[0_8px_16px_rgba(0,82,156,0.18)] hover:bg-[#004077]">
               {isArchiveMode ? "Simpan Arsip" : isEditMode ? "Simpan Data" : "Tambah Data"}
             </Button>
           </div>
