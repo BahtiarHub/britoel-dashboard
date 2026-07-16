@@ -1,9 +1,9 @@
 import path from "path";
 import fs from "fs/promises";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { auditLogs, depositRecords, loanRecords, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
+import { auditLogs, brimenCustomers, depositRecords, loanRecords, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
 import { upsertImportedBrimenCustomers } from "@/lib/brimen-db";
 import { inferPeriod, mapBrimenRows, mapDepositRows, mapLoanRows, mapNominativeCkpnRows, parseTabularFile } from "@/lib/import-data";
@@ -94,6 +94,24 @@ export async function POST(request: Request) {
 
   const now = new Date();
   const imported = loanImport ?? depositImport ?? brimenImport ?? nominativeCkpnImport;
+  const existingBrimenRows = loanImport && sourceKey === "lw321-terbaru"
+    ? await db.select().from(brimenCustomers).where(eq(brimenCustomers.branchCode, branchCode))
+    : [];
+  const latestLoanByAccount = new Map(
+    (loanImport?.rows ?? []).map((row) => [row.accountNumber.replace(/\D/g, ""), row]),
+  );
+  const synchronizedBrimenRows = existingBrimenRows.flatMap((customer) => {
+    const credit = latestLoanByAccount.get(customer.accountNumber.replace(/\D/g, ""));
+    if (!credit) return [];
+    return [{
+      ...customer,
+      name: credit.debtorName || customer.name,
+      plafond: credit.plafond || customer.plafond,
+      realizationDate: credit.realizedDate || customer.realizationDate,
+      mantri: credit.mantri || credit.pnPengelola || customer.mantri,
+      updatedAt: now,
+    }];
+  });
   const record = {
     id: crypto.randomUUID(),
     sourceKey,
@@ -122,6 +140,22 @@ export async function POST(request: Request) {
             principalArrears: row.principalArrears, interestArrears: row.interestArrears, createdAt: now,
           })));
         }
+        if (sourceKey === "lw321-terbaru") {
+          for (let index = 0; index < synchronizedBrimenRows.length; index += 200) {
+            const batch = synchronizedBrimenRows.slice(index, index + 200);
+            if (!batch.length) continue;
+            await tx.insert(brimenCustomers).values(batch).onConflictDoUpdate({
+              target: [brimenCustomers.branchCode, brimenCustomers.accountNumber],
+              set: {
+                name: sql`excluded.name`,
+                plafond: sql`excluded.plafond`,
+                realizationDate: sql`excluded.realization_date`,
+                mantri: sql`excluded.mantri`,
+                updatedAt: now,
+              },
+            });
+          }
+        }
       }
       if (depositImport && period) {
         await tx.delete(depositRecords).where(and(eq(depositRecords.branchCode, branchCode), eq(depositRecords.period, period)));
@@ -146,7 +180,7 @@ export async function POST(request: Request) {
       }
       await tx.insert(auditLogs).values({
         id: crypto.randomUUID(), actorId: authResult.session.user.id, action: "UPLOAD_DATA", entity: "upload_record", entityId: record.id,
-        detail: imported ? `${sourceName} | ${file.name}${period ? ` | periode ${period}` : ""} | ${imported.rows.length} diterima | ${imported.rejected} ditolak` : `${sourceName} | ${file.name}`,
+        detail: imported ? `${sourceName} | ${file.name}${period ? ` | periode ${period}` : ""} | ${imported.rows.length} diterima | ${imported.rejected} ditolak${sourceKey === "lw321-terbaru" ? ` | ${synchronizedBrimenRows.length} data BRIMEN disinkronkan tanpa mengubah arsip` : ""}` : `${sourceName} | ${file.name}`,
         branchCode, createdAt: now,
       });
     });
@@ -161,6 +195,6 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     data: record,
-    import: imported ? { period, accepted: imported.rows.length, rejected: imported.rejected, duplicates: imported.duplicates, issues: imported.issues } : undefined,
+    import: imported ? { period, accepted: imported.rows.length, rejected: imported.rejected, duplicates: imported.duplicates, issues: imported.issues, brimenSynchronized: synchronizedBrimenRows.length } : undefined,
   }, { status: 201 });
 }

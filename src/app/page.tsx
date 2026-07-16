@@ -8302,7 +8302,9 @@ function UnggahView() {
         ...current[key],
         status: "Berhasil",
         uploadedAt,
-        source: current[key].uploadCount > 0 ? "Data aktif sebelumnya telah ditimpa" : "Data aktif berhasil dibuat",
+        source: key === "lw321-terbaru"
+          ? `${payload.import?.brimenSynchronized ?? 0} data BRIMEN tersinkron; data arsip tetap tersimpan`
+          : current[key].uploadCount > 0 ? "Data aktif sebelumnya telah ditimpa" : "Data aktif berhasil dibuat",
         uploadCount: current[key].uploadCount + 1,
       },
     }));
