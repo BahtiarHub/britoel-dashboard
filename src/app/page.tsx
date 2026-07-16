@@ -130,6 +130,7 @@ const sidebarItems: {
 
 const qualityOptions = ["Semua", "Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet", "PL", "NPL"];
 const chartColors = ["#00529c", "#0f9f8f", "#f37021", "#f59e0b", "#7c3aed", "#64748b", "#dc2626"];
+const chartDepthColors = ["#003765", "#087064", "#a8430d", "#a86405", "#4c1d95", "#3f4a5a", "#8f1720"];
 const currentBrimenUser = {
   name: "User Login Non CS",
   username: "USER_NON_CS",
@@ -2411,11 +2412,21 @@ function DashboardOverviewView({
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={mantriRecap}>
+                  <defs>
+                    <linearGradient id="overviewOs3d" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#4aa3df" />
+                      <stop offset="42%" stopColor="#0066ad" />
+                      <stop offset="100%" stopColor="#003d72" />
+                    </linearGradient>
+                    <filter id="overviewBarShadow" x="-20%" y="-20%" width="150%" height="160%">
+                      <feDropShadow dx="4" dy="5" stdDeviation="3" floodColor="#003765" floodOpacity="0.28" />
+                    </filter>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="mantri" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={(value) => `${Number(value) / 1000000} jt`} tick={{ fontSize: 12 }} />
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Bar dataKey="totalOs" radius={[6, 6, 0, 0]} fill="#00529c" />
+                  <Bar dataKey="totalOs" radius={[7, 7, 2, 2]} fill="url(#overviewOs3d)" style={{ filter: "url(#overviewBarShadow)" }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -2431,9 +2442,19 @@ function DashboardOverviewView({
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={qualityDistribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2}>
+                  <defs>
+                    <filter id="overviewPieShadow" x="-30%" y="-30%" width="170%" height="180%">
+                      <feDropShadow dx="0" dy="7" stdDeviation="5" floodColor="#002f57" floodOpacity="0.3" />
+                    </filter>
+                  </defs>
+                  <Pie data={qualityDistribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2} cy="54%" isAnimationActive={false}>
                     {qualityDistribution.map((_, index) => (
-                      <Cell key={index} fill={chartColors[index % chartColors.length]} />
+                      <Cell key={index} fill={chartDepthColors[index % chartDepthColors.length]} stroke="none" />
+                    ))}
+                  </Pie>
+                  <Pie data={qualityDistribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2} cy="49%" style={{ filter: "url(#overviewPieShadow)" }}>
+                    {qualityDistribution.map((_, index) => (
+                      <Cell key={index} fill={chartColors[index % chartColors.length]} stroke="#ffffff" strokeWidth={1.5} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
@@ -2858,11 +2879,21 @@ function RingkasanView({
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={rekap}>
+                  <defs>
+                    <linearGradient id="creditOs3d" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#54d5c5" />
+                      <stop offset="42%" stopColor="#0f9f8f" />
+                      <stop offset="100%" stopColor="#087064" />
+                    </linearGradient>
+                    <filter id="creditBarShadow" x="-20%" y="-20%" width="150%" height="160%">
+                      <feDropShadow dx="4" dy="5" stdDeviation="3" floodColor="#064e46" floodOpacity="0.28" />
+                    </filter>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="mantri" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={(value) => `${Number(value) / 1000000} jt`} tick={{ fontSize: 12 }} />
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Bar dataKey="totalOs" radius={[6, 6, 0, 0]} fill="#0f9f8f" />
+                  <Bar dataKey="totalOs" radius={[7, 7, 2, 2]} fill="url(#creditOs3d)" style={{ filter: "url(#creditBarShadow)" }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -2878,9 +2909,19 @@ function RingkasanView({
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={distribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={55} outerRadius={95}>
+                  <defs>
+                    <filter id="creditPieShadow" x="-30%" y="-30%" width="170%" height="180%">
+                      <feDropShadow dx="0" dy="8" stdDeviation="5" floodColor="#002f57" floodOpacity="0.3" />
+                    </filter>
+                  </defs>
+                  <Pie data={distribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={55} outerRadius={95} cy="54%" isAnimationActive={false}>
                     {distribution.map((_, index) => (
-                      <Cell key={index} fill={chartColors[index % chartColors.length]} />
+                      <Cell key={index} fill={chartDepthColors[index % chartDepthColors.length]} stroke="none" />
+                    ))}
+                  </Pie>
+                  <Pie data={distribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={55} outerRadius={95} cy="49%" style={{ filter: "url(#creditPieShadow)" }}>
+                    {distribution.map((_, index) => (
+                      <Cell key={index} fill={chartColors[index % chartColors.length]} stroke="#ffffff" strokeWidth={1.5} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
@@ -3576,12 +3617,26 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
           <div className="mt-4 h-[280px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 24, left: 12, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="realizationBlue3d" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#3d9cda" /><stop offset="50%" stopColor="#00529c" /><stop offset="100%" stopColor="#003765" />
+                  </linearGradient>
+                  <linearGradient id="realizationGreen3d" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#54d5c5" /><stop offset="50%" stopColor="#0f9f8f" /><stop offset="100%" stopColor="#087064" />
+                  </linearGradient>
+                  <linearGradient id="realizationOrange3d" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ffad73" /><stop offset="50%" stopColor="#f37021" /><stop offset="100%" stopColor="#a8430d" />
+                  </linearGradient>
+                  <filter id="realizationBarShadow" x="-20%" y="-40%" width="150%" height="190%">
+                    <feDropShadow dx="5" dy="4" stdDeviation="3" floodColor="#003765" floodOpacity="0.25" />
+                  </filter>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#d7e3ef" />
                 <XAxis type="number" tickFormatter={(value) => `${Math.round(Number(value) / 1000000)} jt`} tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="mantri" width={175} tick={{ fontSize: 11, fill: "#004077" }} />
                 <Tooltip formatter={(value: number) => formatCurrency(value)} cursor={{ fill: "#eef7ff" }} />
-                <Bar dataKey="total" fill="#00529c" radius={[0, 5, 5, 0]} barSize={24}>
-                  {rows.map((row, index) => <Cell key={row.mantri} fill={index === 0 ? "#f37021" : index % 2 ? "#0f9f8f" : "#00529c"} />)}
+                <Bar dataKey="total" fill="url(#realizationBlue3d)" radius={[2, 7, 7, 2]} barSize={24} style={{ filter: "url(#realizationBarShadow)" }}>
+                  {rows.map((row, index) => <Cell key={row.mantri} fill={index === 0 ? "url(#realizationOrange3d)" : index % 2 ? "url(#realizationGreen3d)" : "url(#realizationBlue3d)"} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
