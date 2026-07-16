@@ -42,12 +42,12 @@ export async function PATCH(request: Request) {
     updatedAt: now,
   };
 
-  db.transaction((tx) => {
-    tx.insert(ckpnForecasts).values(record).onConflictDoUpdate({
+  await db.transaction(async (tx) => {
+    await tx.insert(ckpnForecasts).values(record).onConflictDoUpdate({
       target: [ckpnForecasts.branchCode, ckpnForecasts.period, ckpnForecasts.accountNumber],
       set: { targetCollectibility, updatedBy: authResult.session.user.id, updatedAt: now },
-    }).run();
-    tx.insert(auditLogs).values({
+    });
+    await tx.insert(auditLogs).values({
       id: crypto.randomUUID(),
       actorId: authResult.session.user.id,
       action: "SET_PROGNOSA_CKPN",
@@ -56,7 +56,7 @@ export async function PATCH(request: Request) {
       detail: `${accountNumber} | ${period} | ${targetCollectibility}`,
       branchCode,
       createdAt: now,
-    }).run();
+    });
   });
 
   return NextResponse.json({ ok: true, data: { period, accountNumber, targetCollectibility } });

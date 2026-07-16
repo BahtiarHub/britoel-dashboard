@@ -40,12 +40,12 @@ export async function PATCH(request: Request) {
     updatedAt: now,
   };
 
-  db.transaction((tx) => {
-    tx.insert(missingLoanResolutions).values(record).onConflictDoUpdate({
+  await db.transaction(async (tx) => {
+    await tx.insert(missingLoanResolutions).values(record).onConflictDoUpdate({
       target: [missingLoanResolutions.branchCode, missingLoanResolutions.period, missingLoanResolutions.accountNumber],
       set: { status, updatedBy: authResult.session.user.id, updatedAt: now },
-    }).run();
-    tx.insert(auditLogs).values({
+    });
+    await tx.insert(auditLogs).values({
       id: crypto.randomUUID(),
       actorId: authResult.session.user.id,
       action: "SET_STATUS_REKENING_HILANG",
@@ -54,7 +54,7 @@ export async function PATCH(request: Request) {
       detail: `${accountNumber} | ${period} | ${status}`,
       branchCode,
       createdAt: now,
-    }).run();
+    });
   });
 
   return NextResponse.json({ ok: true, data: { period, accountNumber, status } });

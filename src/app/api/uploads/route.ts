@@ -107,48 +107,48 @@ export async function POST(request: Request) {
     createdAt: now,
   };
   try {
-    if (brimenImport) upsertImportedBrimenCustomers(brimenImport.rows, branchCode);
-    db.transaction((tx) => {
-      tx.insert(uploadRecords).values(record).run();
+    if (brimenImport) await upsertImportedBrimenCustomers(brimenImport.rows, branchCode);
+    await db.transaction(async (tx) => {
+      await tx.insert(uploadRecords).values(record);
       if (loanImport && period) {
-        tx.delete(loanRecords).where(and(eq(loanRecords.branchCode, branchCode), eq(loanRecords.period, period))).run();
+        await tx.delete(loanRecords).where(and(eq(loanRecords.branchCode, branchCode), eq(loanRecords.period, period)));
         for (let index = 0; index < loanImport.rows.length; index += 40) {
-          tx.insert(loanRecords).values(loanImport.rows.slice(index, index + 40).map((row) => ({
+          await tx.insert(loanRecords).values(loanImport.rows.slice(index, index + 40).map((row) => ({
             id: crypto.randomUUID(), uploadId: record.id, branchCode, sourceKey, period,
             cif: row.cif, loanType: row.loanType, accountNumber: row.accountNumber, debtorName: row.debtorName, nextPaymentDate: row.nextPaymentDate,
             outstanding: row.outstanding, plafond: row.plafond, collectibility: row.collectibility,
             restructureFlag: row.restructureFlag, mantri: row.mantri, pnPengelola: row.pnPengelola,
             description: row.description, realizedDate: row.realizedDate, realizedAmount: row.realizedAmount,
             principalArrears: row.principalArrears, interestArrears: row.interestArrears, createdAt: now,
-          }))).run();
+          })));
         }
       }
       if (depositImport && period) {
-        tx.delete(depositRecords).where(and(eq(depositRecords.branchCode, branchCode), eq(depositRecords.period, period))).run();
+        await tx.delete(depositRecords).where(and(eq(depositRecords.branchCode, branchCode), eq(depositRecords.period, period)));
         for (let index = 0; index < depositImport.rows.length; index += 40) {
-          tx.insert(depositRecords).values(depositImport.rows.slice(index, index + 40).map((row) => ({
+          await tx.insert(depositRecords).values(depositImport.rows.slice(index, index + 40).map((row) => ({
             id: crypto.randomUUID(), uploadId: record.id, branchCode, sourceKey, period,
             cif: row.cif, loanAccountNumber: row.loanAccountNumber, debtorName: row.debtorName, mantri: row.mantri,
             savingsAccount: row.savingsAccount, blockedAtStart: row.blockedAtStart, currentBlocked: row.currentBlocked,
             installmentFromBlocked: row.installmentFromBlocked, mutationDate: row.mutationDate, status: row.status, createdAt: now,
-          }))).run();
+          })));
         }
       }
       if (nominativeCkpnImport && period) {
-        tx.delete(nominativeCkpnRecords).where(and(eq(nominativeCkpnRecords.branchCode, branchCode), eq(nominativeCkpnRecords.period, period))).run();
+        await tx.delete(nominativeCkpnRecords).where(and(eq(nominativeCkpnRecords.branchCode, branchCode), eq(nominativeCkpnRecords.period, period)));
         for (let index = 0; index < nominativeCkpnImport.rows.length; index += 40) {
-          tx.insert(nominativeCkpnRecords).values(nominativeCkpnImport.rows.slice(index, index + 40).map((row) => ({
+          await tx.insert(nominativeCkpnRecords).values(nominativeCkpnImport.rows.slice(index, index + 40).map((row) => ({
             id: crypto.randomUUID(), uploadId: record.id, branchCode, period,
             accountNumber: row.accountNumber, debtorName: row.debtorName, outstanding: row.outstanding,
             collectibility: row.collectibility, formedCkpn: row.formedCkpn, createdAt: now,
-          }))).run();
+          })));
         }
       }
-      tx.insert(auditLogs).values({
+      await tx.insert(auditLogs).values({
         id: crypto.randomUUID(), actorId: authResult.session.user.id, action: "UPLOAD_DATA", entity: "upload_record", entityId: record.id,
         detail: imported ? `${sourceName} | ${file.name}${period ? ` | periode ${period}` : ""} | ${imported.rows.length} diterima | ${imported.rejected} ditolak` : `${sourceName} | ${file.name}`,
         branchCode, createdAt: now,
-      }).run();
+      });
     });
   } catch (error) {
     await fs.unlink(temporaryPath).catch(() => undefined);

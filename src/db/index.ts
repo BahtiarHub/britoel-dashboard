@@ -1,17 +1,15 @@
-import fs from "fs";
-import path from "path";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
 
-const dbPath = process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "britoel.db");
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+export const databaseUrl = process.env.DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:5432/bri_tool";
+const globalForDatabase = globalThis as unknown as { briToolPostgres?: ReturnType<typeof postgres> };
+export const sql = globalForDatabase.briToolPostgres ?? postgres(databaseUrl, {
+  max: process.env.NODE_ENV === "production" ? 10 : 5,
+  prepare: false,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
+if (process.env.NODE_ENV !== "production") globalForDatabase.briToolPostgres = sql;
 
-const globalForDatabase = globalThis as unknown as { britoelSqlite?: Database.Database };
-const sqlite = globalForDatabase.britoelSqlite ?? new Database(dbPath);
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
-if (process.env.NODE_ENV !== "production") globalForDatabase.britoelSqlite = sqlite;
-
-export const db = drizzle(sqlite, { schema });
-export { dbPath, sqlite };
+export const db = drizzle(sql, { schema });

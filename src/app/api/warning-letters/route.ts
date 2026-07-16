@@ -62,8 +62,8 @@ export async function POST(request: Request) {
     createdAt: now,
   };
 
-  db.transaction((tx) => {
-    tx.insert(warningLetters).values(record).onConflictDoUpdate({
+  await db.transaction(async (tx) => {
+    await tx.insert(warningLetters).values(record).onConflictDoUpdate({
       target: [warningLetters.branchCode, warningLetters.period, warningLetters.accountNumber, warningLetters.level],
       set: {
         letterNumber: record.letterNumber,
@@ -77,8 +77,8 @@ export async function POST(request: Request) {
         createdBy: record.createdBy,
         createdAt: now,
       },
-    }).run();
-    tx.insert(auditLogs).values({
+    });
+    await tx.insert(auditLogs).values({
       id: crypto.randomUUID(),
       actorId: authResult.session.user.id,
       action: "BUAT_SURAT_PERINGATAN",
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       detail: `${level} | ${accountNumber} | ${letterNumber}`,
       branchCode,
       createdAt: now,
-    }).run();
+    });
   });
 
   return NextResponse.json({ ok: true, data: record }, { status: existing.length ? 200 : 201 });

@@ -1,13 +1,14 @@
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { newId, nowIso, openBrimenDb } from "@/lib/brimen-db";
+import { db } from "@/db";
+import { brimenCustomers, brimenFileLoanLogs, brimenFileLoans } from "@/db/schema";
+import { newId } from "@/lib/brimen-db";
 import { requireApiSession } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Params = {
-  params: Promise<{ id: string }>;
-};
+type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
   const guard = await requireApiSession(request);
@@ -15,63 +16,43 @@ export async function PATCH(request: Request, { params }: Params) {
   const { id } = await params;
   try {
     const body = await request.json();
-    const db = openBrimenDb(false);
-    const existing = db.prepare("select * from file_loans where id = ?").get(id) as
-      | { id: string; customer_id: string; borrower_username: string; status: string }
-      | undefined;
+    const existing = (await db.select().from(brimenFileLoans).where(eq(brimenFileLoans.id, id)).limit(1))[0];
+    if (!existing) return NextResponse.json({ ok: false, message: "Data peminjaman tidak ditemukan." }, { status: 404 });
 
-    if (!existing) {
-      db.close();
-      return NextResponse.json({ ok: false, message: "Data peminjaman tidak ditemukan." }, { status: 404 });
-    }
-    const customer = db.prepare("select branch_code from customers where id = ?").get(existing.customer_id) as { branch_code: string } | undefined;
-    if (!customer || (guard.session.user.role !== "SuperAdmin" && customer.branch_code !== guard.session.user.branchCode)) {
-      db.close();
+    const customer = (await db.select().from(brimenCustomers).where(eq(brimenCustomers.id, existing.customerId)).limit(1))[0];
+    if (!customer || (guard.session.user.role !== "SuperAdmin" && customer.branchCode !== guard.session.user.branchCode)) {
       return NextResponse.json({ ok: false, message: "Data berada di luar branch Anda." }, { status: 403 });
     }
 
-    const now = nowIso();
+    const now = new Date();
     const returningFile = body.status === "Sudah Dikembalikan";
-    db.prepare(
-      `update file_loans set
-        borrower_name = coalesce(?, borrower_name),
-        borrower_username = coalesce(?, borrower_username),
-        purpose = coalesce(?, purpose),
-        loan_date = coalesce(?, loan_date),
-        returned_date = ?,
-        status = coalesce(?, status),
-        updated_at = ?
-      where id = ?`,
-    ).run(
-      body.borrowerName ?? null,
-      body.borrowerUsername ?? null,
-      body.purpose ?? null,
-      body.loanDate ?? null,
-      returningFile ? body.returnedDate || now : null,
-      body.status ?? null,
-      now,
-      id,
-    );
+    const changes = {
+      borrowerName: body.borrowerName ?? existing.borrowerName,
+      borrowerUsername: body.borrowerUsername ?? existing.borrowerUsername,
+      purpose: body.purpose ?? existing.purpose,
+      loanDate: body.loanDate ?? existing.loanDate,
+      returnedDate: returningFile ? body.returnedDate || now.toISOString().slice(0, 10) : existing.returnedDate,
+      status: body.status ?? existing.status,
+      updatedAt: now,
+    };
 
-    if (returningFile) {
-      db.prepare("update customers set status = 'Disimpan', updated_at = ? where id = ?").run(now, existing.customer_id);
-    }
+    const updated = await db.transaction(async (tx) => {
+      const result = (await tx.update(brimenFileLoans).set(changes).where(eq(brimenFileLoans.id, id)).returning())[0];
+      if (returningFile) {
+        await tx.update(brimenCustomers).set({ status: "Disimpan", updatedAt: now }).where(eq(brimenCustomers.id, existing.customerId));
+      }
+      await tx.insert(brimenFileLoanLogs).values({
+        id: newId("log"),
+        loanId: id,
+        actor: body.actor || body.borrowerUsername || existing.borrowerUsername,
+        message: body.note || (returningFile ? "CS mengkonfirmasi berkas telah diterima kembali." : "Data peminjaman diperbarui."),
+        createdAt: now,
+      });
+      return result;
+    });
 
-    db.prepare("insert into file_loan_logs (id, loan_id, actor, message, created_at) values (?, ?, ?, ?, ?)").run(
-      newId("log"),
-      id,
-      body.actor || body.borrowerUsername || existing.borrower_username,
-      body.note || (returningFile ? "CS mengkonfirmasi berkas telah diterima kembali." : "Data peminjaman diperbarui."),
-      now,
-    );
-
-    const updated = db.prepare("select * from file_loans where id = ?").get(id);
-    db.close();
     return NextResponse.json({ ok: true, data: updated });
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: "Gagal memperbarui peminjaman berkas.", detail: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ ok: false, message: "Gagal memperbarui peminjaman berkas.", detail: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

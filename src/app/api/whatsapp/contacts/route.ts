@@ -49,8 +49,8 @@ export async function PUT(request: Request) {
     await db.delete(whatsappContacts).where(and(eq(whatsappContacts.accountNumber, accountNumber), eq(whatsappContacts.branchCode, branchCode)));
   } else {
     await db.insert(whatsappContacts).values({ accountNumber, phone, branchCode, updatedBy: authResult.session.user.id, updatedAt: now }).onConflictDoUpdate({
-      target: whatsappContacts.accountNumber,
-      set: { phone, branchCode, updatedBy: authResult.session.user.id, updatedAt: now },
+      target: [whatsappContacts.branchCode, whatsappContacts.accountNumber],
+      set: { phone, updatedBy: authResult.session.user.id, updatedAt: now },
     });
   }
   await db.insert(auditLogs).values({

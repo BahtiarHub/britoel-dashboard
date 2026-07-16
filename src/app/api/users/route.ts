@@ -100,8 +100,8 @@ export async function POST(request: Request) {
   const userId = crypto.randomUUID();
   const email = `${normalizedUsername.replace(/_/g, ".")}@users.britoel.local`;
   const passwordHash = await hashPassword(password);
-  db.transaction((tx) => {
-    tx.insert(user).values({
+  await db.transaction(async (tx) => {
+    await tx.insert(user).values({
       id: userId,
       name,
       email,
@@ -114,8 +114,8 @@ export async function POST(request: Request) {
       createdBy: guard.session.user.id,
       createdAt: now,
       updatedAt: now,
-    }).run();
-    tx.insert(account).values({
+    });
+    await tx.insert(account).values({
       id: crypto.randomUUID(),
       accountId: userId,
       providerId: "credential",
@@ -123,8 +123,8 @@ export async function POST(request: Request) {
       password: passwordHash,
       createdAt: now,
       updatedAt: now,
-    }).run();
-    tx.insert(auditLogs).values({
+    });
+    await tx.insert(auditLogs).values({
       id: crypto.randomUUID(),
       actorId: guard.session.user.id,
       action: "CREATE_USER",
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
       detail: `${username} | ${role}`,
       branchCode,
       createdAt: now,
-    }).run();
+    });
   });
 
   return NextResponse.json({ ok: true, data: { id: userId, username, name, role, branchCode } }, { status: 201 });

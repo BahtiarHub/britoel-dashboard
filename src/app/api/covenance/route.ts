@@ -54,8 +54,8 @@ export async function POST(request: Request) {
     updatedAt: now,
   };
 
-  db.transaction((tx) => {
-    tx.insert(covenanceRecords).values(record).onConflictDoUpdate({
+  await db.transaction(async (tx) => {
+    await tx.insert(covenanceRecords).values(record).onConflictDoUpdate({
       target: [covenanceRecords.branchCode, covenanceRecords.accountNumber, covenanceRecords.realizedDate],
       set: {
         period: record.period,
@@ -69,8 +69,8 @@ export async function POST(request: Request) {
         updatedBy: record.updatedBy,
         updatedAt: now,
       },
-    }).run();
-    tx.insert(auditLogs).values({
+    });
+    await tx.insert(auditLogs).values({
       id: crypto.randomUUID(),
       actorId: authResult.session.user.id,
       action: existing.length ? "UPDATE_COVENANCE" : "ISI_COVENANCE",
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       detail: `${accountNumber} | ${realizedDate}`,
       branchCode,
       createdAt: now,
-    }).run();
+    });
   });
 
   return NextResponse.json({ ok: true, data: record }, { status: existing.length ? 200 : 201 });
