@@ -666,7 +666,7 @@ function SectionHeader({
   return (
     <div className="page-heading flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       <div className="flex items-start gap-3">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#00529c] text-white shadow-[inset_0_-3px_0_#f37021,0_8px_18px_rgba(0,82,156,0.16)]">
+        <div className="page-heading-icon grid h-11 w-11 shrink-0 place-items-center rounded-md text-white">
           <Icon className="h-5 w-5" strokeWidth={2.25} />
         </div>
         <div className="min-w-0">
@@ -706,7 +706,7 @@ function MetricCard({
   }[tone];
 
   return (
-    <Card className="bri-card group min-h-[138px] overflow-hidden border-[#d7e3ef] transition hover:-translate-y-0.5 hover:border-[#00529c]/35">
+    <Card className="metric-card bri-card group min-h-[138px] overflow-hidden border-[#d7e3ef] transition hover:-translate-y-0.5 hover:border-[#00529c]/35">
       <div className={cn("h-1 w-full", stripClass)} />
       <CardContent className="flex h-[134px] items-stretch p-4">
         <div className="flex w-full items-start justify-between gap-3">
@@ -715,7 +715,7 @@ function MetricCard({
             <p className="metric-value mt-2 break-words text-xl font-black leading-tight text-[#0f2942]">{value}</p>
             {helper ? <p className="mt-auto pt-2 text-xs font-medium text-muted-foreground">{helper}</p> : null}
           </div>
-          <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-md transition group-hover:scale-105", toneClass)}>
+          <div className={cn("metric-card-icon grid h-10 w-10 shrink-0 place-items-center rounded-md transition group-hover:scale-105", toneClass)}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
@@ -732,7 +732,7 @@ function TableShell({
   minWidth?: string;
 }) {
   return (
-    <div className="table-scroll bri-card relative isolate z-0 max-h-[68vh] overflow-auto rounded-lg border border-[#cbddeb] bg-card">
+    <div className="table-scroll bri-card relative isolate z-0 max-h-[68vh] overflow-auto rounded-lg border border-[#bfd2e2] bg-card">
       <div className="sticky left-0 top-0 z-20 border-b border-[#d7e3ef] bg-[#f8fbfe] px-3 py-2 text-[11px] font-bold uppercase text-muted-foreground sm:hidden">
         Geser tabel untuk melihat semua kolom
       </div>
@@ -1421,7 +1421,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   const visibleSidebarItems = sidebarItems.filter((item) => item.key !== "users" || ["SuperAdmin", "Admin"].includes(session.user.role ?? ""));
 
   return (
-    <main className="min-h-screen bg-background text-[15px] antialiased">
+    <main className="app-shell min-h-screen bg-background text-[15px] antialiased">
       <div className={cn("h-1.5 w-full", roleToplineClass)} />
       <div className="flex min-h-screen">
         <aside
@@ -1432,7 +1432,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
           )}
         >
           <div className="flex h-full flex-col">
-            <div className="border-b border-[#d7e3ef] p-4 sm:p-5">
+            <div className="sidebar-brand-panel p-4 text-white sm:p-5">
               <div className="flex items-center gap-3">
                 <div className="britoel-mark" aria-label="BRI Tool">
                   <span className="britoel-mark__bri">BRI</span>
@@ -1440,10 +1440,10 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   <span className="britoel-mark__spark" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#f37021]">{activeBranchCode}</p>
-                  <h2 className="truncate font-semibold text-[#00529c]">{activeBranchName}</h2>
+                  <p className="text-xs font-black uppercase text-[#ffb077]">Unit Kerja {activeBranchCode}</p>
+                  <h2 className="truncate font-black text-white">{activeBranchName}</h2>
                 </div>
-                <Button type="button" variant="outline" size="icon" aria-label="Tutup sidebar" className="ml-auto h-9 w-9 shrink-0 bg-white xl:hidden" onClick={() => setMobileMenuOpen(false)}>
+                <Button type="button" variant="outline" size="icon" aria-label="Tutup sidebar" className="ml-auto h-9 w-9 shrink-0 border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white xl:hidden" onClick={() => setMobileMenuOpen(false)}>
                   <Menu className="h-4 w-4" />
                 </Button>
               </div>
@@ -1490,7 +1490,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                 );
               })}
             </nav>
-            <div className="border-t border-[#d7e3ef] bg-[#f8fbfe] p-4 text-xs text-muted-foreground">
+            <div className="sidebar-status border-t border-[#d7e3ef] p-4 text-xs text-muted-foreground">
               <div className="mb-2 flex items-center gap-2 font-bold text-emerald-700">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]" />
                 Sistem terhubung
@@ -1509,7 +1509,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         ) : null}
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-40 border-b border-[#cbddeb] bg-white/95 px-3 py-2 shadow-[0_4px_18px_rgba(0,55,105,0.055)] backdrop-blur-md md:px-6">
+          <header className="app-header sticky top-0 z-40 border-b border-[#cbddeb] bg-white/95 px-3 py-2 shadow-[0_5px_20px_rgba(0,55,105,0.07)] backdrop-blur-md md:px-6">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <Button
@@ -2151,7 +2151,7 @@ function DashboardOverviewView({
         </span>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-[#d7e3ef] bg-white p-3 shadow-[0_10px_22px_rgba(0,55,105,0.05)] sm:flex-row sm:items-center sm:justify-between">
+      <div className="role-focus-panel bri-card flex flex-col gap-3 rounded-lg border bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-md bg-[#00529c] text-white"><RoleFocusIcon className="h-5 w-5" /></span>
           <div><p className="text-xs font-black uppercase text-[#f37021]">Tampilan {selectedRole}</p><p className="font-bold text-[#004077]">{roleFocus.title}</p><p className="text-xs text-muted-foreground">{roleFocus.description}</p></div>
@@ -2162,8 +2162,8 @@ function DashboardOverviewView({
         </div>
       </div>
 
-      <div className="rounded-lg border border-[#d7e3ef] bg-white p-3 shadow-[0_10px_22px_rgba(0,55,105,0.05)]">
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#f37021]">Prioritas Hari Ini</p>
+      <div className="command-panel p-3">
+        <p className="section-label text-xs font-black uppercase text-[#f37021]">Prioritas Hari Ini</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {todayPriorities.map((item) => (
             <div
@@ -2191,10 +2191,10 @@ function DashboardOverviewView({
       ) : null}
 
       <div className={cn("grid gap-4 lg:grid-cols-2", focusMode && "hidden")}>
-        <div className="rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_10px_22px_rgba(0,55,105,0.05)]">
+        <div className="command-panel p-4">
           <div className="flex items-center gap-2">
             <Star className="h-4 w-4 fill-[#f37021] text-[#f37021]" />
-            <h2 className="text-sm font-black uppercase text-[#004077]">Sering Digunakan</h2>
+            <h2 className="section-label flex-1 text-sm font-black uppercase text-[#004077]">Sering Digunakan</h2>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {(favoriteItems.length ? favoriteItems : sidebarItems.slice(0, 2)).map((item) => {
@@ -2213,10 +2213,10 @@ function DashboardOverviewView({
             })}
           </div>
         </div>
-        <div className="rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_10px_22px_rgba(0,55,105,0.05)]">
+        <div className="command-panel p-4">
           <div className="flex items-center gap-2">
             <Clock3 className="h-4 w-4 text-[#00529c]" />
-            <h2 className="text-sm font-black uppercase text-[#004077]">Terakhir Dibuka</h2>
+            <h2 className="section-label flex-1 text-sm font-black uppercase text-[#004077]">Terakhir Dibuka</h2>
           </div>
           <div className="mt-3 space-y-2">
             {recentItems.map((item) => {
@@ -2237,7 +2237,7 @@ function DashboardOverviewView({
         <button
           type="button"
           onClick={() => onOpenMenu("mantri")}
-          className="bri-card group rounded-lg border border-[#d7e3ef] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#00529c]/45 hover:shadow-lg"
+          className="dashboard-entry-card bri-card group rounded-lg border border-[#d7e3ef] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#00529c]/45 hover:shadow-lg"
         >
           <div className="mb-3 flex items-center justify-between">
             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black uppercase text-emerald-700">Monitoring aktif</span>
@@ -2249,7 +2249,7 @@ function DashboardOverviewView({
               <h2 className="mt-2 text-xl font-black text-[#00529c]">{formatCurrency(summary.totalOs)}</h2>
               <p className="mt-1 text-sm text-muted-foreground">OS, kualitas kredit, realisasi, pipeline, dan CKPN.</p>
             </div>
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-[#00529c] text-white">
+            <span className="dashboard-entry-icon grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-[#00529c] text-white">
               <UsersRound className="h-5 w-5" />
             </span>
           </div>
@@ -2268,7 +2268,7 @@ function DashboardOverviewView({
         <button
           type="button"
           onClick={() => onOpenMenu("brimen")}
-          className="bri-card group rounded-lg border border-[#d7e3ef] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#00529c]/45 hover:shadow-lg"
+          className="dashboard-entry-card bri-card group rounded-lg border border-[#d7e3ef] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#00529c]/45 hover:shadow-lg"
         >
           <div className="mb-3 flex items-center justify-between">
             <span className="rounded-full bg-[#fff7ed] px-2.5 py-1 text-[11px] font-black uppercase text-[#b54b00]">Operasional siap</span>
@@ -2280,7 +2280,7 @@ function DashboardOverviewView({
               <h2 className="mt-2 text-xl font-black text-[#00529c]">{brimenSummary?.total ?? brimenRows.length} nasabah</h2>
               <p className="mt-1 text-sm text-muted-foreground">Arsip berkas, jaminan, status pinjam, dan register BRIMEN.</p>
             </div>
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-[#f37021] text-white">
+            <span className="dashboard-entry-icon grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-[#f37021] text-white">
               <FolderArchive className="h-5 w-5" />
             </span>
           </div>
@@ -2626,7 +2626,7 @@ function DashboardMantriView({
             type="button"
             onClick={() => openPinjamanTab(item.action)}
             className={cn(
-              "bri-card relative min-w-[138px] overflow-hidden rounded-lg border bg-white px-3 py-2.5 text-left transition hover:-translate-y-0.5 sm:min-w-0",
+              "quick-stat-card bri-card relative min-w-[138px] overflow-hidden rounded-lg border bg-white px-3 py-2.5 text-left transition hover:-translate-y-0.5 sm:min-w-0",
               item.tone === "danger"
                 ? "border-rose-200"
                 : item.tone === "success"
@@ -2642,7 +2642,7 @@ function DashboardMantriView({
           </button>
         ))}
       </div>
-      <div className={cn("surface-panel p-3 sm:p-4", mobilePinjamanOpen ? "hidden sm:block" : "block")}>
+      <div className={cn("workspace-tabs surface-panel p-3 sm:p-4", mobilePinjamanOpen ? "hidden sm:block" : "block")}>
         <div className="mb-2 rounded-md border border-[#d7e3ef] bg-[#fffaf6] px-3 py-2 sm:hidden">
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama Pinjaman</p>
         </div>
@@ -2661,11 +2661,12 @@ function DashboardMantriView({
                 setMobilePreview(item.key);
               }}
               className={cn(
-                "group flex min-h-[82px] flex-col items-center justify-center gap-1 rounded-lg border bg-white px-2 py-2 text-center text-[9px] font-black uppercase leading-tight tracking-normal transition active:scale-[0.99] sm:h-[86px] sm:min-h-[86px] sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-2 sm:text-xs sm:font-bold sm:normal-case",
+                "workspace-tab-button group flex min-h-[82px] flex-col items-center justify-center gap-1 rounded-lg border bg-white px-2 py-2 text-center text-[9px] font-black uppercase leading-tight tracking-normal transition active:scale-[0.99] sm:h-[86px] sm:min-h-[86px] sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-2 sm:text-xs sm:font-bold sm:normal-case",
                 activeTab === item.key
                   ? "border-[#f37021] bg-[#f7fbff] text-[#00529c] shadow-[inset_0_-3px_0_#f37021,0_8px_18px_rgba(0,82,156,0.10)] sm:bg-[#00529c] sm:text-white"
                   : "border-[#d7e3ef] text-[#004077] shadow-[0_6px_14px_rgba(0,55,105,0.045)] hover:-translate-y-0.5 hover:border-[#00529c]/35 hover:bg-[#f7fbff] sm:text-muted-foreground sm:hover:bg-[#00529c]/10 sm:hover:text-[#00529c]",
               )}
+              data-active={activeTab === item.key}
             >
               <span
                 className={cn(
@@ -5381,7 +5382,7 @@ function BrimenView({
               if (item.label === "Perlu Lengkap") setQuickDocFilter("Perlu Lengkap");
             }}
             className={cn(
-              "bri-card min-w-[138px] rounded-lg border bg-white px-3 py-2.5 text-left transition hover:-translate-y-0.5 sm:min-w-0",
+              "quick-stat-card bri-card min-w-[138px] rounded-lg border bg-white px-3 py-2.5 text-left transition hover:-translate-y-0.5 sm:min-w-0",
               item.tone === "danger"
                 ? "border-rose-200"
                 : item.tone === "success"
@@ -5398,7 +5399,7 @@ function BrimenView({
         ))}
       </div>
 
-      <div className={cn("surface-panel p-3 sm:p-4", mobileOperationalOpen ? "hidden sm:block" : "block")}>
+      <div className={cn("workspace-tabs surface-panel p-3 sm:p-4", mobileOperationalOpen ? "hidden sm:block" : "block")}>
         <div className="mb-2 rounded-md border border-[#d7e3ef] bg-[#fffaf6] px-3 py-2 sm:hidden">
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama</p>
         </div>
@@ -5425,12 +5426,13 @@ function BrimenView({
                     setMobileOperationalPreview({ title: item.label, summary: `${item.count} data tersedia pada menu ini.` });
                   }}
                   className={cn(
-                    "group flex min-h-[82px] flex-col items-center justify-center gap-1 rounded-lg border bg-white px-2 py-2 text-center text-[9px] font-black uppercase leading-tight tracking-normal transition active:scale-[0.99] sm:h-[86px] sm:min-h-[86px] sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-2 sm:text-xs sm:font-bold sm:normal-case",
+                    "workspace-tab-button group flex min-h-[82px] flex-col items-center justify-center gap-1 rounded-lg border bg-white px-2 py-2 text-center text-[9px] font-black uppercase leading-tight tracking-normal transition active:scale-[0.99] sm:h-[86px] sm:min-h-[86px] sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-2 sm:text-xs sm:font-bold sm:normal-case",
                     item.value === "Covenance Day" && "hidden sm:flex",
                     active
                       ? "border-[#f37021] bg-[#f7fbff] text-[#00529c] shadow-[inset_0_-3px_0_#f37021,0_8px_18px_rgba(0,82,156,0.10)] sm:bg-[#00529c] sm:text-white"
                       : "border-[#d7e3ef] text-[#004077] shadow-[0_6px_14px_rgba(0,55,105,0.045)] hover:-translate-y-0.5 hover:border-[#00529c]/35 hover:bg-[#f7fbff] sm:text-muted-foreground sm:hover:bg-[#00529c]/10 sm:hover:text-[#00529c]",
                   )}
+                  data-active={active}
                 >
                   <span
                     className={cn(
