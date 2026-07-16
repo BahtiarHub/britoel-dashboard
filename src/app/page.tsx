@@ -5775,6 +5775,8 @@ function BrimenView({
           mode="add"
           form={form}
           setForm={setForm}
+          loanLookupRows={latestLoanRows}
+          loanLookupLabel={`LW321 terbaru posisi ${getMonthLabel(latestLoanPeriod)}`}
           onCancel={() => {
             setFormMode("none");
             setForm(emptyBrimenForm);
@@ -5810,6 +5812,8 @@ function BrimenView({
         <BrimenProcessForm
           customer={loanCustomer}
           rows={rows}
+          previousLoanRows={getSnapshots(getPreviousMonth(latestLoanPeriod) ?? latestLoanPeriod)}
+          previousLoanPeriod={getPreviousMonth(latestLoanPeriod) ?? latestLoanPeriod}
           customerForm={form}
           setCustomerForm={setForm}
           processForm={processForm}
@@ -6305,17 +6309,49 @@ function BrimenCustomerForm({
   mode,
   form,
   setForm,
+  loanLookupRows = [],
+  loanLookupLabel = "LW321 terbaru",
   onCancel,
   onSubmit,
 }: {
   mode: "add" | "edit" | "archive";
   form: BrimenFormState;
   setForm: (value: BrimenFormState) => void;
+  loanLookupRows?: LoanSnapshot[];
+  loanLookupLabel?: string;
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const [accountSearchStatus, setAccountSearchStatus] = useState<"idle" | "found" | "not-found">("idle");
   const update = (key: keyof BrimenFormState, value: string) => {
     setForm({ ...form, [key]: value });
+  };
+  const handleNewDebtorAccount = (value: string) => {
+    const accountNumber = formatAccountNumber(value);
+    if (mode !== "add") {
+      update("accountNumber", accountNumber);
+      return;
+    }
+    if (accountNumber.length < 15) {
+      setForm({ ...form, accountNumber });
+      setAccountSearchStatus("idle");
+      return;
+    }
+    const matched = loanLookupRows.find((item) => normalizeAccount(item.accountNumber) === accountNumber);
+    if (!matched) {
+      setForm({ ...form, accountNumber });
+      setAccountSearchStatus("not-found");
+      return;
+    }
+    setForm({
+      ...form,
+      accountNumber,
+      name: matched.debtorName,
+      plafond: formatRupiahInput(matched.plafond),
+      realizationDate: matched.realizedDate,
+      mantri: matched.mantri,
+    });
+    setAccountSearchStatus("found");
   };
   const isArchiveMode = mode === "archive";
   const isEditMode = mode === "edit";
@@ -6352,15 +6388,22 @@ function BrimenCustomerForm({
             <div className="mb-4 flex items-center gap-2 border-b border-[#e3edf6] pb-3"><span className="grid h-8 w-8 place-items-center rounded-md bg-[#eaf3fb] text-[#00529c]"><Banknote className="h-4 w-4" /></span><div><p className="text-xs font-black uppercase text-[#00529c]">Data Pinjaman</p><p className="text-[11px] text-muted-foreground">Identitas debitur dan informasi kredit</p></div></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="No Rekening">
-              <Input
-                value={form.accountNumber}
-                onChange={(event) => update("accountNumber", formatAccountNumber(event.target.value))}
-                placeholder="15 digit no rekening"
-                maxLength={15}
-                inputMode="numeric"
-                readOnly={isArchiveMode}
-                required
-              />
+              <div className="space-y-2">
+                <div className="relative">
+                  {mode === "add" ? <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[#00529c]" /> : null}
+                  <Input
+                    value={form.accountNumber}
+                    onChange={(event) => handleNewDebtorAccount(event.target.value)}
+                    placeholder={mode === "add" ? "Ketik 15 digit untuk mencari" : "15 digit no rekening"}
+                    maxLength={15}
+                    inputMode="numeric"
+                    readOnly={isArchiveMode}
+                    required
+                    className={mode === "add" ? "pl-9 font-mono" : undefined}
+                  />
+                </div>
+                {mode === "add" ? <SearchStatusNotice status={accountSearchStatus} accountLength={formatAccountNumber(form.accountNumber).length} sourceLabel={loanLookupLabel} /> : null}
+              </div>
             </Field>
             <Field label="Nama Nasabah">
               <Input
@@ -6611,6 +6654,8 @@ function ReadOnlyField({ label, value, multiline = false }: { label: string; val
 function BrimenProcessForm({
   customer,
   rows,
+  previousLoanRows,
+  previousLoanPeriod,
   customerForm,
   setCustomerForm,
   processForm,
@@ -6621,6 +6666,8 @@ function BrimenProcessForm({
 }: {
   customer: BrimenCustomer;
   rows: BrimenCustomer[];
+  previousLoanRows: LoanSnapshot[];
+  previousLoanPeriod: MonthKey;
   customerForm: BrimenFormState;
   setCustomerForm: (value: BrimenFormState) => void;
   processForm: BrimenProcessFormState;
@@ -6643,12 +6690,20 @@ function BrimenProcessForm({
   const activeArchivedRows = rows.filter((row) => row.status !== "Lunas" && Boolean(row.brimenBerkas?.trim()));
   const handleSuplesiAccountSearch = (value: string) => {
     const accountNumber = formatAccountNumber(value);
+    const matchedLoan = previousLoanRows.find((row) => formatAccountNumber(row.accountNumber) === accountNumber);
     const matched = activeArchivedRows.find((row) => formatAccountNumber(row.accountNumber) === accountNumber);
 
-    if (matched) {
+    if (matched && matchedLoan) {
       const matchedHasGuarantee = [matched.brimenJaminan, matched.guarantee].some((item) => Boolean(item && item.trim() && item.trim() !== "-"));
       setSelectedCustomer(matched);
-      setCustomerForm(customerToForm(matched));
+      setCustomerForm({
+        ...customerToForm(matched),
+        accountNumber,
+        name: matchedLoan.debtorName,
+        plafond: formatRupiahInput(matchedLoan.plafond),
+        realizationDate: matchedLoan.realizedDate,
+        mantri: matchedLoan.mantri,
+      });
       setProcessForm({
         ...processForm,
         guaranteeAction: matchedHasGuarantee
@@ -6658,7 +6713,7 @@ function BrimenProcessForm({
           : processForm.guaranteeAction === "tambah"
             ? "tambah"
             : "ambil",
-        newPlafond: formatRupiahInput(matched.plafond),
+        newPlafond: formatRupiahInput(matchedLoan.plafond),
         newBrimenBerkas: matched.brimenBerkas,
         newBrimenJaminan: matched.brimenJaminan,
         newGuarantee: matched.guarantee,
@@ -6910,7 +6965,12 @@ function BrimenProcessForm({
                             className="border-[#d7e3ef] bg-white pl-9 font-mono text-[#0f2942]"
                           />
                         </div>
-                        <SearchStatusNotice status={suplesiSearchStatus} accountLength={formatAccountNumber(customerForm.accountNumber).length} />
+                        <SearchStatusNotice
+                          status={suplesiSearchStatus}
+                          accountLength={formatAccountNumber(customerForm.accountNumber).length}
+                          sourceLabel={`LW321 bulan lalu posisi ${getMonthLabel(previousLoanPeriod)}`}
+                          notFoundMessage="Rekening tidak ditemukan pada LW321 bulan lalu atau belum memiliki arsip BRIMEN aktif."
+                        />
                       </>
                     ) : (
                       <Input
@@ -7216,15 +7276,19 @@ function ProcessWizard({ currentStep }: { currentStep: number }) {
 function SearchStatusNotice({
   status,
   accountLength,
+  sourceLabel,
+  notFoundMessage,
 }: {
   status: "idle" | "found" | "not-found";
   accountLength: number;
+  sourceLabel?: string;
+  notFoundMessage?: string;
 }) {
   if (status === "found") {
     return (
       <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-        Data ditemukan dan field terisi otomatis.
+        Data ditemukan pada {sourceLabel ?? "sumber data"} dan field terisi otomatis.
       </div>
     );
   }
@@ -7233,7 +7297,7 @@ function SearchStatusNotice({
     return (
       <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        Data tidak ditemukan, cek kembali no rekening yang anda input, atau input manual.
+        {notFoundMessage ?? `Data tidak ditemukan pada ${sourceLabel ?? "sumber data"}. Cek kembali nomor rekening atau lanjutkan dengan input manual.`}
       </div>
     );
   }
