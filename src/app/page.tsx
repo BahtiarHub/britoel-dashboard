@@ -730,13 +730,13 @@ function MetricCard({
   }[tone];
 
   return (
-    <Card className="metric-card bri-card group min-h-[138px] overflow-hidden border-[#d7e3ef] transition hover:-translate-y-0.5 hover:border-[#00529c]/35">
+    <Card className="metric-card bri-card group min-h-[126px] overflow-hidden border-[#d7e3ef] transition hover:-translate-y-0.5 hover:border-[#00529c]/35 sm:min-h-[138px]">
       <div className={cn("h-1 w-full", stripClass)} />
-      <CardContent className="flex h-[134px] items-stretch p-4">
+      <CardContent className="flex min-h-[122px] items-stretch p-3.5 sm:h-[134px] sm:p-4">
         <div className="flex w-full items-start justify-between gap-3">
           <div className="flex min-w-0 flex-1 flex-col">
             <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
-            <p className="metric-value mt-2 break-words text-xl font-black leading-tight text-[#0f2942]">{value}</p>
+            <p className="metric-value mt-2 break-words text-lg font-black leading-tight text-[#0f2942] sm:text-xl">{value}</p>
             {helper ? <p className="mt-auto pt-2 text-xs font-medium text-muted-foreground">{helper}</p> : null}
           </div>
           <div className={cn("metric-card-icon grid h-10 w-10 shrink-0 place-items-center rounded-md transition group-hover:scale-105", toneClass)}>
@@ -757,7 +757,7 @@ function TableShell({
 }) {
   return (
     <div className="table-scroll bri-card relative isolate z-0 max-h-[68vh] overflow-auto rounded-lg border border-[#bfd2e2] bg-card">
-      <div className="sticky left-0 top-0 z-20 border-b border-[#d7e3ef] bg-[#f8fbfe] px-3 py-2 text-[11px] font-bold uppercase text-muted-foreground sm:hidden">
+      <div className="mobile-table-hint sticky left-0 top-0 z-20 border-b border-[#d7e3ef] bg-[#f8fbfe] px-3 py-2 text-[11px] font-bold uppercase text-muted-foreground sm:hidden">
         Geser tabel untuk melihat semua kolom
       </div>
       <table className={cn("w-full border-collapse text-sm", minWidth)}>{children}</table>
@@ -1617,7 +1617,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                <div className="hidden items-center gap-1.5 md:flex">
+                <div className="hidden items-center gap-1.5 xl:flex">
                   <div className="flex h-9 items-center gap-2 rounded-md border border-[#cbddeb] bg-white px-3">
                     <span className="grid h-6 w-6 place-items-center rounded-full bg-[#eaf4fd] text-[#00529c]"><UserRound className="h-3.5 w-3.5" /></span>
                     <span className="max-w-32 truncate text-xs font-black text-[#004077]">{session.user.displayUsername ?? session.user.username ?? session.user.name}</span>
@@ -1640,13 +1640,22 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                     <LogOut className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="flex items-center gap-1 md:hidden">
+                <div className="flex items-center gap-1 xl:hidden">
                   <Button type="button" variant="outline" size="icon" className="h-8 w-8 bg-white" aria-label="Buka perintah cepat" onClick={() => setActiveControlPanel("commands")}>
                     <Command className="h-3.5 w-3.5" />
                   </Button>
                   <Button type="button" variant="outline" size="icon" className="relative h-8 w-8 bg-white" aria-label="Buka notifikasi" onClick={() => setActiveControlPanel("notifications")}>
                     <Bell className="h-3.5 w-3.5" />
                     {notifications.some((item) => item.tone === "danger" || item.tone === "warning") ? <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[#f37021]" /> : null}
+                  </Button>
+                  <Button type="button" variant="outline" size="icon" className="hidden h-8 w-8 bg-white sm:inline-flex" aria-label="Buka audit trail" onClick={() => setActiveControlPanel("audit")}>
+                    <History className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button type="button" variant="outline" size="icon" className="hidden h-8 w-8 bg-white md:inline-flex" aria-label="Buka mode presentasi" onClick={() => setActiveControlPanel("presentation")}>
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button type="button" variant="outline" size="icon" className="h-8 w-8 border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700" aria-label="Keluar" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>
+                    <LogOut className="h-3.5 w-3.5" />
                   </Button>
                 </div>
                 <div className="hidden w-fit items-center gap-1.5 whitespace-nowrap rounded-md border border-[#d7e3ef] bg-[#f8fbfe] px-2 py-1.5 text-xs font-semibold text-[#004077] md:flex md:gap-2 md:px-2.5 md:text-sm">
@@ -1854,9 +1863,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
 
 function OverlayShell({ title, description, icon: Icon, onClose, children }: { title: string; description: string; icon: React.ElementType; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-black/40 p-3 pt-10 sm:p-6 sm:pt-16" onClick={onClose}>
-      <section className="w-full max-w-2xl overflow-hidden rounded-lg border border-[#d7e3ef] bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-3 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-4 sm:px-5">
+    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-[#001b33]/55 p-2.5 sm:p-5 sm:pt-10 lg:p-6 lg:pt-12" onClick={onClose}>
+      <section className="overlay-panel max-h-[calc(100dvh-1.25rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-[#b9cfdf] bg-white shadow-[0_28px_80px_rgba(0,31,58,0.3)] sm:max-h-[calc(100dvh-5rem)]" onClick={(event) => event.stopPropagation()}>
+        <div className="sticky top-0 z-30 flex items-start justify-between gap-3 border-b border-[#d7e3ef] bg-[#f8fbfe]/95 px-3.5 py-3.5 backdrop-blur sm:px-5 sm:py-4">
           <div className="flex items-start gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[#00529c] text-white"><Icon className="h-5 w-5" /></span>
             <div>
@@ -2732,7 +2741,7 @@ function DashboardMantriView({
         <div className="mb-2 rounded-md border border-[#d7e3ef] bg-[#fffaf6] px-3 py-2 sm:hidden">
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama Pinjaman</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-9">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-9">
         {mantriTabs.map((item) => {
           const Icon = item.icon;
           return (
@@ -5493,7 +5502,7 @@ function BrimenView({
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama</p>
         </div>
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             {tabItems.map((item) => {
               const Icon = item.icon;
               const active = filter === item.value;
