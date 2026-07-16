@@ -912,6 +912,46 @@ function SuperAdminApp({ session }: { session: DashboardSession }) {
   );
 }
 
+function OverviewMetricCard({
+  label,
+  value,
+  detail,
+  indicator,
+  tone = "blue",
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  indicator?: string;
+  tone?: "blue" | "orange" | "red" | "green";
+  icon: React.ElementType;
+}) {
+  const tones = {
+    blue: { accent: "bg-[#00529c]", icon: "bg-[#e7f2fb] text-[#00529c]", indicator: "bg-[#e7f2fb] text-[#00529c]" },
+    orange: { accent: "bg-[#f37021]", icon: "bg-[#fff0e6] text-[#c4520c]", indicator: "bg-[#fff0e6] text-[#a94408]" },
+    red: { accent: "bg-rose-600", icon: "bg-rose-50 text-rose-700", indicator: "bg-rose-50 text-rose-700" },
+    green: { accent: "bg-emerald-600", icon: "bg-emerald-50 text-emerald-700", indicator: "bg-emerald-50 text-emerald-700" },
+  }[tone];
+
+  return (
+    <div className="overview-metric-card bri-card relative min-h-[146px] overflow-hidden rounded-lg border border-[#d7e3ef] bg-white p-4">
+      <span className={cn("absolute inset-y-0 left-0 w-1", tones.accent)} />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-black uppercase text-slate-500">{label}</p>
+          <p className="metric-value mt-2 break-words text-xl font-black leading-tight text-[#0b355a] sm:text-2xl">{value}</p>
+        </div>
+        <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-md", tones.icon)}><Icon className="h-5 w-5" /></span>
+      </div>
+      <div className="mt-4 flex items-end justify-between gap-3 border-t border-[#e4edf5] pt-3">
+        <p className="text-xs font-semibold leading-5 text-slate-500">{detail}</p>
+        {indicator ? <span className={cn("shrink-0 rounded-md px-2 py-1 text-[10px] font-black", tones.indicator)}>{indicator}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function AccountInactive() {
   return <main className="grid min-h-screen place-items-center bg-[#eef5fb] px-5"><div className="max-w-md rounded-lg border border-rose-200 bg-white p-7 text-center shadow-lg"><span className="mx-auto grid h-12 w-12 place-items-center rounded-md bg-rose-50 text-rose-600"><Shield className="h-6 w-6" /></span><h1 className="mt-4 text-xl font-black text-[#004077]">Akun Dinonaktifkan</h1><p className="mt-2 text-sm text-slate-500">Hubungi Admin unit kerja atau SuperAdmin untuk mengaktifkan kembali akun Anda.</p><Button className="mt-5 bg-[#00529c]" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>Kembali ke Login</Button></div></main>;
 }
@@ -1437,13 +1477,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         loanDataSource={loanDataSource}
         latestUploadAt={latestUploadAt}
         brimenSummary={brimenSummary}
-        brimenStatus={brimenStatus}
         brimenRows={brimenRows}
         creditAccounts={snapshots.map((item) => item.accountNumber)}
         onOpenMenu={openMenu}
-        favoriteMenus={favoriteMenus}
-        recentMenus={recentMenus}
-        onToggleFavorite={toggleFavorite}
         selectedRole={selectedRole}
         onOpenMantri={(mantri) => {
           setGlobalMantri(mantri);
@@ -2137,13 +2173,9 @@ function DashboardOverviewView({
   loanDataSource,
   latestUploadAt,
   brimenSummary,
-  brimenStatus,
   brimenRows,
   creditAccounts,
   onOpenMenu,
-  favoriteMenus,
-  recentMenus,
-  onToggleFavorite,
   selectedRole,
   onOpenMantri,
 }: {
@@ -2152,13 +2184,9 @@ function DashboardOverviewView({
   loanDataSource: "loading" | "upload" | "mock";
   latestUploadAt?: string;
   brimenSummary?: BrimenSummary;
-  brimenStatus: string;
   brimenRows: BrimenCustomer[];
   creditAccounts: string[];
   onOpenMenu: (menu: MenuKey) => void;
-  favoriteMenus: MenuKey[];
-  recentMenus: MenuKey[];
-  onToggleFavorite: (menu: MenuKey) => void;
   selectedRole: UserRole;
   onOpenMantri: (mantri: string) => void;
 }) {
@@ -2172,34 +2200,10 @@ function DashboardOverviewView({
   const creditAccountSet = new Set(creditAccounts.map((account) => normalizeAccount(account)));
   const matchedBrimen = brimenRows.filter((item) => item.persistedInBrimen !== false && creditAccountSet.has(normalizeAccount(item.accountNumber))).length;
   const mantriRecap = getMantriRecap(month);
-  const topOs = [...mantriRecap].sort((a, b) => b.totalOs - a.totalOs)[0];
-  const topNpl = [...mantriRecap]
-    .map((row) => ({
-      mantri: row.mantri,
-      nplOs: row.KL.os + row.Diragukan.os + row.Macet.os,
-      totalOs: row.totalOs,
-    }))
-    .sort((a, b) => b.nplOs - a.nplOs)[0];
+  const qualityDistribution = getQualityDistribution(month);
   const brimenArchivedActive = brimenRows.filter((item) => item.isLatestLw321 === true && Boolean(item.brimenBerkas?.trim()));
   const brimenBorrowed = brimenRows.filter((item) => item.status === "Dipinjam");
-  const todayPriorities = [
-    { label: "New SML", value: `${summary.newSml.length} rekening`, tone: "warning" },
-    { label: "Berkas Dipinjam", value: `${brimenBorrowed.length} nasabah`, tone: brimenBorrowed.length ? "warning" : "success" },
-    { label: "Pipeline", value: `${pipelineRows.length} rekening`, tone: "success" },
-  ];
-  const favoriteItems = sidebarItems.filter((item) => favoriteMenus.includes(item.key));
-  const recentItems = recentMenus
-    .map((key) => sidebarItems.find((item) => item.key === key))
-    .filter((item): item is (typeof sidebarItems)[number] => Boolean(item));
   const brimenNotArchived = brimenRows.filter((item) => item.isLatestLw321 === true && !item.brimenBerkas?.trim()).length;
-  const roleFocus = {
-    SuperAdmin: { title: "Kontrol Global", description: "Pantau seluruh uker, pengguna aktif, dan aktivitas operasional.", icon: Shield },
-    Mantri: { title: "Fokus Pinjaman", description: "Pantau kualitas, pipeline, dan rekening yang perlu ditagih.", icon: UsersRound },
-    CS: { title: "Fokus BRIMEN", description: "Selesaikan arsip, peminjaman berkas, dan data jaminan.", icon: FolderArchive },
-    "Kaunit / SPV": { title: "Fokus Pengawasan", description: "Periksa risiko mantri, delta portofolio, dan tindak lanjut.", icon: Shield },
-    Admin: { title: "Fokus Kualitas Data", description: "Pastikan upload, validasi, dan audit trail selalu mutakhir.", icon: Database },
-    User: { title: "Ruang Kerja Uker", description: "Gunakan fitur sesuai kewenangan yang diberikan Admin uker.", icon: UserRound },
-  }[selectedRole];
   const followUpItems: {
     label: string;
     value: string;
@@ -2212,68 +2216,57 @@ function DashboardOverviewView({
     { label: "Pipeline suplesi", value: `${pipelineRows.length} rekening`, helper: "Lancar, belum restruk, OS < 50% plafond", tone: "success" },
     { label: "Pembaruan sumber data", value: "Periksa upload", helper: `Terakhir ${latestUploadAt ?? uploadHistory[0]?.uploadedAt ?? "belum tersedia"}`, tone: "default" },
   ];
-  const RoleFocusIcon = roleFocus.icon;
-
   return (
-    <div className="space-y-6">
+    <div className="dashboard-overview space-y-5 sm:space-y-6">
       <SectionHeader
         title="Dashboard Utama"
         description={`Ringkasan keseluruhan pinjaman dan operasional untuk periode ${getMonthLabel(month)}.`}
         icon={LayoutDashboard}
       />
 
-      <div className={cn(
-        "flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-bold",
-        loanDataSource === "upload"
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : loanDataSource === "loading"
-            ? "border-[#b8d8f2] bg-[#eef7ff] text-[#00529c]"
-            : "border-amber-200 bg-amber-50 text-amber-800",
-      )}>
-        {loanDataSource === "loading" ? (
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-        ) : loanDataSource === "upload" ? (
-          <CheckCircle2 className="h-4 w-4" />
-        ) : (
-          <AlertTriangle className="h-4 w-4" />
-        )}
-        <span>
-          {loanDataSource === "upload"
-            ? `Data pinjaman aktif berasal dari file LW321 periode ${getMonthLabel(month)}.`
-            : loanDataSource === "loading"
-              ? "Memuat sumber data pinjaman..."
-              : "Data contoh sedang ditampilkan. Upload file LW321 untuk menggunakan data unit kerja."}
-        </span>
-      </div>
-
-      <div className="role-focus-panel bri-card flex flex-col gap-3 rounded-lg border bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-md bg-[#00529c] text-white"><RoleFocusIcon className="h-5 w-5" /></span>
-          <div><p className="text-xs font-black uppercase text-[#f37021]">Tampilan {selectedRole}</p><p className="font-bold text-[#004077]">{roleFocus.title}</p><p className="text-xs text-muted-foreground">{roleFocus.description}</p></div>
-        </div>
-        <div className="flex gap-2">
-          <Button type="button" variant={focusMode ? "default" : "outline"} className="flex-1 sm:flex-none" onClick={() => setFocusMode((current) => !current)}><ListChecks className="mr-2 h-4 w-4" />{focusMode ? "Tampilkan Semua" : "Mode Fokus"}</Button>
-          <Button type="button" variant="outline" className="flex-1 text-[#00529c] sm:flex-none" onClick={() => setCompareOpen(true)}><GitCompare className="mr-2 h-4 w-4" />Bandingkan</Button>
-        </div>
-      </div>
-
-      <div className="command-panel p-3">
-        <p className="section-label text-xs font-black uppercase text-[#f37021]">Prioritas Hari Ini</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {todayPriorities.map((item) => (
-            <div
-              key={item.label}
-              className={cn(
-                "rounded-md border px-3 py-2",
-                item.tone === "success" ? "border-emerald-200 bg-emerald-50" : "border-[#f37021]/25 bg-[#fff7ed]",
-              )}
-            >
-              <p className="text-[10px] font-bold uppercase text-muted-foreground">{item.label}</p>
-              <p className={cn("mt-1 text-base font-black", item.tone === "success" ? "text-emerald-700" : "text-[#f37021]")}>{item.value}</p>
+      <div className="dashboard-context-bar surface-panel flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+        <div className="flex min-w-0 items-start gap-3 sm:items-center">
+          <span className={cn(
+            "grid h-10 w-10 shrink-0 place-items-center rounded-md",
+            loanDataSource === "upload" ? "bg-emerald-50 text-emerald-700" : loanDataSource === "loading" ? "bg-[#e7f2fb] text-[#00529c]" : "bg-amber-50 text-amber-700",
+          )}>
+            {loanDataSource === "loading" ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : loanDataSource === "upload" ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-black text-[#004077]">Posisi {getMonthLabel(month)}</p>
+              <Badge variant="outline" className="border-[#bfd3e5] bg-[#f5faff] text-[10px] text-[#00529c]">{selectedRole}</Badge>
             </div>
-          ))}
+            <p className="mt-0.5 text-xs leading-5 text-slate-500">
+              {loanDataSource === "upload"
+                ? `LW321 aktif${latestUploadAt ? ` | diperbarui ${latestUploadAt}` : ""}`
+                : loanDataSource === "loading"
+                  ? "Memuat sumber data pinjaman..."
+                  : "Data contoh aktif. Upload LW321 untuk memakai data unit kerja."}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button type="button" variant={focusMode ? "default" : "outline"} size="sm" className="flex-1 sm:flex-none" onClick={() => setFocusMode((current) => !current)}><ListChecks className="mr-2 h-4 w-4" />{focusMode ? "Semua Data" : "Mode Fokus"}</Button>
+          <Button type="button" variant="outline" size="sm" className="flex-1 text-[#00529c] sm:flex-none" onClick={() => setCompareOpen(true)}><GitCompare className="mr-2 h-4 w-4" />Bandingkan</Button>
         </div>
       </div>
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <p className="text-xs font-black uppercase text-[#f37021]">Ringkasan Eksekutif</p>
+            <h2 className="mt-1 text-lg font-black text-[#004077]">Kondisi unit kerja dalam satu pandangan</h2>
+          </div>
+          <p className="text-xs font-semibold text-slate-500">Angka posisi terbaru pada periode aktif</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <OverviewMetricCard label="Total Outstanding" value={formatCurrency(summary.totalOs)} detail={`${formatNumber(summary.totalDebtorCount)} debitur aktif`} indicator="OS" icon={Banknote} />
+          <OverviewMetricCard label="Special Mention" value={formatCurrency(summary.smlOs)} detail={`${formatNumber(summary.smlDebtorCount)} debitur dalam SML`} indicator={formatPercent(summary.smlPercent)} tone="orange" icon={AlertTriangle} />
+          <OverviewMetricCard label="Non Performing Loan" value={formatCurrency(summary.nplOs)} detail={`${formatNumber(summary.nplDebtorCount)} debitur dalam NPL`} indicator={formatPercent(summary.nplPercent)} tone="red" icon={ArrowDownRight} />
+          <OverviewMetricCard label="Arsip Aktif" value={`${formatNumber(brimenArchivedActive.length)} nasabah`} detail={`${formatNumber(brimenBorrowed.length)} berkas sedang dipinjam`} indicator={`${brimenSummary?.total ?? brimenRows.length} data`} tone="green" icon={FolderArchive} />
+        </div>
+      </section>
 
       {focusMode ? (
         <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
@@ -2285,54 +2278,16 @@ function DashboardOverviewView({
         </div>
       ) : null}
 
-      <div className={cn("grid gap-4 lg:grid-cols-2", focusMode && "hidden")}>
-        <div className="command-panel p-4">
-          <div className="flex items-center gap-2">
-            <Star className="h-4 w-4 fill-[#f37021] text-[#f37021]" />
-            <h2 className="section-label flex-1 text-sm font-black uppercase text-[#004077]">Sering Digunakan</h2>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {(favoriteItems.length ? favoriteItems : sidebarItems.slice(0, 2)).map((item) => {
-              const Icon = item.icon;
-              return (
-                <div key={item.key} className="relative rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] p-3">
-                  <button type="button" onClick={() => onOpenMenu(item.key)} className="flex w-full items-center gap-3 pr-7 text-left">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#00529c] text-white"><Icon className="h-4 w-4" /></span>
-                    <span className="text-sm font-bold text-[#00529c]">{item.label}</span>
-                  </button>
-                  <button type="button" aria-label={`Hapus favorit ${item.label}`} onClick={() => onToggleFavorite(item.key)} className="absolute right-2 top-2 text-[#f37021]">
-                    <Star className="h-4 w-4 fill-current" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+      <section className={cn("space-y-3", focusMode && "hidden")}>
+        <div>
+          <p className="text-xs font-black uppercase text-[#f37021]">Ruang Kerja</p>
+          <h2 className="mt-1 text-lg font-black text-[#004077]">Pilih dashboard yang akan dikerjakan</h2>
         </div>
-        <div className="command-panel p-4">
-          <div className="flex items-center gap-2">
-            <Clock3 className="h-4 w-4 text-[#00529c]" />
-            <h2 className="section-label flex-1 text-sm font-black uppercase text-[#004077]">Terakhir Dibuka</h2>
-          </div>
-          <div className="mt-3 space-y-2">
-            {recentItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button key={item.key} type="button" onClick={() => onOpenMenu(item.key)} className="flex w-full items-center gap-3 rounded-md border border-[#d7e3ef] px-3 py-2 text-left hover:bg-[#f5f9fd]">
-                  <Icon className="h-4 w-4 text-[#f37021]" />
-                  <span className="flex-1 text-sm font-semibold text-[#004077]">{item.label}</span>
-                  <ChevronRight className="h-4 w-4 text-slate-400" />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className={cn("grid gap-4 lg:grid-cols-2", focusMode && "hidden")}>
+        <div className="grid gap-4 lg:grid-cols-2">
         <button
           type="button"
           onClick={() => onOpenMenu("mantri")}
-          className="dashboard-entry-card bri-card group rounded-lg border border-[#d7e3ef] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#00529c]/45 hover:shadow-lg"
+          className="dashboard-entry-card workspace-launch bri-card group rounded-lg border border-[#d7e3ef] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#00529c]/45 hover:shadow-lg sm:p-5"
         >
           <div className="mb-3 flex items-center justify-between">
             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black uppercase text-emerald-700">Monitoring aktif</span>
@@ -2348,22 +2303,23 @@ function DashboardOverviewView({
               <UsersRound className="h-5 w-5" />
             </span>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-md border border-[#d7e3ef] bg-[#f8fbfe] p-2">
+          <div className="mt-5 grid grid-cols-2 divide-x divide-[#d7e3ef] border-y border-[#e3edf6] py-3">
+            <div className="pr-3">
               <p className="text-[10px] font-bold uppercase text-muted-foreground">SML</p>
               <p className="font-black text-[#f37021]">{formatPercent(summary.smlPercent)}</p>
             </div>
-            <div className="rounded-md border border-[#d7e3ef] bg-[#f8fbfe] p-2">
+            <div className="pl-3">
               <p className="text-[10px] font-bold uppercase text-muted-foreground">NPL</p>
               <p className="font-black text-rose-700">{formatPercent(summary.nplPercent)}</p>
             </div>
           </div>
+          <div className="mt-4 flex items-center justify-between text-xs font-black text-[#00529c]"><span>Buka data pinjaman</span><ChevronRight className="h-4 w-4 transition group-hover:translate-x-1" /></div>
         </button>
 
         <button
           type="button"
           onClick={() => onOpenMenu("brimen")}
-          className="dashboard-entry-card bri-card group rounded-lg border border-[#d7e3ef] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#00529c]/45 hover:shadow-lg"
+          className="dashboard-entry-card workspace-launch bri-card group rounded-lg border border-[#d7e3ef] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#00529c]/45 hover:shadow-lg sm:p-5"
         >
           <div className="mb-3 flex items-center justify-between">
             <span className="rounded-full bg-[#fff7ed] px-2.5 py-1 text-[11px] font-black uppercase text-[#b54b00]">Operasional siap</span>
@@ -2379,18 +2335,20 @@ function DashboardOverviewView({
               <FolderArchive className="h-5 w-5" />
             </span>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-md border border-[#d7e3ef] bg-[#f8fbfe] p-2">
+          <div className="mt-5 grid grid-cols-2 divide-x divide-[#d7e3ef] border-y border-[#e3edf6] py-3">
+            <div className="pr-3">
               <p className="text-[10px] font-bold uppercase text-muted-foreground">Aktif Arsip</p>
               <p className="font-black text-emerald-700">{brimenArchivedActive.length}</p>
             </div>
-            <div className="rounded-md border border-[#d7e3ef] bg-[#f8fbfe] p-2">
+            <div className="pl-3">
               <p className="text-[10px] font-bold uppercase text-muted-foreground">Dipinjam</p>
               <p className="font-black text-[#f37021]">{brimenBorrowed.length}</p>
             </div>
           </div>
+          <div className="mt-4 flex items-center justify-between text-xs font-black text-[#00529c]"><span>Buka data operasional</span><ChevronRight className="h-4 w-4 transition group-hover:translate-x-1" /></div>
         </button>
-      </div>
+        </div>
+      </section>
 
       <div className={cn("rounded-lg border border-[#d7e3ef] bg-white p-4", focusMode && "hidden")}>
         <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase text-[#f37021]">Peta Risiko Mantri</p><p className="mt-1 text-sm text-muted-foreground">Klik mantri untuk membuka rekap dan nominatif kelolaannya.</p></div><Badge variant="outline">{mantriRecap.length} mantri</Badge></div>
@@ -2411,58 +2369,48 @@ function DashboardOverviewView({
         </div>
       </div>
 
-      <div className={cn("grid gap-4 xl:grid-cols-[1fr_360px]", focusMode && "hidden")}>
-        <div className="space-y-4">
-          <div className="rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-[#f37021]">Dashboard Pinjaman</p>
-            <p className="mt-1 text-sm text-muted-foreground">Ringkasan portofolio kredit, kualitas, realisasi, pipeline, dan CKPN.</p>
-          </div>
-          <DashboardCardGroup title="Portofolio Kredit" accent="blue">
-            <MetricCard label="Jumlah OS" value={formatCurrency(summary.totalOs)} icon={Banknote} />
-            <MetricCard label="SML Rp" value={formatCurrency(summary.smlOs)} helper={formatPercent(summary.smlPercent)} tone="warning" icon={AlertTriangle} />
-            <MetricCard label="NPL Rp" value={formatCurrency(summary.nplOs)} helper={formatPercent(summary.nplPercent)} tone="danger" icon={ArrowDownRight} />
-            <MetricCard label="Mantri OS Terbesar" value={topOs?.mantri ?? "-"} helper={topOs ? formatCurrency(topOs.totalOs) : "-"} icon={UsersRound} />
-          </DashboardCardGroup>
-
-          <DashboardCardGroup title="Risiko & Pergerakan" accent="orange">
-            <MetricCard label="SML %" value={formatPercent(summary.smlPercent)} helper={`${summary.newSml.length} new SML`} tone="warning" icon={LineChart} />
-            <MetricCard label="NPL %" value={formatPercent(summary.nplPercent)} helper={`${summary.newNpl.length} new NPL`} tone="danger" icon={BarChart3} />
-            <MetricCard label="Total Dampak CKPN" value={formatCurrency(summary.totalCkpn)} helper={`${ckpnRows.length} rekening bergerak`} tone={summary.totalCkpn >= 0 ? "danger" : "success"} icon={PieChartIcon} />
-            <MetricCard label="Mantri NPL Tertinggi" value={topNpl?.mantri ?? "-"} helper={topNpl ? formatCurrency(topNpl.nplOs) : "-"} tone="danger" icon={AlertTriangle} />
-          </DashboardCardGroup>
-
-          <DashboardCardGroup title="Realisasi & Potensi" accent="green">
-            <MetricCard label="Realisasi Bulan Ini" value={formatCurrency(realisasiTotal)} helper={`${realisasiCount} rekening`} tone="success" icon={TrendingUp} />
-            <MetricCard label="Pipeline Suplesi" value={`${pipelineRows.length} rekening`} helper={formatCurrency(pipelineRows.reduce((total, item) => total + item.remainingPlafond, 0))} tone="success" icon={Gauge} />
-            <MetricCard label="New SML" value={`${summary.newSml.length} rekening`} helper={formatCurrency(summary.newSml.reduce((total, item) => total + item.outstanding, 0))} tone="warning" icon={UsersRound} />
-            <MetricCard label="New NPL" value={`${summary.newNpl.length} rekening`} helper={formatCurrency(summary.newNpl.reduce((total, item) => total + item.outstanding, 0))} tone="danger" icon={UsersRound} />
-          </DashboardCardGroup>
-
-          <div className="rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-[#00529c]">Dashboard Operasional</p>
-            <p className="mt-1 text-sm text-muted-foreground">Ringkasan arsip berkas, jaminan, dan status peminjaman BRIMEN.</p>
-          </div>
-          <DashboardCardGroup title="BRIMEN" accent="blue">
-            <MetricCard label="Total Data Operasional" value={`${brimenSummary?.total ?? brimenRows.length} nasabah`} helper={`${brimenSummary?.latestLw321 ?? 0} LW321 | ${brimenSummary?.brimenTotal ?? 0} BRIMEN | ${matchedBrimen} cocok`} icon={FolderArchive} />
-            <MetricCard label="Aktif Dalam Arsip" value={`${brimenArchivedActive.length} nasabah`} helper={`Termasuk ${brimenBorrowed.length} status dipinjam`} tone="success" icon={FileSpreadsheet} />
-            <MetricCard label="Berkas Dipinjam" value={`${brimenSummary?.borrowed ?? 0} nasabah`} helper="Dari data BRIMEN" tone="warning" icon={Upload} />
-            <MetricCard label="Kelengkapan Arsip" value={`${brimenArchivedActive.length}/${brimenRows.length} nasabah`} helper="Ringkasan status arsip BRIMEN" tone="success" icon={CheckCircle2} />
-          </DashboardCardGroup>
-        </div>
+      <div className={cn("grid items-start gap-4 xl:grid-cols-[1.25fr_0.75fr]", focusMode && "hidden")}>
+        <Card className="bri-card overflow-hidden border-[#d7e3ef]">
+          <CardHeader className="border-b border-[#e3edf6] bg-[#f8fbfe] pb-4">
+            <div className="flex items-center justify-between gap-3">
+              <div><CardTitle>Insight Bulan Ini</CardTitle><CardDescription>Angka penting untuk keputusan dan tindak lanjut.</CardDescription></div>
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#00529c] text-white"><Activity className="h-5 w-5" /></span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="grid sm:grid-cols-2">
+              {[
+                { label: "Realisasi", value: formatCurrency(realisasiTotal), helper: `${realisasiCount} rekening bulan ini`, icon: TrendingUp, tone: "text-emerald-700 bg-emerald-50" },
+                { label: "Delta CKPN", value: formatCurrency(summary.totalCkpn), helper: `${ckpnRows.length} rekening bergerak`, icon: PieChartIcon, tone: summary.totalCkpn > 0 ? "text-rose-700 bg-rose-50" : "text-emerald-700 bg-emerald-50" },
+                { label: "New SML", value: `${summary.newSml.length} rekening`, helper: formatCurrency(summary.newSml.reduce((total, item) => total + item.outstanding, 0)), icon: AlertTriangle, tone: "text-[#b54b00] bg-[#fff0e6]" },
+                { label: "New NPL", value: `${summary.newNpl.length} rekening`, helper: formatCurrency(summary.newNpl.reduce((total, item) => total + item.outstanding, 0)), icon: ArrowDownRight, tone: "text-rose-700 bg-rose-50" },
+                { label: "Pipeline Suplesi", value: `${pipelineRows.length} rekening`, helper: formatCurrency(pipelineRows.reduce((total, item) => total + item.remainingPlafond, 0)), icon: Gauge, tone: "text-emerald-700 bg-emerald-50" },
+                { label: "Data Cocok", value: `${matchedBrimen} rekening`, helper: `${brimenNotArchived} belum diarsipkan`, icon: CheckCircle2, tone: "text-[#00529c] bg-[#e7f2fb]" },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div key={item.label} className="flex min-h-[112px] items-start gap-3 border-b border-[#e3edf6] p-4 odd:sm:border-r">
+                    <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-md", item.tone)}><Icon className="h-4 w-4" /></span>
+                    <div className="min-w-0"><p className="text-[11px] font-black uppercase text-slate-500">{item.label}</p><p className="metric-value mt-1 break-words text-lg font-black text-[#0b355a]">{item.value}</p><p className="mt-1 text-xs font-medium text-slate-500">{item.helper}</p></div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
 
         <FollowUpPanel items={followUpItems} />
       </div>
 
       <div className={cn("grid gap-4 xl:grid-cols-[1.3fr_0.7fr]", focusMode && "hidden")}>
-        <Card className="bri-card border-[#d7e3ef]">
-          <CardHeader>
-            <CardTitle>OS per Mantri</CardTitle>
-            <CardDescription>Ringkasan posisi outstanding periode terpilih.</CardDescription>
+        <Card className="bri-card overflow-hidden border-[#d7e3ef]">
+          <CardHeader className="border-b border-[#e3edf6] bg-[#f8fbfe]">
+            <div className="flex items-center justify-between gap-3"><div><CardTitle>OS per Mantri</CardTitle><CardDescription>Perbandingan outstanding kelolaan pada periode aktif.</CardDescription></div><Badge variant="outline">{mantriRecap.length} mantri</Badge></div>
           </CardHeader>
           <CardContent>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={getMantriRecap(month)}>
+                <BarChart data={mantriRecap}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="mantri" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={(value) => `${Number(value) / 1000000} jt`} tick={{ fontSize: 12 }} />
@@ -2474,23 +2422,32 @@ function DashboardOverviewView({
           </CardContent>
         </Card>
 
-        <Card className="bri-card border-[#d7e3ef]">
-          <CardHeader>
+        <Card className="bri-card overflow-hidden border-[#d7e3ef]">
+          <CardHeader className="border-b border-[#e3edf6] bg-[#f8fbfe]">
             <CardTitle>Komposisi Kualitas</CardTitle>
-            <CardDescription>Outstanding berdasarkan kolektibilitas.</CardDescription>
+            <CardDescription>Outstanding dan jumlah rekening per kolektibilitas.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-72">
+          <CardContent className="p-4">
+            <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={getQualityDistribution(month).filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={55} outerRadius={95}>
-                    {getQualityDistribution(month).map((_, index) => (
+                  <Pie data={qualityDistribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2}>
+                    {qualityDistribution.map((_, index) => (
                       <Cell key={index} fill={chartColors[index % chartColors.length]} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
                 </PieChart>
               </ResponsiveContainer>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-[#e3edf6] pt-3">
+              {qualityDistribution.map((item, index) => (
+                <div key={item.name} className="flex min-w-0 items-center gap-2 text-xs">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
+                  <span className="min-w-0 flex-1 truncate font-semibold text-slate-600">{item.name}</span>
+                  <span className="font-black text-[#004077]">{item.count}</span>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -2535,32 +2492,6 @@ function PeriodComparisonPanel({ currentMonth, onClose }: { currentMonth: MonthK
         </div>
       </div>
     </OverlayShell>
-  );
-}
-
-function DashboardCardGroup({
-  title,
-  accent,
-  children,
-}: {
-  title: string;
-  accent: "blue" | "orange" | "green";
-  children: React.ReactNode;
-}) {
-  const accentClass = {
-    blue: "border-[#00529c] bg-[#00529c]",
-    orange: "border-[#f37021] bg-[#f37021]",
-    green: "border-emerald-600 bg-emerald-600",
-  }[accent];
-
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span className={cn("h-3 w-3 rounded-full border", accentClass)} />
-        <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-[#004077]">{title}</h2>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">{children}</div>
-    </section>
   );
 }
 
