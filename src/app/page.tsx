@@ -274,6 +274,12 @@ type BrimenFormState = {
   guarantee: string;
   status: BrimenCustomer["status"];
   branchCode: string;
+  sphNumber: string;
+  creditApplicationNumber: string;
+  ktpNumber: string;
+  kkNumber: string;
+  skuNibNumber: string;
+  slikOjk: string;
 };
 
 type BrimenFormMode = "none" | "add-choice" | "add" | "detail" | "process" | "edit" | "archive";
@@ -309,6 +315,12 @@ const emptyBrimenForm: BrimenFormState = {
   guarantee: "",
   status: "Disimpan",
   branchCode: "8014",
+  sphNumber: "",
+  creditApplicationNumber: "",
+  ktpNumber: "",
+  kkNumber: "",
+  skuNibNumber: "",
+  slikOjk: "",
 };
 
 const emptyBrimenProcessForm: BrimenProcessFormState = {
@@ -358,6 +370,12 @@ function customerToForm(row: BrimenCustomer): BrimenFormState {
     guarantee: row.guarantee,
     status: row.status,
     branchCode: row.branchCode,
+    sphNumber: "",
+    creditApplicationNumber: "",
+    ktpNumber: "",
+    kkNumber: "",
+    skuNibNumber: "",
+    slikOjk: "",
   };
 }
 
@@ -4964,7 +4982,10 @@ function BrimenView({
     record.skuNibNumber,
     record.slikOjk,
   ].every((value) => value.trim()));
+  const previousCovenancePeriod = getPreviousMonth(latestLoanPeriod);
+  const visibleCovenancePeriods = new Set([latestLoanPeriod, previousCovenancePeriod].filter((value): value is MonthKey => Boolean(value)));
   const covenantRows = latestLoanRows
+    .filter((item) => visibleCovenancePeriods.has(item.realizedDate.slice(0, 7) as MonthKey))
     .map((item) => {
       const record = covenanceRecordMap.get(`${normalizeAccount(item.accountNumber)}|${item.realizedDate}`);
       return { ...item, record, dataStatus: isCovenanceComplete(record) ? "Lengkap" as const : "Belum Lengkap" as const };
@@ -5078,7 +5099,7 @@ function BrimenView({
     if (showingCovenance) {
       exportFile(
         `covenance-day-${latestLoanPeriod}`,
-        ["No Rekening", "Nama Debitur", "Plafond", "Tanggal Realisasi", "Produk", "Status Data", "No SPH", "No Surat Permohonan Kredit", "No KTP", "No KK", "No SKU/NIB", "SLIK OJK Saat Pengajuan"],
+        ["No Rekening", "Nama Debitur", "Plafond", "Tanggal Realisasi", "Produk", "Status Data", "No SPH", "No Surat Permohonan Kredit", "No KTP", "No KK", "No SKU/NIB", "No NPWP"],
         filteredCovenantRows.map((item) => [
           formatAccountNumber(item.accountNumber),
           item.debtorName,
@@ -5806,7 +5827,7 @@ function BrimenView({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-[#00529c]"><CalendarDays className="h-5 w-5 text-[#f37021]" />Covenance Day</CardTitle>
-                  <CardDescription className="mt-1">Kelengkapan dokumen pengajuan kredit dari LW321 terbaru posisi {getMonthLabel(latestLoanPeriod)}.</CardDescription>
+                  <CardDescription className="mt-1">Kelengkapan dokumen untuk realisasi {previousCovenancePeriod ? getMonthLabel(previousCovenancePeriod) : "bulan lalu"} dan {getMonthLabel(latestLoanPeriod)}. Status tersimpan tetap dipertahankan saat LW321 diperbarui.</CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge variant="success">{covenantRows.filter((item) => item.dataStatus === "Lengkap").length} lengkap</Badge>
@@ -5885,7 +5906,7 @@ function BrimenView({
                       <ReadOnlyField label="No KTP" value={covenanceForm.ktpNumber || "-"} />
                       <ReadOnlyField label="No KK" value={covenanceForm.kkNumber || "-"} />
                       <ReadOnlyField label="No SKU/NIB" value={covenanceForm.skuNibNumber || "-"} />
-                      <ReadOnlyField label="SLIK OJK Saat Pengajuan Kredit" value={covenanceForm.slikOjk || "-"} />
+                      <ReadOnlyField label="No NPWP" value={covenanceForm.slikOjk || "-"} />
                     </div>
                   ) : (
                     <div className="grid gap-4 sm:grid-cols-2 [&_input]:h-11 [&_input]:border-[#b9cfe2] [&_input]:bg-white [&_input]:font-semibold [&_input]:text-[#0f2942] focus-within:[&_input]:border-[#00529c]">
@@ -5894,7 +5915,7 @@ function BrimenView({
                       <Field label="No KTP"><Input inputMode="numeric" placeholder="Nomor identitas debitur" value={covenanceForm.ktpNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, ktpNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
                       <Field label="No KK"><Input inputMode="numeric" placeholder="Nomor kartu keluarga" value={covenanceForm.kkNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, kkNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
                       <Field label="No SKU/NIB"><Input placeholder="Nomor SKU atau NIB" value={covenanceForm.skuNibNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, skuNibNumber: event.target.value }))} /></Field>
-                      <Field label="SLIK OJK Saat Pengajuan Kredit"><Input placeholder="Nomor referensi SLIK OJK" value={covenanceForm.slikOjk} onChange={(event) => setCovenanceForm((current) => ({ ...current, slikOjk: event.target.value }))} /></Field>
+                      <Field label="No NPWP"><Input inputMode="numeric" placeholder="Masukkan nomor NPWP" value={covenanceForm.slikOjk} onChange={(event) => setCovenanceForm((current) => ({ ...current, slikOjk: event.target.value.replace(/\D/g, "") }))} /></Field>
                     </div>
                   )}
                   {covenanceMessage ? <p className={cn("mt-4 rounded-md border px-3 py-2 text-sm font-bold", covenanceMessage.includes("berhasil") ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700")}>{covenanceMessage}</p> : null}
@@ -6350,6 +6371,7 @@ function BrimenCustomerForm({
                 value={form.realizationDate}
                 onChange={(event) => update("realizationDate", event.target.value)}
                 readOnly={isArchiveMode}
+                required={mode === "add"}
               />
             </Field>
             <Field label="Plafond">
@@ -6406,6 +6428,26 @@ function BrimenCustomerForm({
             </Field>
           </div>
           </section>
+
+          {mode === "add" ? (
+            <section className="rounded-lg border border-[#bdd5e8] bg-white p-4 shadow-[0_6px_16px_rgba(0,55,105,0.04)]">
+              <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#e3edf6] pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="grid h-8 w-8 place-items-center rounded-md bg-emerald-50 text-emerald-700"><ClipboardList className="h-4 w-4" /></span>
+                  <div><p className="text-xs font-black uppercase text-[#00529c]">Dokumen Covenance Day</p><p className="text-[11px] text-muted-foreground">Disimpan bersama data BRIMEN agar status dokumen langsung lengkap</p></div>
+                </div>
+                <Badge variant="success">6 dokumen wajib</Badge>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <Field label="No SPH"><Input value={form.sphNumber} onChange={(event) => update("sphNumber", event.target.value)} placeholder="Masukkan nomor SPH" required /></Field>
+                <Field label="No Surat Permohonan Kredit"><Input value={form.creditApplicationNumber} onChange={(event) => update("creditApplicationNumber", event.target.value)} placeholder="Masukkan nomor surat permohonan" required /></Field>
+                <Field label="No KTP"><Input value={form.ktpNumber} onChange={(event) => update("ktpNumber", event.target.value.replace(/\D/g, ""))} placeholder="Nomor KTP debitur" inputMode="numeric" required /></Field>
+                <Field label="No KK"><Input value={form.kkNumber} onChange={(event) => update("kkNumber", event.target.value.replace(/\D/g, ""))} placeholder="Nomor kartu keluarga" inputMode="numeric" required /></Field>
+                <Field label="No SKU/NIB"><Input value={form.skuNibNumber} onChange={(event) => update("skuNibNumber", event.target.value)} placeholder="Nomor SKU atau NIB" required /></Field>
+                <Field label="No NPWP"><Input value={form.slikOjk} onChange={(event) => update("slikOjk", event.target.value.replace(/\D/g, ""))} placeholder="Nomor NPWP" inputMode="numeric" required /></Field>
+              </div>
+            </section>
+          ) : null}
 
           <section className="rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_6px_16px_rgba(0,55,105,0.04)]">
             <div className="mb-4 flex items-center gap-2 border-b border-[#e3edf6] pb-3"><span className="grid h-8 w-8 place-items-center rounded-md bg-[#fff1e8] text-[#f37021]"><FolderArchive className="h-4 w-4" /></span><div><p className="text-xs font-black uppercase text-[#00529c]">Arsip BRIMEN & Jaminan</p><p className="text-[11px] text-muted-foreground">Lokasi penyimpanan dan detail jaminan kredit</p></div></div>

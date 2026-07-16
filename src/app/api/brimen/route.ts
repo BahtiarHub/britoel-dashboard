@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db as appDb } from "@/db";
-import { loanRecords } from "@/db/schema";
+import { auditLogs, covenanceRecords, loanRecords } from "@/db/schema";
 import {
   type BrimenCustomerRow,
   getBrimenDbPath,
@@ -116,6 +116,9 @@ export async function POST(request: Request) {
     }
 
     const now = nowIso();
+    const branchCode = String(
+      (guard.session.user.role === "SuperAdmin" ? body.branchCode ?? guard.session.user.branchCode : guard.session.user.branchCode) ?? "8014",
+    ).trim() || "8014";
     const row = {
       id: newId("cus"),
       account_number: accountNumber,
@@ -128,24 +131,80 @@ export async function POST(request: Request) {
       brimen_jaminan: body.brimenJaminan ?? "",
       guarantee: body.guarantee ?? "",
       status: body.status ?? "Disimpan",
-      branch_code: guard.session.user.role === "SuperAdmin" ? body.branchCode ?? guard.session.user.branchCode : guard.session.user.branchCode,
+      branch_code: branchCode,
       created_at: now,
       updated_at: now,
     };
 
-    const db = openBrimenDb(false);
-    db.prepare(
-      `insert into customers (
-        id, account_number, name, plafond, realization_date, address, mantri,
-        brimen_berkas, brimen_jaminan, guarantee, status, branch_code, created_at, updated_at
-      ) values (
-        @id, @account_number, @name, @plafond, @realization_date, @address, @mantri,
-        @brimen_berkas, @brimen_jaminan, @guarantee, @status, @branch_code, @created_at, @updated_at
-      )`,
-    ).run(row);
-    db.close();
+    const covenantFields = {
+      sphNumber: String(body.sphNumber ?? "").trim(),
+      creditApplicationNumber: String(body.creditApplicationNumber ?? "").trim(),
+      ktpNumber: String(body.ktpNumber ?? "").replace(/\s/g, ""),
+      kkNumber: String(body.kkNumber ?? "").replace(/\s/g, ""),
+      skuNibNumber: String(body.skuNibNumber ?? "").trim(),
+      slikOjk: String(body.slikOjk ?? "").replace(/\s/g, ""),
+    };
+    const hasCovenanceData = Object.values(covenantFields).some(Boolean);
+    const realizedDate = String(row.realization_date ?? "");
+    if (hasCovenanceData && !/^\d{4}-\d{2}-\d{2}$/.test(realizedDate)) {
+      return NextResponse.json({ ok: false, message: "Tanggal realisasi wajib diisi untuk menyimpan dokumen Covenance Day." }, { status: 400 });
+    }
 
-    return NextResponse.json({ ok: true, data: normalizeCustomer(row) }, { status: 201 });
+    const brimenDb = openBrimenDb(false);
+    try {
+      brimenDb.prepare(
+        `insert into customers (
+          id, account_number, name, plafond, realization_date, address, mantri,
+          brimen_berkas, brimen_jaminan, guarantee, status, branch_code, created_at, updated_at
+        ) values (
+          @id, @account_number, @name, @plafond, @realization_date, @address, @mantri,
+          @brimen_berkas, @brimen_jaminan, @guarantee, @status, @branch_code, @created_at, @updated_at
+        )`,
+      ).run(row);
+
+      if (hasCovenanceData) {
+        const covenanceId = crypto.randomUUID();
+        const updatedAt = new Date();
+        appDb.transaction((tx) => {
+          tx.insert(covenanceRecords).values({
+            id: covenanceId,
+            branchCode,
+            period: realizedDate.slice(0, 7),
+            accountNumber,
+            debtorName: name,
+            realizedDate,
+            ...covenantFields,
+            updatedBy: guard.session.user.id,
+            updatedAt,
+          }).onConflictDoUpdate({
+            target: [covenanceRecords.branchCode, covenanceRecords.accountNumber, covenanceRecords.realizedDate],
+            set: {
+              debtorName: name,
+              ...covenantFields,
+              updatedBy: guard.session.user.id,
+              updatedAt,
+            },
+          }).run();
+          tx.insert(auditLogs).values({
+            id: crypto.randomUUID(),
+            actorId: guard.session.user.id,
+            action: "ISI_COVENANCE_DARI_BRIMEN",
+            entity: "covenance_record",
+            entityId: `${branchCode}:${accountNumber}:${realizedDate}`,
+            detail: `${accountNumber} | ${realizedDate}`,
+            branchCode,
+            createdAt: updatedAt,
+          }).run();
+        });
+      }
+    } catch (error) {
+      brimenDb.prepare("delete from customers where id = ?").run(row.id);
+      throw error;
+    } finally {
+      brimenDb.close();
+    }
+
+    return NextResponse.json({ ok: true, data: normalizeCustomer(row), covenanceSaved: hasCovenanceData }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: "Gagal menambah data BRIMEN.", detail: error instanceof Error ? error.message : String(error) },
