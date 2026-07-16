@@ -62,8 +62,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Pie,
-  PieChart,
+  Line as RechartsLine,
+  LineChart as RechartsLineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -129,8 +129,6 @@ const sidebarItems: {
 ];
 
 const qualityOptions = ["Semua", "Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet", "PL", "NPL"];
-const chartColors = ["#00529c", "#0f9f8f", "#f37021", "#f59e0b", "#7c3aed", "#64748b", "#dc2626"];
-const chartDepthColors = ["#003765", "#087064", "#a8430d", "#a86405", "#4c1d95", "#3f4a5a", "#8f1720"];
 const currentBrimenUser = {
   name: "User Login Non CS",
   username: "USER_NON_CS",
@@ -2168,6 +2166,84 @@ function PresentationMode({ month, summary, brimenRows, role, onClose }: { month
   );
 }
 
+function formatChartAxis(value: number) {
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000_000) return `${(value / 1_000_000_000).toLocaleString("id-ID", { maximumFractionDigits: 1 })} M`;
+  if (absolute >= 1_000_000) return `${(value / 1_000_000).toLocaleString("id-ID", { maximumFractionDigits: 0 })} Jt`;
+  if (absolute >= 1_000) return `${(value / 1_000).toLocaleString("id-ID", { maximumFractionDigits: 0 })} Rb`;
+  return formatNumber(value);
+}
+
+function PortfolioGrowthChart({ month, title = "Pertumbuhan Portofolio Kredit" }: { month: MonthKey; title?: string }) {
+  const previousMonth = getPreviousMonth(month) ?? month;
+  const yearEndMonth = getYearEndComparisonMonth(month);
+  const currentSummary = getSummary(month);
+  const previousSummary = getSummary(previousMonth);
+  const yearEndSummary = getSummary(yearEndMonth);
+  const data = [
+    { period: "Akhir Tahun", month: getMonthLabel(yearEndMonth), os: yearEndSummary.totalOs, sml: yearEndSummary.smlOs, npl: yearEndSummary.nplOs },
+    { period: "Bulan Lalu", month: getMonthLabel(previousMonth), os: previousSummary.totalOs, sml: previousSummary.smlOs, npl: previousSummary.nplOs },
+    { period: "Terbaru", month: getMonthLabel(month), os: currentSummary.totalOs, sml: currentSummary.smlOs, npl: currentSummary.nplOs },
+  ];
+  const growth = [
+    { label: "OS", value: currentSummary.totalOs, delta: currentSummary.totalOs - yearEndSummary.totalOs, color: "#00529c", background: "bg-[#e8f3fb]" },
+    { label: "SML", value: currentSummary.smlOs, delta: currentSummary.smlOs - yearEndSummary.smlOs, color: "#f37021", background: "bg-[#fff0e6]" },
+    { label: "NPL", value: currentSummary.nplOs, delta: currentSummary.nplOs - yearEndSummary.nplOs, color: "#dc2626", background: "bg-rose-50" },
+  ];
+
+  return (
+    <Card className="bri-card overflow-hidden border-[#d7e3ef]">
+      <CardHeader className="border-b border-[#e3edf6] bg-[linear-gradient(110deg,#f8fbfe_0%,#eef7ff_68%,#fff5ee_100%)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><CardTitle>{title}</CardTitle><CardDescription>Tren OS, SML, dan NPL dari akhir tahun hingga posisi terbaru.</CardDescription></div>
+          <Badge variant="outline" className="w-fit border-[#9fc3df] bg-white text-[#00529c]">3 posisi laporan</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="p-4 sm:p-5">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_230px]">
+          <div className="h-[310px] min-w-0 rounded-lg border border-[#e3edf6] bg-white p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <RechartsLineChart data={data} margin={{ top: 18, right: 8, left: 2, bottom: 4 }}>
+                <defs>
+                  <filter id="portfolioLineGlow" x="-30%" y="-30%" width="160%" height="160%">
+                    <feDropShadow dx="0" dy="3" stdDeviation="2.5" floodColor="#003765" floodOpacity="0.22" />
+                  </filter>
+                </defs>
+                <CartesianGrid stroke="#dce9f4" strokeDasharray="4 5" vertical={false} />
+                <XAxis dataKey="period" axisLine={{ stroke: "#aac4d9" }} tickLine={false} tick={{ fontSize: 12, fontWeight: 700, fill: "#35546d" }} dy={8} />
+                <YAxis yAxisId="os" tickFormatter={formatChartAxis} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#60778b" }} width={52} />
+                <YAxis yAxisId="risk" orientation="right" tickFormatter={formatChartAxis} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#60778b" }} width={48} />
+                <Tooltip
+                  formatter={(value: number, name: string) => [formatCurrency(value), name]}
+                  labelFormatter={(_, payload) => payload?.[0]?.payload?.month ?? ""}
+                  contentStyle={{ borderRadius: 8, borderColor: "#bfd3e5", boxShadow: "0 12px 28px rgba(0,55,105,.16)", fontSize: 12 }}
+                />
+                <RechartsLine yAxisId="os" type="monotone" dataKey="os" name="OS" stroke="#00529c" strokeWidth={4} dot={{ r: 5, fill: "#00529c", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
+                <RechartsLine yAxisId="risk" type="monotone" dataKey="sml" name="SML" stroke="#f37021" strokeWidth={4} dot={{ r: 5, fill: "#f37021", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
+                <RechartsLine yAxisId="risk" type="monotone" dataKey="npl" name="NPL" stroke="#dc2626" strokeWidth={4} dot={{ r: 5, fill: "#dc2626", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
+              </RechartsLineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="grid gap-2.5 sm:grid-cols-3 xl:grid-cols-1">
+            {growth.map((item) => (
+              <div key={item.label} className={cn("relative overflow-hidden rounded-lg border border-[#dbe7f1] p-3.5", item.background)}>
+                <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: item.color }} />
+                <div className="flex items-center justify-between gap-3"><p className="text-xs font-black uppercase text-slate-600">{item.label} Terbaru</p><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color, boxShadow: `0 0 0 4px ${item.color}18` }} /></div>
+                <p className="metric-value mt-1.5 text-base font-black text-[#0b355a]">{formatCurrency(item.value)}</p>
+                <p className={cn("mt-1 text-xs font-black", item.delta > 0 ? "text-rose-700" : item.delta < 0 ? "text-emerald-700" : "text-slate-500")}>{item.delta > 0 ? "+" : ""}{formatCurrency(item.delta)} <span className="font-semibold text-slate-500">YTD</span></p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#e3edf6] pt-3">
+          {growth.map((item) => <div key={item.label} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span className="h-1 w-7 rounded-full" style={{ backgroundColor: item.color }} />{item.label}</div>)}
+          <p className="ml-auto text-xs font-semibold text-slate-500">Arah garis menunjukkan perubahan nominal, bukan persentase.</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DashboardOverviewView({
   month,
   summary,
@@ -2201,7 +2277,6 @@ function DashboardOverviewView({
   const creditAccountSet = new Set(creditAccounts.map((account) => normalizeAccount(account)));
   const matchedBrimen = brimenRows.filter((item) => item.persistedInBrimen !== false && creditAccountSet.has(normalizeAccount(item.accountNumber))).length;
   const mantriRecap = getMantriRecap(month);
-  const qualityDistribution = getQualityDistribution(month);
   const brimenArchivedActive = brimenRows.filter((item) => item.isLatestLw321 === true && Boolean(item.brimenBerkas?.trim()));
   const brimenBorrowed = brimenRows.filter((item) => item.status === "Dipinjam");
   const brimenNotArchived = brimenRows.filter((item) => item.isLatestLw321 === true && !item.brimenBerkas?.trim()).length;
@@ -2403,75 +2478,8 @@ function DashboardOverviewView({
         <FollowUpPanel items={followUpItems} />
       </div>
 
-      <div className={cn("grid gap-4 xl:grid-cols-[1.3fr_0.7fr]", focusMode && "hidden")}>
-        <Card className="bri-card overflow-hidden border-[#d7e3ef]">
-          <CardHeader className="border-b border-[#e3edf6] bg-[#f8fbfe]">
-            <div className="flex items-center justify-between gap-3"><div><CardTitle>OS per Mantri</CardTitle><CardDescription>Perbandingan outstanding kelolaan pada periode aktif.</CardDescription></div><Badge variant="outline">{mantriRecap.length} mantri</Badge></div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={mantriRecap}>
-                  <defs>
-                    <linearGradient id="overviewOs3d" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#4aa3df" />
-                      <stop offset="42%" stopColor="#0066ad" />
-                      <stop offset="100%" stopColor="#003d72" />
-                    </linearGradient>
-                    <filter id="overviewBarShadow" x="-20%" y="-20%" width="150%" height="160%">
-                      <feDropShadow dx="4" dy="5" stdDeviation="3" floodColor="#003765" floodOpacity="0.28" />
-                    </filter>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="mantri" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={(value) => `${Number(value) / 1000000} jt`} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Bar dataKey="totalOs" radius={[7, 7, 2, 2]} fill="url(#overviewOs3d)" style={{ filter: "url(#overviewBarShadow)" }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bri-card overflow-hidden border-[#d7e3ef]">
-          <CardHeader className="border-b border-[#e3edf6] bg-[#f8fbfe]">
-            <CardTitle>Komposisi Kualitas</CardTitle>
-            <CardDescription>Outstanding dan jumlah rekening per kolektibilitas.</CardDescription>
-          </CardHeader>
-          <CardContent className="p-4">
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <defs>
-                    <filter id="overviewPieShadow" x="-30%" y="-30%" width="170%" height="180%">
-                      <feDropShadow dx="0" dy="7" stdDeviation="5" floodColor="#002f57" floodOpacity="0.3" />
-                    </filter>
-                  </defs>
-                  <Pie data={qualityDistribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2} cy="54%" isAnimationActive={false}>
-                    {qualityDistribution.map((_, index) => (
-                      <Cell key={index} fill={chartDepthColors[index % chartDepthColors.length]} stroke="none" />
-                    ))}
-                  </Pie>
-                  <Pie data={qualityDistribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2} cy="49%" style={{ filter: "url(#overviewPieShadow)" }}>
-                    {qualityDistribution.map((_, index) => (
-                      <Cell key={index} fill={chartColors[index % chartColors.length]} stroke="#ffffff" strokeWidth={1.5} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-[#e3edf6] pt-3">
-              {qualityDistribution.map((item, index) => (
-                <div key={item.name} className="flex min-w-0 items-center gap-2 text-xs">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
-                  <span className="min-w-0 flex-1 truncate font-semibold text-slate-600">{item.name}</span>
-                  <span className="font-black text-[#004077]">{item.count}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      <div className={cn(focusMode && "hidden")}>
+        <PortfolioGrowthChart month={month} />
       </div>
       {compareOpen ? <PeriodComparisonPanel currentMonth={month} onClose={() => setCompareOpen(false)} /> : null}
     </div>
@@ -2773,8 +2781,6 @@ function RingkasanView({
   onOpenMenu: (menu: MantriViewKey) => void;
 }) {
   const [newQualityMenu, setNewQualityMenu] = useState<"SML" | "NPL">("SML");
-  const distribution = getQualityDistribution(month);
-  const rekap = getMantriRecap(month);
   const ckpnRows = getCkpnRows(month);
   const previousMonth = getPreviousMonth(month);
   const previousSummary = getSummary(previousMonth ?? month);
@@ -2869,76 +2875,7 @@ function RingkasanView({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>OS per Mantri</CardTitle>
-            <CardDescription>Perbandingan total outstanding pada periode terpilih.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rekap}>
-                  <defs>
-                    <linearGradient id="creditOs3d" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#54d5c5" />
-                      <stop offset="42%" stopColor="#0f9f8f" />
-                      <stop offset="100%" stopColor="#087064" />
-                    </linearGradient>
-                    <filter id="creditBarShadow" x="-20%" y="-20%" width="150%" height="160%">
-                      <feDropShadow dx="4" dy="5" stdDeviation="3" floodColor="#064e46" floodOpacity="0.28" />
-                    </filter>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="mantri" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={(value) => `${Number(value) / 1000000} jt`} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Bar dataKey="totalOs" radius={[7, 7, 2, 2]} fill="url(#creditOs3d)" style={{ filter: "url(#creditBarShadow)" }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Komposisi Kualitas</CardTitle>
-            <CardDescription>Outstanding berdasarkan kolektibilitas terbaru.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <defs>
-                    <filter id="creditPieShadow" x="-30%" y="-30%" width="170%" height="180%">
-                      <feDropShadow dx="0" dy="8" stdDeviation="5" floodColor="#002f57" floodOpacity="0.3" />
-                    </filter>
-                  </defs>
-                  <Pie data={distribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={55} outerRadius={95} cy="54%" isAnimationActive={false}>
-                    {distribution.map((_, index) => (
-                      <Cell key={index} fill={chartDepthColors[index % chartDepthColors.length]} stroke="none" />
-                    ))}
-                  </Pie>
-                  <Pie data={distribution.filter((item) => item.os > 0)} dataKey="os" nameKey="name" innerRadius={55} outerRadius={95} cy="49%" style={{ filter: "url(#creditPieShadow)" }}>
-                    {distribution.map((_, index) => (
-                      <Cell key={index} fill={chartColors[index % chartColors.length]} stroke="#ffffff" strokeWidth={1.5} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              {distribution.map((item, index) => (
-                <div key={item.name} className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
-                  <span>{item.name}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <PortfolioGrowthChart month={month} title="Tren OS, SML, dan NPL" />
 
       <div className="grid gap-3 md:grid-cols-3">
         <Button variant="outline" onClick={() => onOpenMenu("kualitas")}>Lihat Nominatif Kualitas</Button>
