@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db as appDb } from "@/db";
 import { auditLogs, covenanceRecords, loanRecords } from "@/db/schema";
 import {
@@ -23,6 +23,7 @@ export async function GET(request: Request) {
     const brimenDb = openBrimenDb(true);
 
     const branchScoped = guard.session.user.role !== "SuperAdmin";
+    const activeBranchCode = guard.session.user.branchCode ?? "8014";
     const rows = brimenDb
       .prepare(
         `select
@@ -43,48 +44,99 @@ export async function GET(request: Request) {
         ${branchScoped ? "where branch_code = ?" : ""}
         order by updated_at desc`,
       )
-      .all(...(branchScoped ? [guard.session.user.branchCode] : [])) as BrimenCustomerRow[];
-
-    const statusRows = brimenDb
-      .prepare(`select status, count(*) as count from customers ${branchScoped ? "where branch_code = ?" : ""} group by status`)
-      .all(...(branchScoped ? [guard.session.user.branchCode] : [])) as { status: string; count: number }[];
+      .all(...(branchScoped ? [activeBranchCode] : [])) as BrimenCustomerRow[];
 
     brimenDb.close();
 
     const creditRows = branchScoped
-      ? await appDb.select().from(loanRecords).where(eq(loanRecords.branchCode, guard.session.user.branchCode ?? "8014")).orderBy(desc(loanRecords.period))
-      : await appDb.select().from(loanRecords).orderBy(desc(loanRecords.period));
-    const latestCreditByAccount = new Map<string, (typeof creditRows)[number]>();
+      ? await appDb.select().from(loanRecords).where(and(
+          eq(loanRecords.branchCode, activeBranchCode),
+          eq(loanRecords.sourceKey, "lw321-terbaru"),
+        )).orderBy(desc(loanRecords.period))
+      : await appDb.select().from(loanRecords).where(eq(loanRecords.sourceKey, "lw321-terbaru")).orderBy(desc(loanRecords.period));
+    const latestPeriodByBranch = new Map<string, string>();
     creditRows.forEach((row) => {
-      const key = `${row.branchCode}:${row.accountNumber.replace(/\D/g, "")}`;
-      if (!latestCreditByAccount.has(key)) latestCreditByAccount.set(key, row);
+      if (!latestPeriodByBranch.has(row.branchCode)) latestPeriodByBranch.set(row.branchCode, row.period);
     });
+    const latestCreditRows = creditRows.filter((row) => row.period === latestPeriodByBranch.get(row.branchCode));
+    const normalizedBrimenRows = rows.map(normalizeCustomer).map((customer) => ({
+      ...customer,
+      isLatestLw321: false,
+      persistedInBrimen: true,
+      dataSource: "BRIMEN" as const,
+    }));
+    const brimenByAccount = new Map<string, (typeof normalizedBrimenRows)[number]>();
+    normalizedBrimenRows.forEach((customer) => {
+      const key = `${customer.branchCode}:${customer.accountNumber.replace(/\D/g, "")}`;
+      if (!brimenByAccount.has(key)) brimenByAccount.set(key, customer);
+    });
+    const brimenRows = [...brimenByAccount.values()];
+    const matchedBrimenKeys = new Set<string>();
     let synchronizedCount = 0;
-    const data = rows.map(normalizeCustomer).map((customer) => {
-      const credit = latestCreditByAccount.get(`${customer.branchCode}:${customer.accountNumber.replace(/\D/g, "")}`);
-      if (!credit) return customer;
-      synchronizedCount += 1;
+    const latestData = latestCreditRows.map((credit) => {
+      const accountNumber = credit.accountNumber.replace(/\D/g, "");
+      const key = `${credit.branchCode}:${accountNumber}`;
+      const customer = brimenByAccount.get(key);
+      if (customer) {
+        matchedBrimenKeys.add(key);
+        synchronizedCount += 1;
+        return {
+          ...customer,
+          name: credit.debtorName || customer.name,
+          plafond: credit.plafond || customer.plafond,
+          realizationDate: credit.realizedDate || customer.realizationDate,
+          mantri: credit.mantri || customer.mantri,
+          isLatestLw321: true,
+          persistedInBrimen: true,
+          dataSource: "Gabungan" as const,
+        };
+      }
       return {
-        ...customer,
-        realizationDate: credit.realizedDate || customer.realizationDate,
-        mantri: credit.mantri || customer.mantri,
+        id: `lw321:${credit.branchCode}:${accountNumber}`,
+        accountNumber,
+        name: credit.debtorName,
+        plafond: credit.plafond,
+        realizationDate: credit.realizedDate,
+        address: "",
+        mantri: credit.mantri,
+        brimenBerkas: "",
+        brimenJaminan: "",
+        guarantee: "",
+        status: "Disimpan" as const,
+        branchCode: credit.branchCode,
+        updatedAt: credit.createdAt.toISOString(),
+        isLatestLw321: true,
+        persistedInBrimen: false,
+        dataSource: "LW321" as const,
       };
     });
+    const brimenOnlyRows = brimenRows.filter((customer) => !matchedBrimenKeys.has(
+      `${customer.branchCode}:${customer.accountNumber.replace(/\D/g, "")}`,
+    ));
+    const data = [...latestData, ...brimenOnlyRows];
     const withGuarantee = data.filter((row) => row.brimenJaminan || row.guarantee).length;
     const withoutArchive = data.filter((row) => !row.brimenBerkas).length;
     const borrowed = data.filter((row) => row.status === "Dipinjam").length;
+    const statusCounts = new Map<string, number>();
+    data.forEach((row) => {
+      const status = row.isLatestLw321 && !row.brimenBerkas ? "Belum Disimpan" : row.status;
+      statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1);
+    });
 
     return NextResponse.json({
       ok: true,
       data,
       summary: {
         total: data.length,
+        brimenTotal: brimenRows.length,
         withGuarantee,
         withoutGuarantee: data.length - withGuarantee,
         withoutArchive,
         borrowed,
         synchronizedWithLw321: synchronizedCount,
-        byStatus: statusRows,
+        latestLw321: latestData.length,
+        brimenOnly: brimenOnlyRows.length,
+        byStatus: [...statusCounts].map(([status, count]) => ({ status, count })),
       },
       source: getBrimenDbPath(),
     });

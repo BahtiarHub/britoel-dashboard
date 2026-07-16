@@ -192,14 +192,20 @@ type BrimenCustomer = {
   status: "Disimpan" | "Dipinjam" | "Diambil" | "Lunas";
   branchCode: string;
   updatedAt: string;
+  isLatestLw321?: boolean;
+  persistedInBrimen?: boolean;
+  dataSource?: "BRIMEN" | "LW321" | "Gabungan";
 };
 
 type BrimenSummary = {
   total: number;
+  brimenTotal?: number;
   withGuarantee: number;
   withoutGuarantee: number;
   withoutArchive: number;
   borrowed: number;
+  latestLw321?: number;
+  brimenOnly?: number;
   byStatus: { status: string; count: number }[];
 };
 
@@ -358,7 +364,7 @@ const emptySuplesiCustomer: BrimenCustomer = {
 
 function customerToForm(row: BrimenCustomer): BrimenFormState {
   return {
-    id: row.id,
+    id: row.persistedInBrimen === false ? undefined : row.id,
     accountNumber: formatAccountNumber(row.accountNumber),
     name: row.name,
     plafond: String(row.plafond),
@@ -1033,7 +1039,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
 
       setBrimenRows(payload.data ?? []);
       setBrimenSummary(payload.summary);
-      setBrimenStatus(`Terhubung ke ${payload.data?.length ?? 0} data BRIMEN`);
+      setBrimenStatus(`Terhubung ke ${payload.data?.length ?? 0} data operasional`);
 
       const loanResponse = await fetch("/api/brimen/loans?history=1", { cache: "no-store" });
       const loanPayload = await loanResponse.json();
@@ -2093,7 +2099,7 @@ function DashboardOverviewView({
   const realisasiTotal = realisasiRows.reduce((total, item) => total + item.total, 0);
   const realisasiCount = realisasiRows.reduce((total, item) => total + item.count, 0);
   const creditAccountSet = new Set(creditAccounts.map((account) => normalizeAccount(account)));
-  const matchedBrimen = brimenRows.filter((item) => creditAccountSet.has(normalizeAccount(item.accountNumber))).length;
+  const matchedBrimen = brimenRows.filter((item) => item.persistedInBrimen !== false && creditAccountSet.has(normalizeAccount(item.accountNumber))).length;
   const mantriRecap = getMantriRecap(month);
   const topOs = [...mantriRecap].sort((a, b) => b.totalOs - a.totalOs)[0];
   const topNpl = [...mantriRecap]
@@ -2103,7 +2109,7 @@ function DashboardOverviewView({
       totalOs: row.totalOs,
     }))
     .sort((a, b) => b.nplOs - a.nplOs)[0];
-  const brimenArchivedActive = brimenRows.filter((item) => ["Disimpan", "Dipinjam"].includes(item.status) && Boolean(item.brimenBerkas?.trim()));
+  const brimenArchivedActive = brimenRows.filter((item) => item.isLatestLw321 === true && Boolean(item.brimenBerkas?.trim()));
   const brimenBorrowed = brimenRows.filter((item) => item.status === "Dipinjam");
   const todayPriorities = [
     { label: "New SML", value: `${summary.newSml.length} rekening`, tone: "warning" },
@@ -2114,7 +2120,7 @@ function DashboardOverviewView({
   const recentItems = recentMenus
     .map((key) => sidebarItems.find((item) => item.key === key))
     .filter((item): item is (typeof sidebarItems)[number] => Boolean(item));
-  const brimenNotArchived = brimenRows.filter((item) => !item.brimenBerkas?.trim()).length;
+  const brimenNotArchived = brimenRows.filter((item) => item.isLatestLw321 === true && !item.brimenBerkas?.trim()).length;
   const roleFocus = {
     SuperAdmin: { title: "Kontrol Global", description: "Pantau seluruh uker, pengguna aktif, dan aktivitas operasional.", icon: Shield },
     Mantri: { title: "Fokus Pinjaman", description: "Pantau kualitas, pipeline, dan rekening yang perlu ditagih.", icon: UsersRound },
@@ -2366,7 +2372,7 @@ function DashboardOverviewView({
             <p className="mt-1 text-sm text-muted-foreground">Ringkasan arsip berkas, jaminan, dan status peminjaman BRIMEN.</p>
           </div>
           <DashboardCardGroup title="BRIMEN" accent="blue">
-            <MetricCard label="Total BRIMEN" value={`${brimenSummary?.total ?? brimenRows.length} nasabah`} helper={`${brimenStatus} | ${matchedBrimen} cocok kredit`} icon={FolderArchive} />
+            <MetricCard label="Total Data Operasional" value={`${brimenSummary?.total ?? brimenRows.length} nasabah`} helper={`${brimenSummary?.latestLw321 ?? 0} LW321 | ${brimenSummary?.brimenTotal ?? 0} BRIMEN | ${matchedBrimen} cocok`} icon={FolderArchive} />
             <MetricCard label="Aktif Dalam Arsip" value={`${brimenArchivedActive.length} nasabah`} helper={`Termasuk ${brimenBorrowed.length} status dipinjam`} tone="success" icon={FileSpreadsheet} />
             <MetricCard label="Berkas Dipinjam" value={`${brimenSummary?.borrowed ?? 0} nasabah`} helper="Dari data BRIMEN" tone="warning" icon={Upload} />
             <MetricCard label="Kelengkapan Arsip" value={`${brimenArchivedActive.length}/${brimenRows.length} nasabah`} helper="Ringkasan status arsip BRIMEN" tone="success" icon={CheckCircle2} />
@@ -4868,8 +4874,8 @@ function BrimenView({
     [creditAccounts],
   );
   const lower = search.trim().toLowerCase();
-  const isActiveArchived = (item: BrimenCustomer) => ["Disimpan", "Dipinjam"].includes(item.status) && Boolean(item.brimenBerkas?.trim());
-  const isActiveUnarchived = (item: BrimenCustomer) => item.status === "Disimpan" && !item.brimenBerkas?.trim();
+  const isActiveArchived = (item: BrimenCustomer) => item.isLatestLw321 === true && Boolean(item.brimenBerkas?.trim());
+  const isActiveUnarchived = (item: BrimenCustomer) => item.isLatestLw321 === true && !item.brimenBerkas?.trim();
   const archivedActiveRows = rows.filter(isActiveArchived);
   const unarchivedActiveRows = rows.filter(isActiveUnarchived);
   const borrowedCustomerRows = rows.filter((item) => item.status === "Dipinjam");
@@ -4902,7 +4908,7 @@ function BrimenView({
   });
   const filteredRows = quickFilteredRows.filter(matchesCustomerSearch);
 
-  const matchedCredit = rows.filter((item) => creditAccountSet.has(normalizeAccount(item.accountNumber))).length;
+  const matchedCredit = rows.filter((item) => item.persistedInBrimen !== false && creditAccountSet.has(normalizeAccount(item.accountNumber))).length;
   const borrowedLoans = loans.filter((loan) => loan.status === "Dipinjam");
   const borrowedLoanCustomerIds = new Set(borrowedLoans.map((loan) => loan.customerId));
   const borrowedFileRows: BorrowedFileRow[] = [
@@ -6135,7 +6141,7 @@ function BrimenView({
                       <Eye className="h-3.5 w-3.5" />
                       Detail
                     </Button>
-                    {filter === "Semua" ? (
+                    {filter === "Semua" && item.persistedInBrimen !== false ? (
                       <Button
                         variant="outline"
                         size="sm"
