@@ -860,7 +860,56 @@ export default function Home() {
   if (!session) return <LoginView />;
   if (session.user.active === false) return <AccountInactive />;
 
-  return <DashboardApp session={session as DashboardSession} />;
+  return <AccessGate session={session as DashboardSession} />;
+}
+
+function AccessGate({ session }: { session: DashboardSession }) {
+  const [access, setAccess] = useState<"checking" | "allowed" | "blocked">("checking");
+
+  useEffect(() => {
+    fetch("/api/access", { cache: "no-store" })
+      .then((response) => setAccess(response.ok ? "allowed" : "blocked"))
+      .catch(() => setAccess("blocked"));
+  }, []);
+
+  if (access === "checking") return <AuthLoading />;
+  if (access === "blocked") return <AccountInactive />;
+  if (session.user.role === "SuperAdmin") return <SuperAdminApp session={session} />;
+  return <DashboardApp session={session} />;
+}
+
+function SuperAdminApp({ session }: { session: DashboardSession }) {
+  return (
+    <main className="min-h-screen bg-[#f3f7fb] text-slate-800">
+      <div className="h-1.5 bg-gradient-to-r from-[#00529c] via-[#0077c8] to-[#f37021]" />
+      <div className="flex min-h-[calc(100vh-6px)]">
+        <aside className="hidden w-72 shrink-0 border-r border-[#cbddeb] bg-white lg:flex lg:flex-col">
+          <div className="sidebar-brand-panel p-5 text-white">
+            <div className="britoel-mark" aria-label="BRI Tool"><span className="britoel-mark__bri">BRI</span><span className="britoel-mark__toel">Tool</span><span className="britoel-mark__spark" /></div>
+            <p className="mt-4 text-xs font-black uppercase text-[#ffb077]">Portal Pemilik Aplikasi</p>
+            <h1 className="mt-1 text-lg font-black">SuperAdmin</h1>
+          </div>
+          <nav className="p-3">
+            <div className="flex items-center gap-3 rounded-md bg-[#00529c] px-3 py-3 text-sm font-bold text-white shadow-sm">
+              <span className="grid h-8 w-8 place-items-center rounded-md bg-white/15"><Shield className="h-4 w-4" /></span>
+              Pengawasan Uker
+            </div>
+          </nav>
+          <div className="mt-auto border-t border-[#d7e3ef] p-4 text-xs leading-5 text-slate-500">
+            <p className="font-black text-[#004077]">Akses baca saja</p>
+            <p>Pengolahan data dilakukan oleh Admin pada masing-masing unit kerja.</p>
+          </div>
+        </aside>
+        <section className="min-w-0 flex-1">
+          <header className="sticky top-0 z-40 flex items-center justify-between border-b border-[#cbddeb] bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:px-6">
+            <div className="min-w-0"><p className="text-xs font-black uppercase text-[#f37021]">Pengawasan Global</p><h2 className="truncate text-lg font-black text-[#004077]">Aktivitas Admin dan Unit Kerja</h2></div>
+            <div className="flex items-center gap-3"><div className="hidden text-right sm:block"><p className="text-sm font-black text-slate-800">{session.user.name}</p><p className="text-xs text-slate-500">{session.user.displayUsername ?? session.user.username}</p></div><Button type="button" variant="outline" size="icon" aria-label="Keluar" onClick={async () => { await authClient.signOut(); window.location.reload(); }}><LogOut className="h-4 w-4" /></Button></div>
+          </header>
+          <div className="mx-auto max-w-[1680px] p-3 sm:p-5 lg:p-6"><UserManagementView session={session} /></div>
+        </section>
+      </div>
+    </main>
+  );
 }
 
 function AccountInactive() {
@@ -889,11 +938,20 @@ function LoginView() {
     setError("");
     setSubmitting(true);
     const result = await authClient.signIn.username({ username, password });
-    setSubmitting(false);
     if (result.error) {
-      setError("Email atau kata sandi tidak sesuai.");
+      setSubmitting(false);
+      setError("Username atau kata sandi tidak sesuai.");
       return;
     }
+    const accessResponse = await fetch("/api/access", { cache: "no-store" });
+    if (!accessResponse.ok) {
+      const payload = await accessResponse.json().catch(() => null);
+      await authClient.signOut();
+      setSubmitting(false);
+      setError(payload?.message ?? "Akun tidak dapat digunakan. Hubungi pengelola unit kerja.");
+      return;
+    }
+    setSubmitting(false);
     window.location.reload();
   }
 
@@ -1442,7 +1500,11 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     Admin: "bg-indigo-600",
     User: "bg-slate-600",
   }[selectedRole];
-  const visibleSidebarItems = sidebarItems.filter((item) => item.key !== "users" || ["SuperAdmin", "Admin"].includes(session.user.role ?? ""));
+  const visibleSidebarItems = sidebarItems.filter((item) => {
+    if (item.key === "users") return session.user.role === "Admin";
+    if (item.key === "unggah") return session.user.role === "Admin";
+    return true;
+  });
 
   return (
     <main className="app-shell min-h-screen bg-background text-[15px] antialiased">
@@ -1769,7 +1831,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         </section>
       </div>
       {activeControlPanel === "commands" ? (
-        <CommandPalette items={commandItems} onClose={() => setActiveControlPanel("none")} />
+        <CommandPalette items={commandItems.filter((item) => item.id !== "upload" || session.user.role === "Admin")} onClose={() => setActiveControlPanel("none")} />
       ) : null}
       {activeControlPanel === "notifications" ? (
         <NotificationCenter items={notifications} onClose={() => setActiveControlPanel("none")} />
@@ -7908,13 +7970,36 @@ type ManagedUser = {
   role: string;
   branchCode: string;
   active: boolean;
+  effectiveActive: boolean;
+  blockedByAdmin: boolean;
+  createdBy?: string | null;
+  parentUsername?: string | null;
   online: boolean;
   activeSessions: number;
   lastActiveAt?: string | null;
 };
 
+type UserAuditActivity = {
+  id: string;
+  action: string;
+  detail?: string | null;
+  actor?: string | null;
+  branchCode: string;
+  createdAt: string;
+};
+
+type SuperAdminBranchOverview = {
+  period: string;
+  accounts: number;
+  outstanding: number;
+  uploadSources: number;
+};
+
 function UserManagementView({ session }: { session: DashboardSession }) {
   const [rows, setRows] = useState<ManagedUser[]>([]);
+  const [activities, setActivities] = useState<UserAuditActivity[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState("Semua");
+  const [branchOverview, setBranchOverview] = useState<SuperAdminBranchOverview>();
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -7925,14 +8010,39 @@ function UserManagementView({ session }: { session: DashboardSession }) {
 
   async function loadUsers() {
     setLoading(true);
-    const response = await fetch("/api/users", { cache: "no-store" });
-    const payload = await response.json();
+    const [response, auditResponse] = await Promise.all([
+      fetch("/api/users", { cache: "no-store" }),
+      fetch("/api/audit", { cache: "no-store" }),
+    ]);
+    const [payload, auditPayload] = await Promise.all([response.json(), auditResponse.json()]);
     if (response.ok && payload.ok) setRows(payload.data ?? []);
     else setMessage(payload.message ?? "Data pengguna belum dapat dimuat.");
+    if (auditResponse.ok && auditPayload.ok) setActivities(auditPayload.data ?? []);
     setLoading(false);
   }
 
   useEffect(() => { loadUsers(); }, []);
+
+  useEffect(() => {
+    if (!isSuperAdmin || selectedBranch === "Semua") {
+      setBranchOverview(undefined);
+      return;
+    }
+    fetch(`/api/dashboard-data?branch=${selectedBranch}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!payload.ok) return setBranchOverview(undefined);
+        const period = String(payload.latestPeriod ?? "");
+        const positionRows = (payload.data ?? []).filter((item: { month?: string }) => item.month === period) as { accountNumber: string; outstanding: number }[];
+        setBranchOverview({
+          period,
+          accounts: new Set(positionRows.map((item) => item.accountNumber)).size,
+          outstanding: positionRows.reduce((total, item) => total + Number(item.outstanding || 0), 0),
+          uploadSources: new Set((payload.uploads ?? []).map((item: { sourceKey?: string }) => item.sourceKey)).size,
+        });
+      })
+      .catch(() => setBranchOverview(undefined));
+  }, [isSuperAdmin, selectedBranch]);
 
   async function createUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -7957,57 +8067,64 @@ function UserManagementView({ session }: { session: DashboardSession }) {
     await loadUsers();
   }
 
-  const branchCount = new Set(rows.map((item) => item.branchCode)).size;
+  const branchCount = new Set(rows.filter((item) => item.role === "Admin").map((item) => item.branchCode)).size;
   const onlineCount = rows.filter((item) => item.online).length;
   const formatter = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" });
-  const pagination = useTablePagination(rows, `${rows.length}-${loading}`);
+  const visibleRows = selectedBranch === "Semua" ? rows : rows.filter((item) => item.branchCode === selectedBranch);
+  const visibleActivities = selectedBranch === "Semua" ? activities.slice(0, 12) : activities.filter((item) => item.branchCode === selectedBranch).slice(0, 12);
+  const pagination = useTablePagination(visibleRows, `${visibleRows.length}-${loading}-${selectedBranch}`);
   const branchSummaries = [...new Set(rows.map((item) => item.branchCode))].sort().map((branchCode) => {
     const users = rows.filter((item) => item.branchCode === branchCode);
     const lastActive = users.map((item) => item.lastActiveAt ? new Date(item.lastActiveAt) : undefined).filter((item): item is Date => Boolean(item)).sort((a, b) => b.getTime() - a.getTime())[0];
-    return { branchCode, total: users.length, online: users.filter((item) => item.online).length, lastActive };
+    const admin = users.find((item) => item.role === "Admin");
+    return { branchCode, total: users.length, online: users.filter((item) => item.online).length, lastActive, admin };
   });
 
   return (
     <div className="space-y-4">
-      <SectionHeader title="Manajemen User" description={isSuperAdmin ? "Pantau pengguna dan aktivitas seluruh unit kerja." : `Kelola pengguna di branch ${session.user.branchCode}.`} icon={UserCog} />
+      <SectionHeader title={isSuperAdmin ? "Pengawasan SuperAdmin" : "Manajemen User"} description={isSuperAdmin ? "Pantau Admin, jajaran pengguna, dan aktivitas setiap unit kerja tanpa mengolah data operasional." : `Kelola pengguna yang Anda buat di branch ${session.user.branchCode}.`} icon={UserCog} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Total Pengguna" value={formatNumber(rows.length)} helper="Akun terdaftar" icon={UsersRound} />
+        <MetricCard label={isSuperAdmin ? "Total Admin" : "Total Pengguna"} value={formatNumber(isSuperAdmin ? rows.filter((item) => item.role === "Admin").length : rows.length)} helper={isSuperAdmin ? "Kaunit / SPV terdaftar" : "Akun dalam jajaran Anda"} icon={UsersRound} />
         <MetricCard label="Sedang Aktif" value={formatNumber(onlineCount)} helper="Aktivitas 5 menit terakhir" icon={Activity} tone="success" />
         <MetricCard label="Unit Kerja" value={formatNumber(branchCount)} helper={isSuperAdmin ? "Terpantau global" : `Branch ${session.user.branchCode}`} icon={Database} />
         <MetricCard label="Akun Nonaktif" value={formatNumber(rows.filter((item) => !item.active).length)} helper="Akses dihentikan" icon={Shield} tone="warning" />
       </div>
       {isSuperAdmin ? <div className="overflow-hidden rounded-lg border border-[#cbddeb] bg-white">
-        <div className="border-b border-[#d7e3ef] bg-[#f4f9fd] px-4 py-3"><p className="font-black text-[#004077]">Aktivitas Unit Kerja</p><p className="text-xs text-slate-500">Ringkasan penggunaan BRI Tool secara global.</p></div>
-        <div className="grid gap-px bg-[#d7e3ef] sm:grid-cols-2 xl:grid-cols-4">{branchSummaries.map((item) => <div key={item.branchCode} className="bg-white p-4"><div className="flex items-center justify-between"><span className="text-lg font-black text-[#00529c]">Uker {item.branchCode}</span><span className={cn("rounded-full px-2 py-1 text-xs font-bold", item.online ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>{item.online} online</span></div><p className="mt-2 text-sm font-semibold text-slate-700">{item.total} pengguna</p><p className="mt-1 text-xs text-slate-500">Last update: {item.lastActive ? formatter.format(item.lastActive) : "Belum ada aktivitas"}</p></div>)}</div>
+        <div className="flex flex-col gap-3 border-b border-[#d7e3ef] bg-[#f4f9fd] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black text-[#004077]">Unit Kerja Terpantau</p><p className="text-xs text-slate-500">Pilih uker untuk melihat Admin, jajaran, dan aktivitasnya.</p></div>{selectedBranch !== "Semua" ? <Button type="button" size="sm" variant="outline" onClick={() => setSelectedBranch("Semua")}>Tampilkan Semua</Button> : null}</div>
+        <div className="grid gap-px bg-[#d7e3ef] sm:grid-cols-2 xl:grid-cols-4">{branchSummaries.map((item) => <button type="button" key={item.branchCode} onClick={() => setSelectedBranch(item.branchCode)} className={cn("bg-white p-4 text-left transition hover:bg-[#f5faff]", selectedBranch === item.branchCode && "bg-[#eef7ff] ring-2 ring-inset ring-[#00529c]")}><div className="flex items-center justify-between"><span className="text-lg font-black text-[#00529c]">Uker {item.branchCode}</span><span className={cn("rounded-full px-2 py-1 text-xs font-bold", item.online ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>{item.online} online</span></div><p className="mt-2 text-sm font-black text-slate-700">{item.admin?.name ?? "Admin belum tersedia"}</p><p className="text-xs text-slate-500">{item.total} akun dalam jajaran</p><p className="mt-1 text-xs text-slate-500">Last update: {item.lastActive ? formatter.format(item.lastActive) : "Belum ada aktivitas"}</p></button>)}</div>
       </div> : null}
+      {isSuperAdmin && selectedBranch !== "Semua" ? <div className="rounded-lg border border-[#b9d6ec] bg-gradient-to-r from-[#edf7ff] to-white p-4"><div className="mb-3 flex items-center justify-between gap-3"><div><p className="font-black text-[#004077]">Tampilan Data Uker {selectedBranch}</p><p className="text-xs text-slate-500">Ringkasan baca saja dari data yang dikelola Admin uker.</p></div><Badge className="bg-[#00529c] text-white">Read only</Badge></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><div className="rounded-md border border-white bg-white/90 p-3"><p className="text-xs font-bold text-slate-500">Posisi Data</p><p className="mt-1 font-black text-[#00529c]">{branchOverview?.period || "Belum tersedia"}</p></div><div className="rounded-md border border-white bg-white/90 p-3"><p className="text-xs font-bold text-slate-500">Jumlah Rekening</p><p className="mt-1 font-black text-[#00529c]">{formatNumber(branchOverview?.accounts ?? 0)}</p></div><div className="rounded-md border border-white bg-white/90 p-3"><p className="text-xs font-bold text-slate-500">Outstanding</p><p className="mt-1 font-black text-[#00529c]">{formatCurrency(branchOverview?.outstanding ?? 0)}</p></div><div className="rounded-md border border-white bg-white/90 p-3"><p className="text-xs font-bold text-slate-500">Sumber Data Aktif</p><p className="mt-1 font-black text-[#00529c]">{formatNumber(branchOverview?.uploadSources ?? 0)} file</p></div></div></div> : null}
       <div className="flex flex-col gap-3 rounded-lg border border-[#cbddeb] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="font-black text-[#004077]">Kontrol Akses Uker</p><p className="text-sm text-slate-500">Username otomatis menggunakan format KODEBRANCH-NAMA.</p></div>
-        <Button type="button" className="bg-[#00529c] hover:bg-[#004077]" onClick={() => setCreateOpen(true)}><FilePlus2 className="mr-2 h-4 w-4" />Tambah User</Button>
+        <div><p className="font-black text-[#004077]">Kontrol Akses Uker</p><p className="text-sm text-slate-500">Format akun: KODE BRANCH-JABATAN, misalnya 8014-KAUNIT atau 8014-MANTRI_SYIFA.</p></div>
+        <Button type="button" className="bg-[#00529c] hover:bg-[#004077]" onClick={() => setCreateOpen(true)}><FilePlus2 className="mr-2 h-4 w-4" />{isSuperAdmin ? "Tambah Admin" : "Tambah User"}</Button>
       </div>
       {message ? <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-[#00529c]">{message}</p> : null}
       <TableShell>
-        <thead><tr><Th>Username</Th><Th>Nama Pengguna</Th><Th>Branch</Th><Th>Peran</Th><Th>Status</Th><Th>Last Update</Th><Th>Sesi</Th><Th>Aksi</Th></tr></thead>
+        <thead><tr><Th>Username</Th><Th>Nama Pengguna</Th><Th>Branch</Th><Th>Peran</Th>{isSuperAdmin ? <Th>Admin Induk</Th> : null}<Th>Status</Th><Th>Last Update</Th><Th>Sesi</Th><Th>Aksi</Th></tr></thead>
         <tbody>
           {pagination.pagedRows.map((item) => (
             <tr key={item.id}>
               <Td className="font-black text-[#00529c]">{item.username}</Td><Td>{item.name}</Td><Td>{item.branchCode}</Td><Td><Badge variant="outline">{item.role}</Badge></Td>
-              <Td><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold", item.online ? "bg-emerald-50 text-emerald-700" : item.active ? "bg-slate-100 text-slate-600" : "bg-rose-50 text-rose-700")}><span className={cn("h-2 w-2 rounded-full", item.online ? "bg-emerald-500" : item.active ? "bg-slate-400" : "bg-rose-500")} />{item.online ? "Online" : item.active ? "Offline" : "Nonaktif"}</span></Td>
+              {isSuperAdmin ? <Td>{item.role === "Admin" ? <span className="font-bold text-[#00529c]">Admin Utama</span> : item.parentUsername ?? "Belum terhubung"}</Td> : null}
+              <Td><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold", item.online && item.effectiveActive ? "bg-emerald-50 text-emerald-700" : item.effectiveActive ? "bg-slate-100 text-slate-600" : "bg-rose-50 text-rose-700")}><span className={cn("h-2 w-2 rounded-full", item.online && item.effectiveActive ? "bg-emerald-500" : item.effectiveActive ? "bg-slate-400" : "bg-rose-500")} />{item.blockedByAdmin ? "Admin Nonaktif" : item.online ? "Online" : item.active ? "Offline" : "Nonaktif"}</span></Td>
               <Td>{item.lastActiveAt ? formatter.format(new Date(item.lastActiveAt)) : "Belum pernah"}</Td><Td>{item.activeSessions}</Td>
-              <Td><div className="flex min-w-max gap-2">{item.role !== "SuperAdmin" ? <><Button type="button" variant="outline" size="sm" onClick={() => updateUser({ userId: item.id, action: "toggle-active", active: !item.active })}>{item.active ? "Nonaktifkan" : "Aktifkan"}</Button><Button type="button" variant="outline" size="sm" onClick={() => setResetUser(item)}>Reset Password</Button></> : <span className="text-xs font-semibold text-slate-400">Pemilik aplikasi</span>}</div></Td>
+              <Td><div className="flex min-w-max gap-2">{(!isSuperAdmin || item.role === "Admin") ? <><Button type="button" variant="outline" size="sm" onClick={() => updateUser({ userId: item.id, action: "toggle-active", active: !item.active })}>{item.active ? "Nonaktifkan" : "Aktifkan"}</Button><Button type="button" variant="outline" size="sm" onClick={() => setResetUser(item)}>Reset Password</Button></> : <span className="text-xs font-semibold text-slate-400">Dikelola Admin</span>}</div></Td>
             </tr>
           ))}
-          {!loading && !rows.length ? <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">Belum ada pengguna yang dapat ditampilkan.</td></tr> : null}
+          {!loading && !visibleRows.length ? <tr><td colSpan={isSuperAdmin ? 9 : 8} className="px-3 py-8 text-center text-sm text-slate-500">Belum ada pengguna yang dapat ditampilkan.</td></tr> : null}
         </tbody>
       </TableShell>
-      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={visibleRows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
 
-      {createOpen ? <OverlayShell title="Tambah Pengguna Uker" description="Buat akun sesuai branch dan kewenangan pengguna." icon={UserCog} onClose={() => setCreateOpen(false)}>
+      {isSuperAdmin ? <div className="overflow-hidden rounded-lg border border-[#cbddeb] bg-white"><div className="border-b border-[#d7e3ef] bg-[#f4f9fd] px-4 py-3"><p className="font-black text-[#004077]">Log Aktivitas {selectedBranch === "Semua" ? "Global" : `Uker ${selectedBranch}`}</p><p className="text-xs text-slate-500">Jejak penggunaan terbaru dari Admin dan jajarannya.</p></div><div className="divide-y divide-[#e4edf5]">{visibleActivities.map((item) => <div key={item.id} className="grid gap-1 px-4 py-3 sm:grid-cols-[10rem_1fr_auto] sm:items-center"><div><p className="text-sm font-black text-[#00529c]">{item.actor ?? "Sistem"}</p><p className="text-xs text-slate-500">Uker {item.branchCode}</p></div><div><p className="text-sm font-bold text-slate-700">{item.action.replaceAll("_", " ")}</p><p className="line-clamp-1 text-xs text-slate-500">{item.detail || "Tidak ada rincian tambahan"}</p></div><time className="text-xs font-semibold text-slate-500">{formatter.format(new Date(item.createdAt))}</time></div>)}{!visibleActivities.length ? <p className="px-4 py-8 text-center text-sm text-slate-500">Belum ada aktivitas pada unit kerja ini.</p> : null}</div></div> : null}
+
+      {createOpen ? <OverlayShell title={isSuperAdmin ? "Tambah Admin Uker" : "Tambah Pengguna Uker"} description={isSuperAdmin ? "Buat akun Kaunit/SPV sebagai Admin baru pada unit kerja." : "Buat akun jajaran sesuai branch dan kewenangan pengguna."} icon={UserCog} onClose={() => setCreateOpen(false)}>
         <form className="grid gap-4 p-5 sm:grid-cols-2" onSubmit={createUser}>
           <label className="text-sm font-bold text-slate-700">Kode Branch<Input value={form.branchCode} onChange={(event) => setForm({ ...form, branchCode: event.target.value.replace(/\D/g, "").slice(0, 4) })} disabled={!isSuperAdmin} className="mt-1.5 h-10" required /></label>
-          <label className="text-sm font-bold text-slate-700">Nama Username<Input value={form.usernameSuffix} onChange={(event) => setForm({ ...form, usernameSuffix: event.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_") })} placeholder="KAUNIT atau MANTRI_SYIFA" className="mt-1.5 h-10 uppercase" required /></label>
+          <label className="text-sm font-bold text-slate-700">Jabatan / Username<Input value={form.usernameSuffix} onChange={(event) => setForm({ ...form, usernameSuffix: event.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_") })} placeholder={isSuperAdmin ? "KAUNIT atau SPV" : "CS, MANTRI_NAMA, LAINNYA_NAMA"} className="mt-1.5 h-10 uppercase" required /></label>
           <div className="sm:col-span-2 rounded-md bg-[#eef7ff] px-3 py-2 text-sm font-black text-[#00529c]">Username: {form.branchCode}-{form.usernameSuffix || "NAMA"}</div>
           <label className="text-sm font-bold text-slate-700">Nama Lengkap<Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="mt-1.5 h-10" required /></label>
-          <label className="text-sm font-bold text-slate-700">Peran<Select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} className="mt-1.5 h-10"><option value="Admin" disabled={!isSuperAdmin}>Admin / Kaunit / SPV</option><option value="CS">CS</option><option value="Mantri">Mantri</option><option value="User">User Lainnya</option></Select></label>
+          <label className="text-sm font-bold text-slate-700">Peran<Select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value, usernameSuffix: "" })} className="mt-1.5 h-10" disabled={isSuperAdmin}><option value="Admin" disabled={!isSuperAdmin}>Admin / Kaunit / SPV</option><option value="CS">CS</option><option value="Mantri">Mantri</option><option value="User">Lainnya</option></Select></label>
           <label className="text-sm font-bold text-slate-700 sm:col-span-2">Password Awal<Input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} minLength={8} className="mt-1.5 h-10" required /></label>
           <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Batal</Button><Button type="submit" className="bg-[#00529c]">Buat Pengguna</Button></div>
         </form>

@@ -86,6 +86,6 @@ export async function GET(request: Request) {
       accountNumber: item.accountNumber,
       targetCollectibility: item.targetCollectibility,
     })),
-    uploads: latestUploads,
+    uploads: ["Admin", "SuperAdmin"].includes(guard.session.user.role ?? "") ? latestUploads : [],
   });
 }

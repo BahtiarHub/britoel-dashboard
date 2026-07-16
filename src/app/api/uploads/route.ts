@@ -27,6 +27,9 @@ const allowedExtensions: Record<string, string[]> = {
 export async function GET(request: Request) {
   const authResult = await requireApiSession(request);
   if (authResult.response) return authResult.response;
+  if (authResult.session.user.role !== "Admin") {
+    return NextResponse.json({ ok: false, message: "File upload hanya dapat dilihat oleh Admin unit kerja." }, { status: 403 });
+  }
   const branchCode = authResult.session.user.branchCode ?? "8014";
   const rows = await db.select().from(uploadRecords).where(eq(uploadRecords.branchCode, branchCode)).orderBy(desc(uploadRecords.createdAt)).limit(100);
   return NextResponse.json({ ok: true, data: rows });
@@ -35,6 +38,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const authResult = await requireApiSession(request);
   if (authResult.response) return authResult.response;
+  if (authResult.session.user.role !== "Admin") {
+    return NextResponse.json({ ok: false, message: "Upload dan penggantian data hanya dapat dilakukan oleh Admin unit kerja." }, { status: 403 });
+  }
   const branchCode = authResult.session.user.branchCode ?? "8014";
   const formData = await request.formData();
   const file = formData.get("file");

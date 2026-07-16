@@ -17,7 +17,7 @@ function canManage(role?: string | null) {
 }
 
 export async function GET(request: Request) {
-  const guard = await requireApiSession(request);
+  const guard = await requireApiSession(request, { allowSuperAdminWrite: true });
   if (guard.response) return guard.response;
   if (!canManage(guard.session.user.role)) {
     return NextResponse.json({ ok: false, message: "Anda tidak memiliki akses manajemen pengguna." }, { status: 403 });
@@ -26,11 +26,16 @@ export async function GET(request: Request) {
   const allUsers = await db.select().from(user).orderBy(desc(user.lastActiveAt), user.branchCode, user.name);
   const allSessions = await db.select({ userId: session.userId, expiresAt: session.expiresAt, updatedAt: session.updatedAt }).from(session);
   const now = Date.now();
-  const visibleUsers = allUsers.filter((item) => guard.session.user.role === "SuperAdmin" || (item.branchCode === guard.session.user.branchCode && item.role !== "SuperAdmin"));
+  const usersById = new Map(allUsers.map((item) => [item.id, item]));
+  const visibleUsers = allUsers.filter((item) => guard.session.user.role === "SuperAdmin"
+    ? item.role !== "SuperAdmin"
+    : item.createdBy === guard.session.user.id);
   const data = visibleUsers.map((item) => {
     const userSessions = allSessions.filter((entry) => entry.userId === item.id && entry.expiresAt.getTime() > now);
     const latestSession = userSessions.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
     const latestActivity = item.lastActiveAt ?? latestSession?.updatedAt ?? null;
+    const blockedByAdmin = Boolean(item.createdBy && usersById.get(item.createdBy)?.role === "Admin" && usersById.get(item.createdBy)?.active === false);
+    const effectiveActive = item.active && !blockedByAdmin;
     return {
       id: item.id,
       username: item.displayUsername ?? item.username ?? "-",
@@ -38,8 +43,12 @@ export async function GET(request: Request) {
       role: item.role,
       branchCode: item.branchCode,
       active: item.active,
+      effectiveActive,
+      blockedByAdmin,
+      createdBy: item.createdBy,
+      parentUsername: item.createdBy ? (usersById.get(item.createdBy)?.displayUsername ?? usersById.get(item.createdBy)?.username ?? null) : null,
       lastActiveAt: latestActivity,
-      online: Boolean(latestActivity && now - latestActivity.getTime() <= 5 * 60 * 1000),
+      online: Boolean(effectiveActive && latestActivity && now - latestActivity.getTime() <= 5 * 60 * 1000),
       activeSessions: userSessions.length,
       createdAt: item.createdAt,
     };
@@ -48,7 +57,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiSession(request);
+  const guard = await requireApiSession(request, { allowSuperAdminWrite: true });
   if (guard.response) return guard.response;
   if (!canManage(guard.session.user.role)) {
     return NextResponse.json({ ok: false, message: "Anda tidak memiliki akses membuat pengguna." }, { status: 403 });
@@ -71,8 +80,16 @@ export async function POST(request: Request) {
   if (!managedRoles.includes(role as (typeof managedRoles)[number])) {
     return NextResponse.json({ ok: false, message: "Peran pengguna tidak valid." }, { status: 400 });
   }
+  if (guard.session.user.role === "SuperAdmin" && role !== "Admin") {
+    return NextResponse.json({ ok: false, message: "SuperAdmin hanya dapat membuat Admin Kaunit/SPV baru." }, { status: 403 });
+  }
   if (guard.session.user.role === "Admin" && (branchCode !== guard.session.user.branchCode || role === "Admin")) {
     return NextResponse.json({ ok: false, message: "Admin hanya dapat membuat pengguna non-Admin pada branch sendiri." }, { status: 403 });
+  }
+  const rolePrefix = role === "Admin" ? /^(KAUNIT|SPV)$/ : role === "CS" ? /^CS(?:_[A-Z0-9]+)*$/ : role === "Mantri" ? /^MANTRI(?:_[A-Z0-9]+)+$/ : /^LAINNYA(?:_[A-Z0-9]+)+$/;
+  if (!rolePrefix.test(suffix)) {
+    const expected = role === "Admin" ? "KAUNIT atau SPV" : role === "CS" ? "CS atau CS_NAMA" : role === "Mantri" ? "MANTRI_NAMA" : "LAINNYA_NAMA";
+    return NextResponse.json({ ok: false, message: `Format jabatan tidak sesuai. Gunakan ${branchCode}-${expected}.` }, { status: 400 });
   }
 
   const normalizedUsername = username.toLowerCase();
@@ -123,7 +140,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const guard = await requireApiSession(request);
+  const guard = await requireApiSession(request, { allowSuperAdminWrite: true });
   if (guard.response) return guard.response;
   if (!canManage(guard.session.user.role)) {
     return NextResponse.json({ ok: false, message: "Anda tidak memiliki akses mengubah pengguna." }, { status: 403 });
@@ -133,7 +150,9 @@ export async function PATCH(request: Request) {
   const userId = String(body.userId ?? "");
   const target = (await db.select().from(user).where(eq(user.id, userId)).limit(1))[0];
   if (!target) return NextResponse.json({ ok: false, message: "Pengguna tidak ditemukan." }, { status: 404 });
-  if (target.role === "SuperAdmin" || (guard.session.user.role === "Admin" && target.branchCode !== guard.session.user.branchCode)) {
+  const isSuperAdminTargetAllowed = guard.session.user.role === "SuperAdmin" && target.role === "Admin";
+  const isAdminTargetAllowed = guard.session.user.role === "Admin" && target.createdBy === guard.session.user.id && target.branchCode === guard.session.user.branchCode;
+  if (target.role === "SuperAdmin" || (!isSuperAdminTargetAllowed && !isAdminTargetAllowed)) {
     return NextResponse.json({ ok: false, message: "Pengguna tersebut berada di luar kewenangan Anda." }, { status: 403 });
   }
 
@@ -142,6 +161,10 @@ export async function PATCH(request: Request) {
     const active = Boolean(body.active);
     await db.update(user).set({ active, updatedAt: now }).where(eq(user.id, userId));
     if (!active) await db.delete(session).where(eq(session.userId, userId));
+    if (!active && target.role === "Admin") {
+      const childUsers = await db.select({ id: user.id }).from(user).where(eq(user.createdBy, target.id));
+      for (const child of childUsers) await db.delete(session).where(eq(session.userId, child.id));
+    }
   } else if (body.action === "reset-password") {
     const password = String(body.password ?? "");
     if (password.length < 8) return NextResponse.json({ ok: false, message: "Kata sandi minimal 8 karakter." }, { status: 400 });
