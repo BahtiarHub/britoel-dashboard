@@ -873,8 +873,9 @@ function AccessGate({ session }: { session: DashboardSession }) {
 
   if (access === "checking") return <AuthLoading />;
   if (access === "blocked") return <AccountInactive />;
-  if (session.user.role === "SuperAdmin") return <SuperAdminApp session={session} />;
-  return <DashboardApp session={session} />;
+  const sessionKey = `${session.user.id}:${session.user.branchCode ?? ""}`;
+  if (session.user.role === "SuperAdmin") return <SuperAdminApp key={sessionKey} session={session} />;
+  return <DashboardApp key={sessionKey} session={session} />;
 }
 
 function SuperAdminApp({ session }: { session: DashboardSession }) {
@@ -1087,10 +1088,11 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   const [loanDataSource, setLoanDataSource] = useState<"loading" | "upload" | "mock">("loading");
   const [di319Rows, setDi319Rows] = useState<UploadedDi319Row[]>([]);
   const [latestUploadAt, setLatestUploadAt] = useState<string>();
+  const initializedBrimenBranch = useRef<string | undefined>(undefined);
 
   async function loadDashboardData() {
     try {
-      const response = await fetch("/api/dashboard-data", { cache: "no-store" });
+      const response = await fetch(`/api/dashboard-data?branch=${encodeURIComponent(activeBranchCode)}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Data dashboard gagal dimuat.");
       applySupplementalCkpnData(
@@ -1136,7 +1138,13 @@ function DashboardApp({ session }: { session: DashboardSession }) {
 
       setBrimenRows(payload.data ?? []);
       setBrimenSummary(payload.summary);
-      setBrimenStatus(`Terhubung ke ${payload.data?.length ?? 0} data operasional`);
+      const latestLw321 = Number(payload.summary?.latestLw321 ?? 0);
+      const storedBrimen = Number(payload.summary?.brimenTotal ?? 0);
+      setBrimenStatus(`Terhubung ke ${payload.data?.length ?? 0} data operasional (${latestLw321} LW321 terbaru, ${storedBrimen} arsip BRIMEN)`);
+      if (initializedBrimenBranch.current !== activeBranchCode) {
+        setBrimenFilter(latestLw321 > 0 && storedBrimen === 0 ? "Belum Arsip" : "Arsip Aktif");
+        initializedBrimenBranch.current = activeBranchCode;
+      }
 
       const loanResponse = await fetch("/api/brimen/loans?history=1", { cache: "no-store" });
       const loanPayload = await loanResponse.json();
@@ -1166,7 +1174,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         })));
       })
       .catch(() => undefined);
-  }, []);
+  }, [activeBranchCode, session.user.id]);
 
   useEffect(() => {
     const refresh = () => {
@@ -1175,7 +1183,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     };
     window.addEventListener("britoel-data-uploaded", refresh);
     return () => window.removeEventListener("britoel-data-uploaded", refresh);
-  }, []);
+  }, [activeBranchCode, session.user.id]);
 
   useEffect(() => {
     const role = session.user.role as UserRole | undefined;
