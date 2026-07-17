@@ -1045,6 +1045,7 @@ function LoginView() {
 function DashboardApp({ session }: { session: DashboardSession }) {
   const activeBranchCode = session.user.branchCode ?? "8014";
   const [activeBranchName, setActiveBranchName] = useState(activeBranchCode === "8014" ? "Unit Greenvilage" : `Uker ${activeBranchCode}`);
+  const branchNameParts = splitBranchDisplayName(activeBranchName);
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
   const [mantriView, setMantriView] = useState<MantriViewKey>("ringkasan");
   const [selectedMonth, setSelectedMonth] = useState<MonthKey>("2026-06");
@@ -1572,9 +1573,10 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   <span className="britoel-mark__toel">Tool</span>
                   <span className="britoel-mark__spark" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-xs font-black uppercase text-[#ffb077]">Unit Kerja {activeBranchCode}</p>
-                  <h2 className="truncate font-black text-white">{activeBranchName}</h2>
+                  <h2 className="mt-0.5 whitespace-normal text-base font-black leading-tight text-white">{branchNameParts.primary}</h2>
+                  {branchNameParts.secondary ? <p className="mt-0.5 whitespace-normal text-xs font-bold leading-tight text-blue-100">{branchNameParts.secondary}</p> : null}
                 </div>
                 <Button type="button" variant="outline" size="icon" aria-label="Tutup sidebar" className="ml-auto h-9 w-9 shrink-0 border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white xl:hidden" onClick={() => setMobileMenuOpen(false)}>
                   <Menu className="h-4 w-4" />
@@ -1655,9 +1657,12 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   <Menu className="h-4 w-4" />
                 </Button>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 md:hidden">
+                  <div className="flex max-w-[min(58vw,19rem)] items-start gap-2 md:hidden">
                     <span className="rounded-md bg-[#00529c] px-2 py-1 text-xs font-black text-white">{activeBranchCode}</span>
-                    <span className="truncate text-sm font-black text-[#00529c]">{activeBranchName}</span>
+                    <span className="min-w-0 pt-0.5 leading-tight">
+                      <span className="block whitespace-normal text-sm font-black text-[#00529c]">{branchNameParts.primary}</span>
+                      {branchNameParts.secondary ? <span className="mt-0.5 block whitespace-normal text-[10px] font-bold text-slate-500">{branchNameParts.secondary}</span> : null}
+                    </span>
                   </div>
                   <p className="hidden text-[10px] font-black uppercase text-[#f37021] md:block">Ruang Kerja Aktif</p>
                   <p className="truncate text-xs font-semibold text-muted-foreground md:text-base md:font-black md:text-[#004077]">{currentTitle?.label}</p>
@@ -1878,7 +1883,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                 <div>
                   <span className="font-black text-[#00529c]">BRI Tool</span>
                   <span className="mx-2 text-[#f37021]">|</span>
-                  <span>8014 - Unit Greenvilage</span>
+                  <span>{activeBranchCode} - {activeBranchName}</span>
                 </div>
                 <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Data unit kerja aktif</span>
               </div>
@@ -2184,6 +2189,17 @@ function formatChartAxis(value: number) {
   if (absolute >= 1_000_000) return `${(value / 1_000_000).toLocaleString("id-ID", { maximumFractionDigits: 0 })} Jt`;
   if (absolute >= 1_000) return `${(value / 1_000).toLocaleString("id-ID", { maximumFractionDigits: 0 })} Rb`;
   return formatNumber(value);
+}
+
+function splitBranchDisplayName(value: string) {
+  const words = value.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (words.join(" ").length <= 20 || words.length < 3) return { primary: words.join(" "), secondary: "" };
+  let splitAt = words.length - 1;
+  while (splitAt > 2 && words.slice(0, splitAt).join(" ").length > 22) splitAt -= 1;
+  return {
+    primary: words.slice(0, splitAt).join(" "),
+    secondary: words.slice(splitAt).join(" "),
+  };
 }
 
 function PortfolioGrowthChart({ month, title = "Pertumbuhan Portofolio Kredit" }: { month: MonthKey; title?: string }) {
