@@ -394,7 +394,10 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
     const accountNumber = String(row[accountHeader!]).trim();
     const debtorName = String(row[debtorHeader!]).trim();
     const qualityAmounts = getQualityAmounts(row, qualityHeaders);
-    const collectibility = parseCollectibility(collectibilityHeader ? row[collectibilityHeader] : "") ?? deriveCollectibility(qualityAmounts);
+    const derivedCollectibility = deriveCollectibility(qualityAmounts);
+    const collectibility = hasQualityAmountColumns
+      ? derivedCollectibility ?? parseCollectibility(collectibilityHeader ? row[collectibilityHeader] : "")
+      : parseCollectibility(collectibilityHeader ? row[collectibilityHeader] : "");
     const mantri = String(row[mantriHeader!]).trim();
     if (!accountNumber || !debtorName || !collectibility || !mantri) {
       rejected += 1;
@@ -402,9 +405,9 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
       return;
     }
     const plafond = parseMoney(pick(row, aliases.plafond));
-    const outstanding = outstandingHeader
-      ? parseMoney(row[outstandingHeader])
-      : Object.values(qualityAmounts).reduce((total, value) => total + value, 0);
+    const outstanding = hasQualityAmountColumns
+      ? Object.values(qualityAmounts).reduce((total, value) => total + value, 0)
+      : parseMoney(row[outstandingHeader!]);
     const realizedAmount = parseMoney(pick(row, aliases.realizedAmount)) || plafond;
     const pnPengelola = mantri;
     const flagText = normalizeHeader(String(pick(row, aliases.restructureFlag)));
