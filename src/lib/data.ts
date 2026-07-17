@@ -1078,11 +1078,28 @@ export function getArrearsRows(month: MonthKey) {
 export function getRealisasiRows(month: MonthKey) {
   return getCachedAnalysis(`realisasi:${month}`, () => {
     const rows = getCreditSnapshots(month).filter((item) => item.realizedDate.startsWith(month));
-    const map = new Map<string, { mantri: string; total: number; count: number }>();
+    const previousMonth = getPreviousMonth(month);
+    const previousOsByCif = new Map<string, number>();
+    if (previousMonth) {
+      for (const item of getCreditSnapshots(previousMonth)) {
+        const cif = item.cif?.trim().toUpperCase();
+        if (!cif) continue;
+        previousOsByCif.set(cif, (previousOsByCif.get(cif) ?? 0) + item.outstanding);
+      }
+    }
+    const appliedPreviousCifs = new Set<string>();
+    const map = new Map<string, { mantri: string; total: number; netDisbursement: number; count: number; existingCount: number; newCount: number }>();
     for (const item of rows) {
-      const current = map.get(item.mantri) ?? { mantri: item.mantri, total: 0, count: 0 };
+      const current = map.get(item.mantri) ?? { mantri: item.mantri, total: 0, netDisbursement: 0, count: 0, existingCount: 0, newCount: 0 };
+      const cif = item.cif?.trim().toUpperCase() ?? "";
+      const hasPreviousCif = Boolean(cif && previousOsByCif.has(cif));
+      const previousOs = hasPreviousCif && !appliedPreviousCifs.has(cif) ? previousOsByCif.get(cif) ?? 0 : 0;
       current.total += item.realizedAmount;
+      current.netDisbursement += item.plafond - previousOs;
       current.count += 1;
+      current.existingCount += hasPreviousCif ? 1 : 0;
+      current.newCount += hasPreviousCif ? 0 : 1;
+      if (hasPreviousCif) appliedPreviousCifs.add(cif);
       map.set(item.mantri, current);
     }
     return [...map.values()].sort((a, b) => b.total - a.total);

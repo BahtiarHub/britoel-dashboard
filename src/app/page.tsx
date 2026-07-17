@@ -3550,7 +3550,10 @@ function RekapView({ month, mantriFilter, onSelectMantri }: { month: MonthKey; m
 function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter: string }) {
   const rows = getRealisasiRows(month).filter((row) => mantriFilter === "Semua" || row.mantri === mantriFilter);
   const total = rows.reduce((sum, item) => sum + item.total, 0);
+  const netTotal = rows.reduce((sum, item) => sum + item.netDisbursement, 0);
   const count = rows.reduce((sum, item) => sum + item.count, 0);
+  const existingCount = rows.reduce((sum, item) => sum + item.existingCount, 0);
+  const newCount = rows.reduce((sum, item) => sum + item.newCount, 0);
   const average = count ? total / count : 0;
   const topMantri = rows[0];
   const maxTotal = Math.max(...rows.map((item) => item.total), 1);
@@ -3560,13 +3563,14 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
     <div className="space-y-5">
       <SectionHeader
         title="Realisasi Mantri"
-        description="Nominal dan jumlah rekening realisasi berdasarkan tanggal realisasi pada bulan terpilih."
+        description="Nominal realisasi dan net disbursement berdasarkan CIF pada bulan terpilih."
         icon={TrendingUp}
       />
       <section className="overflow-hidden rounded-lg bg-[#00529c] text-white shadow-[0_12px_28px_rgba(0,82,156,0.2)]">
         <div className="h-1.5 bg-[#f37021]" />
-        <div className="grid divide-y divide-white/15 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+        <div className="grid divide-y divide-white/15 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
           <div className="p-5"><p className="text-xs font-black uppercase text-white/65">Total Realisasi</p><p className="mt-2 text-2xl font-black">{formatCurrency(total)}</p><p className="mt-1 text-xs font-semibold text-white/70">Posisi {getMonthLabel(month)}</p></div>
+          <div className="bg-[#006a86] p-5"><p className="text-xs font-black uppercase text-cyan-100">Net Disbursement</p><p className="mt-2 text-2xl font-black">{formatCurrency(netTotal)}</p><p className="mt-1 text-xs font-semibold text-white/75">{formatNumber(existingCount)} existing | {formatNumber(newCount)} baru</p></div>
           <div className="p-5"><p className="text-xs font-black uppercase text-white/65">Jumlah Rekening</p><p className="mt-2 text-2xl font-black">{formatNumber(count)}</p><p className="mt-1 text-xs font-semibold text-white/70">Rekening terealisasi</p></div>
           <div className="p-5"><p className="text-xs font-black uppercase text-white/65">Rata-rata per Rekening</p><p className="mt-2 text-2xl font-black">{formatCurrency(average)}</p><p className="mt-1 text-xs font-semibold text-white/70">Nominal rata-rata realisasi</p></div>
           <div className="bg-[#004077] p-5"><p className="text-xs font-black uppercase text-[#ffd2b5]">Mantri Tertinggi</p><p className="mt-2 truncate text-lg font-black">{topMantri?.mantri ?? "-"}</p><p className="mt-1 text-xs font-semibold text-white/70">{topMantri ? formatCurrency(topMantri.total) : "Belum ada realisasi"}</p></div>
@@ -3575,8 +3579,8 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
 
       <section className="rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_8px_22px_rgba(0,55,105,0.06)] sm:p-5">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="text-xs font-black uppercase text-[#f37021]">Perbandingan Kinerja</p><h2 className="mt-1 text-lg font-black text-[#00529c]">Realisasi per Mantri</h2></div>
-          <p className="text-xs font-semibold text-muted-foreground">Urutan berdasarkan nominal terbesar</p>
+          <div><p className="text-xs font-black uppercase text-[#f37021]">Perbandingan Kinerja</p><h2 className="mt-1 text-lg font-black text-[#00529c]">Realisasi dan Net Disbursement per Mantri</h2></div>
+          <div className="flex flex-wrap gap-3 text-xs font-bold text-muted-foreground"><span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#00529c]" />Realisasi</span><span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#0f9f8f]" />Net Disbursement</span></div>
         </div>
         {rows.length ? (
           <div className="mt-4 h-[280px] w-full">
@@ -3600,9 +3604,10 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
                 <XAxis type="number" tickFormatter={(value) => `${Math.round(Number(value) / 1000000)} jt`} tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="mantri" width={175} tick={{ fontSize: 11, fill: "#004077" }} />
                 <Tooltip formatter={(value: number) => formatCurrency(value)} cursor={{ fill: "#eef7ff" }} />
-                <Bar dataKey="total" fill="url(#realizationBlue3d)" radius={[2, 7, 7, 2]} barSize={24} style={{ filter: "url(#realizationBarShadow)" }}>
+                <Bar dataKey="total" name="Realisasi" fill="url(#realizationBlue3d)" radius={[2, 7, 7, 2]} barSize={24} style={{ filter: "url(#realizationBarShadow)" }}>
                   {rows.map((row, index) => <Cell key={row.mantri} fill={index === 0 ? "url(#realizationOrange3d)" : index % 2 ? "url(#realizationGreen3d)" : "url(#realizationBlue3d)"} />)}
                 </Bar>
+                <Bar dataKey="netDisbursement" name="Net Disbursement" fill="url(#realizationGreen3d)" radius={[2, 7, 7, 2]} barSize={16} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -3612,12 +3617,13 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
         </div>
       </section>
 
-      <TableShell minWidth="min-w-[820px]">
+      <TableShell minWidth="min-w-[1080px]">
         <thead>
           <tr>
             <Th>Peringkat</Th>
             <Th>Mantri</Th>
             <Th>Nominal Realisasi</Th>
+            <Th>Net Disbursement</Th>
             <Th>Kontribusi</Th>
             <Th>Jumlah Debitur/Rekening</Th>
             <Th>Rata-rata/Rekening</Th>
@@ -3629,6 +3635,7 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
               <Td><span className={cn("grid h-8 w-8 place-items-center rounded-md text-xs font-black", pagination.page === 1 && index === 0 ? "bg-[#f37021] text-white" : "bg-[#eaf3fb] text-[#00529c]")}>{(pagination.page - 1) * pagination.pageSize + index + 1}</span></Td>
               <Td className="font-bold text-[#004077]">{row.mantri}</Td>
               <Td className="font-black text-[#00529c]">{formatCurrency(row.total)}</Td>
+              <Td><div className="min-w-[190px]"><p className={cn("font-black", row.netDisbursement >= 0 ? "text-emerald-700" : "text-rose-700")}>{formatCurrency(row.netDisbursement)}</p><p className="mt-1 text-[11px] font-semibold text-muted-foreground">{formatNumber(row.existingCount)} existing | {formatNumber(row.newCount)} baru</p></div></Td>
               <Td><div className="min-w-32"><div className="flex justify-between text-xs font-bold"><span>{formatPercent(total ? (row.total / total) * 100 : 0)}</span><span className="text-muted-foreground">dari total</span></div><div className="mt-1.5 h-2 rounded-full bg-[#eaf3fb]"><div className="h-2 rounded-full bg-[#0f9f8f]" style={{ width: `${(row.total / maxTotal) * 100}%` }} /></div></div></Td>
               <Td>{formatNumber(row.count)}</Td>
               <Td>{formatCurrency(row.count ? row.total / row.count : 0)}</Td>
