@@ -75,6 +75,11 @@ const aliases = {
   period: ["periode", "period", "bulan_data", "posisi_data", "snapshot_date", "tanggal_data", "report_date"],
 } as const;
 
+const branchAliases = {
+  code: ["kode_uker", "uker_code", "branch_code", "kode_unit", "unit_code"],
+  name: ["uker", "nama_uker", "uker_name", "branch_name", "nama_unit", "unit_name"],
+} as const;
+
 const qualityAmountAliases = {
   Lancar: ["lancar", "os_lancar", "baki_debet_lancar", "kolek_1", "kol_1", "kolektibilitas_1"],
   DPK: ["dpk", "sml", "dpk_1", "dpk_2", "dpk_3", "sml_1", "sml_2", "sml_3", "sml1", "sml2", "sml3", "os_dpk", "os_sml", "baki_debet_dpk", "baki_debet_sml", "kolek_2", "kol_2", "kolektibilitas_2"],
@@ -346,6 +351,16 @@ export function inferPeriod(sourceKey: string, fileName: string, rows: RawRow[],
   if (sourceKey === "nominatif-rekening") base.setMonth(base.getMonth() - 1);
   if (sourceKey === "lw321-tahun-lalu") return `${now.getFullYear() - 1}-12`;
   return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function extractBranchIdentity(rows: RawRow[]) {
+  for (const rawRow of rows.slice(0, 25)) {
+    const row = normalizeRow(rawRow);
+    const code = String(pick(row, branchAliases.code)).replace(/\D/g, "").trim();
+    const name = String(pick(row, branchAliases.name)).replace(/\s+/g, " ").trim();
+    if (code || name) return { code, name };
+  }
+  return { code: "", name: "" };
 }
 
 export function mapLoanRows(rawRows: RawRow[], period: string) {

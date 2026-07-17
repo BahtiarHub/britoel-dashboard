@@ -1044,7 +1044,7 @@ function LoginView() {
 
 function DashboardApp({ session }: { session: DashboardSession }) {
   const activeBranchCode = session.user.branchCode ?? "8014";
-  const activeBranchName = activeBranchCode === "8014" ? "Unit Greenvilage" : `Uker ${activeBranchCode}`;
+  const [activeBranchName, setActiveBranchName] = useState(activeBranchCode === "8014" ? "Unit Greenvilage" : `Uker ${activeBranchCode}`);
   const [activeMenu, setActiveMenu] = useState<MenuKey>("dashboard");
   const [mantriView, setMantriView] = useState<MantriViewKey>("ringkasan");
   const [selectedMonth, setSelectedMonth] = useState<MonthKey>("2026-06");
@@ -1095,6 +1095,10 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       const response = await fetch(`/api/dashboard-data?branch=${encodeURIComponent(activeBranchCode)}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Data dashboard gagal dimuat.");
+      if (typeof payload.branchName === "string" && payload.branchName.trim()) {
+        const formattedBranchName = payload.branchName.trim().toLocaleLowerCase("id-ID").replace(/(^|\s)\S/g, (letter: string) => letter.toLocaleUpperCase("id-ID"));
+        setActiveBranchName(formattedBranchName);
+      }
       applySupplementalCkpnData(
         Array.isArray(payload.nominativeCkpn) ? payload.nominativeCkpn : [],
         Array.isArray(payload.missingLoanResolutions) ? payload.missingLoanResolutions : [],

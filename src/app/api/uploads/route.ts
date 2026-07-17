@@ -3,10 +3,10 @@ import fs from "fs/promises";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { auditLogs, brimenCustomers, depositRecords, loanRecords, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
+import { auditLogs, branchProfiles, brimenCustomers, depositRecords, loanRecords, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
 import { upsertImportedBrimenCustomers } from "@/lib/brimen-db";
-import { inferPeriod, mapBrimenRows, mapDepositRows, mapLoanRows, mapNominativeCkpnRows, parseTabularFile } from "@/lib/import-data";
+import { extractBranchIdentity, inferPeriod, mapBrimenRows, mapDepositRows, mapLoanRows, mapNominativeCkpnRows, parseTabularFile } from "@/lib/import-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,10 +64,15 @@ export async function POST(request: Request) {
   let depositImport: ReturnType<typeof mapDepositRows> | undefined;
   let brimenImport: ReturnType<typeof mapBrimenRows> | undefined;
   let nominativeCkpnImport: ReturnType<typeof mapNominativeCkpnRows> | undefined;
+  let uploadedBranch = { code: "", name: "" };
   let period: string | undefined;
   try {
     if (isLoanSnapshot) {
       const rawRows = parseTabularFile(file.name, buffer);
+      uploadedBranch = extractBranchIdentity(rawRows);
+      if (uploadedBranch.code && uploadedBranch.code !== branchCode) {
+        throw new Error(`Kode uker pada file (${uploadedBranch.code}) tidak sesuai dengan branch login (${branchCode}).`);
+      }
       period = inferPeriod(sourceKey, file.name, rawRows);
       loanImport = mapLoanRows(rawRows, period);
     } else if (sourceKey === "di319") {
@@ -128,6 +133,17 @@ export async function POST(request: Request) {
     if (brimenImport) await upsertImportedBrimenCustomers(brimenImport.rows, branchCode);
     await db.transaction(async (tx) => {
       await tx.insert(uploadRecords).values(record);
+      if (isLoanSnapshot && uploadedBranch.name) {
+        await tx.insert(branchProfiles).values({
+          branchCode,
+          branchName: uploadedBranch.name,
+          sourceUploadId: record.id,
+          updatedAt: now,
+        }).onConflictDoUpdate({
+          target: branchProfiles.branchCode,
+          set: { branchName: uploadedBranch.name, sourceUploadId: record.id, updatedAt: now },
+        });
+      }
       if (loanImport && period) {
         await tx.delete(loanRecords).where(and(eq(loanRecords.branchCode, branchCode), eq(loanRecords.period, period)));
         for (let index = 0; index < loanImport.rows.length; index += 40) {

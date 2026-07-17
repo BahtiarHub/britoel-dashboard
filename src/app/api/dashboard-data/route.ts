@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { ckpnForecasts, depositRecords, loanRecords, missingLoanResolutions, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
+import { branchProfiles, ckpnForecasts, depositRecords, loanRecords, missingLoanResolutions, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
@@ -20,6 +20,7 @@ export async function GET(request: Request) {
   const nominativeCkpn = await db.select().from(nominativeCkpnRecords).where(eq(nominativeCkpnRecords.branchCode, branchCode)).orderBy(nominativeCkpnRecords.period, nominativeCkpnRecords.accountNumber);
   const loanResolutions = await db.select().from(missingLoanResolutions).where(eq(missingLoanResolutions.branchCode, branchCode)).orderBy(missingLoanResolutions.period, missingLoanResolutions.accountNumber);
   const forecasts = await db.select().from(ckpnForecasts).where(eq(ckpnForecasts.branchCode, branchCode)).orderBy(ckpnForecasts.period, ckpnForecasts.accountNumber);
+  const branchProfile = (await db.select().from(branchProfiles).where(eq(branchProfiles.branchCode, branchCode)).limit(1))[0];
   const latestUploads = await db.select({
     id: uploadRecords.id,
     sourceKey: uploadRecords.sourceKey,
@@ -34,6 +35,7 @@ export async function GET(request: Request) {
     ok: true,
     source: rows.length ? "upload" : "mock",
     branchCode,
+    branchName: branchProfile?.branchName ?? "",
     periods,
     latestPeriod: periods.at(-1) ?? null,
     data: rows.map((item) => ({

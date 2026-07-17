@@ -74,6 +74,13 @@ export const uploadRecords = pgTable("upload_records", {
   uploadedBy: text("uploaded_by").references(() => user.id, { onDelete: "set null" }), createdAt: dateTime("created_at").notNull(),
 }, (table) => [index("upload_records_branch_created_idx").on(table.branchCode, table.createdAt)]);
 
+export const branchProfiles = pgTable("branch_profiles", {
+  branchCode: text("branch_code").primaryKey(),
+  branchName: text("branch_name").notNull().default(""),
+  sourceUploadId: text("source_upload_id").references(() => uploadRecords.id, { onDelete: "set null" }),
+  updatedAt: dateTime("updated_at").notNull(),
+});
+
 export const loanRecords = pgTable("loan_records", {
   id: text("id").primaryKey(), uploadId: text("upload_id").notNull().references(() => uploadRecords.id, { onDelete: "cascade" }),
   branchCode: text("branch_code").notNull(), sourceKey: text("source_key").notNull(), period: text("period").notNull(),
@@ -159,4 +166,4 @@ export const brimenFileLoanLogs = pgTable("brimen_file_loan_logs", {
   id: text("id").primaryKey(), loanId: text("loan_id").notNull().references(() => brimenFileLoans.id, { onDelete: "cascade" }), actor: text("actor").notNull(), message: text("message").notNull(), createdAt: dateTime("created_at").notNull(),
 }, (table) => [index("brimen_file_loan_logs_loan_idx").on(table.loanId)]);
 
-export const schema = { user, session, account, verification, whatsappContacts, uploadRecords, loanRecords, nominativeCkpnRecords, missingLoanResolutions, ckpnForecasts, depositRecords, whatsappCampaigns, whatsappCampaignRecipients, warningLetters, covenanceRecords, auditLogs, brimenCustomers, brimenFileLoans, brimenFileLoanLogs };
+export const schema = { user, session, account, verification, whatsappContacts, uploadRecords, branchProfiles, loanRecords, nominativeCkpnRecords, missingLoanResolutions, ckpnForecasts, depositRecords, whatsappCampaigns, whatsappCampaignRecipients, warningLetters, covenanceRecords, auditLogs, brimenCustomers, brimenFileLoans, brimenFileLoanLogs };
