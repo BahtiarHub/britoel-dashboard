@@ -1073,7 +1073,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   const [brimenSummary, setBrimenSummary] = useState<BrimenSummary | undefined>();
   const [brimenStatus, setBrimenStatus] = useState("Memuat data BRIMEN...");
   const [brimenSearch, setBrimenSearch] = useState("");
-  const [brimenFilter, setBrimenFilter] = useState("Arsip Aktif");
+  const [brimenFilter, setBrimenFilter] = useState("Brimen Aktif");
   const [brimenFormMode, setBrimenFormMode] = useState<BrimenFormMode>("none");
   const [brimenForm, setBrimenForm] = useState<BrimenFormState>(emptyBrimenForm);
   const [brimenLoanCustomer, setBrimenLoanCustomer] = useState<BrimenCustomer | undefined>();
@@ -1147,7 +1147,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       const storedBrimen = Number(payload.summary?.brimenTotal ?? 0);
       setBrimenStatus(`Terhubung ke ${payload.data?.length ?? 0} data operasional (${latestLw321} LW321 terbaru, ${storedBrimen} arsip BRIMEN)`);
       if (initializedBrimenBranch.current !== activeBranchCode) {
-        setBrimenFilter(latestLw321 > 0 && storedBrimen === 0 ? "Belum Arsip" : "Arsip Aktif");
+        setBrimenFilter(latestLw321 > 0 && storedBrimen === 0 ? "Belum Arsip" : "Brimen Aktif");
         initializedBrimenBranch.current = activeBranchCode;
       }
 
@@ -2368,7 +2368,7 @@ function DashboardOverviewView({
           <OverviewMetricCard label="Total Outstanding" value={formatCurrency(summary.totalOs)} detail={`${formatNumber(summary.totalDebtorCount)} debitur aktif`} indicator="OS" icon={Banknote} />
           <OverviewMetricCard label="Special Mention Loan (SML)" value={formatCurrency(summary.smlOs)} detail={`${formatNumber(summary.smlDebtorCount)} debitur dalam SML`} indicator={formatPercent(summary.smlPercent)} tone="orange" icon={AlertTriangle} />
           <OverviewMetricCard label="Non Performing Loan (NPL)" value={formatCurrency(summary.nplOs)} detail={`${formatNumber(summary.nplDebtorCount)} debitur dalam NPL`} indicator={formatPercent(summary.nplPercent)} tone="red" icon={ArrowDownRight} />
-          <OverviewMetricCard label="Arsip Aktif" value={`${formatNumber(brimenArchivedActive.length)} nasabah`} detail={`${formatNumber(brimenBorrowed.length)} berkas sedang dipinjam`} indicator={`${brimenSummary?.total ?? brimenRows.length} data`} tone="green" icon={FolderArchive} />
+          <OverviewMetricCard label="Brimen Aktif" value={`${formatNumber(brimenArchivedActive.length)} nasabah`} detail={`${formatNumber(brimenBorrowed.length)} berkas sedang dipinjam`} indicator={`${brimenSummary?.total ?? brimenRows.length} data`} tone="green" icon={FolderArchive} />
         </div>
       </section>
 
@@ -2489,7 +2489,7 @@ function DashboardOverviewView({
                 { label: "New SML", value: `${summary.newSml.length} rekening`, helper: formatCurrency(summary.newSml.reduce((total, item) => total + item.outstanding, 0)), icon: AlertTriangle, tone: "text-[#b54b00] bg-[#fff0e6]" },
                 { label: "New NPL", value: `${summary.newNpl.length} rekening`, helper: formatCurrency(summary.newNpl.reduce((total, item) => total + item.outstanding, 0)), icon: ArrowDownRight, tone: "text-rose-700 bg-rose-50" },
                 { label: "Pipeline Suplesi", value: `${pipelineRows.length} rekening`, helper: formatCurrency(pipelineRows.reduce((total, item) => total + item.remainingPlafond, 0)), icon: Gauge, tone: "text-emerald-700 bg-emerald-50" },
-                { label: "Data Cocok", value: `${matchedBrimen} rekening`, helper: `${brimenNotArchived} belum diarsipkan`, icon: CheckCircle2, tone: "text-[#00529c] bg-[#e7f2fb]" },
+                { label: "Sinkronisasi Brimen", value: `${matchedBrimen} rekening`, helper: `${brimenNotArchived} belum diarsipkan`, icon: CheckCircle2, tone: "text-[#00529c] bg-[#e7f2fb]" },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
@@ -4920,7 +4920,7 @@ function BrimenView({
     );
   };
   const dataSourceRows =
-    filter === "Arsip Aktif"
+    filter === "Brimen Aktif"
       ? archivedActiveRows
       : filter === "Belum Arsip"
         ? unarchivedActiveRows
@@ -4974,7 +4974,7 @@ function BrimenView({
   const showingBorrowed = filter === "Dipinjam";
   const showingRegister = filter === "Register Pinjam Berkas";
   const showingCovenance = filter === "Covenance Day";
-  const showingArchivedActive = filter === "Arsip Aktif";
+  const showingArchivedActive = filter === "Brimen Aktif";
   const showingUnarchivedActive = filter === "Belum Arsip";
   const matchesLoanSearch = (loan: BrimenLoan) => {
     if (!lower) return true;
@@ -5053,7 +5053,7 @@ function BrimenView({
   const pagedBorrowedFileRows = filteredBorrowedFileRows.slice((safeLoanPage - 1) * loanPageSize, safeLoanPage * loanPageSize);
   const tabItems = [
     { label: "Covenance Day", value: "Covenance Day", count: covenantRows.length, icon: CalendarDays, tone: "orange" },
-    { label: "Berkas Aktif Dalam Arsip", value: "Arsip Aktif", count: archivedActiveRows.length, icon: FolderArchive, tone: "blue" },
+    { label: "Berkas Aktif Dalam BRIMEN", value: "Brimen Aktif", count: archivedActiveRows.length, icon: FolderArchive, tone: "blue" },
     { label: "Semua Data", value: "Semua", count: rows.length, icon: ClipboardList, tone: "navy" },
     { label: "Berkas Dipinjam", value: "Dipinjam", count: borrowedFileRows.length, icon: Upload, tone: "orange" },
     { label: "Berkas Aktif Belum di Arsip", value: "Belum Arsip", count: unarchivedActiveRows.length, icon: AlertTriangle, tone: "red" },
@@ -5063,7 +5063,7 @@ function BrimenView({
     { label: "Covenance Day", value: "Covenance Day", icon: CalendarDays, tone: "orange", inactive: false },
     { label: "Tambah Data", value: "Belum Arsip", icon: FilePlus2, tone: "blue", inactive: false },
     { label: "Edit Data", value: "Semua", icon: FileText, tone: "green", inactive: false },
-    { label: "Pinjam Berkas", value: "Arsip Aktif", icon: ClipboardList, tone: "navy", inactive: false },
+    { label: "Pinjam Berkas", value: "Brimen Aktif", icon: ClipboardList, tone: "navy", inactive: false },
   ];
   const activeTabLabel = tabItems.find((item) => item.value === filter)?.label ?? "Data Operasional";
 
@@ -5425,7 +5425,7 @@ function BrimenView({
 
       <div className="flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-4 sm:overflow-visible sm:pb-0">
         {[
-          { label: "Arsip Aktif", value: readyProcessRows.length, helper: "termasuk dipinjam", tone: "success", action: "Arsip Aktif" },
+          { label: "Brimen Aktif", value: readyProcessRows.length, helper: "termasuk dipinjam", tone: "success", action: "Brimen Aktif" },
           { label: "Berkas Dipinjam", value: borrowedFileRows.length, helper: "status dipinjam", tone: "warning", action: "Dipinjam" },
           { label: "Belum Arsip", value: unarchivedActiveRows.length, helper: "lengkapi hari ini", tone: "danger", action: "Belum Arsip" },
           { label: "Perlu Lengkap", value: incompleteRows.length, helper: "data wajib kosong", tone: "warning", action: "Semua" },
@@ -5621,7 +5621,7 @@ function BrimenView({
             setLoanPage(1);
           }} className="hidden h-11 sm:block">
             {[
-              "Arsip Aktif",
+              "Brimen Aktif",
               "Semua",
               "Disimpan",
               "Dipinjam",
@@ -7912,6 +7912,7 @@ function InfoItem({ label, value }: { label: string; value: string }) {
 
 type UploadSlotKey =
   | "lw321-terbaru"
+  | "lw325"
   | "lw321-bulan-lalu"
   | "lw321-tahun-lalu"
   | "lw321-dua-bulan"
@@ -8122,6 +8123,14 @@ const uploadSlots: {
     formatLabel: "CSV",
   },
   {
+    key: "lw325",
+    title: "LW325",
+    period: "Data pendukung posisi terkini",
+    description: "File LW325 unit kerja untuk kebutuhan analisis dan pengembangan data berikutnya.",
+    accept: ".csv,text/csv",
+    formatLabel: "CSV",
+  },
+  {
     key: "lw321-bulan-lalu",
     title: "LW321 Akhir Bulan Lalu",
     period: "Snapshot akhir bulan sebelumnya",
@@ -8302,9 +8311,9 @@ function UnggahView() {
       minute: "2-digit",
     }).format(new Date());
     const slotIndex = uploadSlots.findIndex((item) => item.key === key);
-    const total = [3284, 3251, 3012, 3220, 1248, 2876, 1942, 1, 416, 68][Math.max(0, slotIndex)];
-    const duplicates = [12, 9, 6, 8, 3, 11, 4, 0, 2, 0][Math.max(0, slotIndex)];
-    const invalidAccounts = [4, 3, 2, 3, 0, 5, 2, 0, 0, 0][Math.max(0, slotIndex)];
+    const total = [3284, 3251, 3012, 3220, 1248, 2876, 1942, 1, 416, 68][Math.max(0, slotIndex)] ?? 0;
+    const duplicates = [12, 9, 6, 8, 3, 11, 4, 0, 2, 0][Math.max(0, slotIndex)] ?? 0;
+    const invalidAccounts = [4, 3, 2, 3, 0, 5, 2, 0, 0, 0][Math.max(0, slotIndex)] ?? 0;
     const missingColumns = fileName.toLowerCase().includes("error") ? 2 : 0;
     const accepted = Math.max(0, total - duplicates - invalidAccounts);
     let validation = { total, accepted, duplicates, invalidAccounts, missingColumns, updated: accepted };

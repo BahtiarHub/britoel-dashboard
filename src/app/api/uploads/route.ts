@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 
 const allowedExtensions: Record<string, string[]> = {
   "lw321-terbaru": [".csv"],
+  lw325: [".csv"],
   "lw321-bulan-lalu": [".csv"],
   "lw321-tahun-lalu": [".csv"],
   "lw321-dua-bulan": [".csv"],
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
   let depositImport: ReturnType<typeof mapDepositRows> | undefined;
   let brimenImport: ReturnType<typeof mapBrimenRows> | undefined;
   let nominativeCkpnImport: ReturnType<typeof mapNominativeCkpnRows> | undefined;
+  let genericCsvImport: { rows: Record<string, unknown>[]; rejected: number; duplicates: number; issues: string[] } | undefined;
   let uploadedBranch = { code: "", name: "" };
   let period: string | undefined;
   try {
@@ -75,6 +77,13 @@ export async function POST(request: Request) {
       }
       period = inferPeriod(sourceKey, file.name, rawRows);
       loanImport = mapLoanRows(rawRows, period);
+    } else if (sourceKey === "lw325") {
+      const rawRows = parseTabularFile(file.name, buffer);
+      uploadedBranch = extractBranchIdentity(rawRows);
+      if (uploadedBranch.code && uploadedBranch.code !== branchCode) {
+        throw new Error(`Kode uker pada file (${uploadedBranch.code}) tidak sesuai dengan branch login (${branchCode}).`);
+      }
+      genericCsvImport = { rows: rawRows, rejected: 0, duplicates: 0, issues: [] };
     } else if (sourceKey === "di319") {
       const rawRows = parseTabularFile(file.name, buffer);
       period = inferPeriod(sourceKey, file.name, rawRows);
@@ -98,7 +107,7 @@ export async function POST(request: Request) {
   await fs.writeFile(temporaryPath, buffer);
 
   const now = new Date();
-  const imported = loanImport ?? depositImport ?? brimenImport ?? nominativeCkpnImport;
+  const imported = loanImport ?? depositImport ?? brimenImport ?? nominativeCkpnImport ?? genericCsvImport;
   const existingBrimenRows = loanImport && sourceKey === "lw321-terbaru"
     ? await db.select().from(brimenCustomers).where(eq(brimenCustomers.branchCode, branchCode))
     : [];
