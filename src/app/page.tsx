@@ -2366,8 +2366,8 @@ function DashboardOverviewView({
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <OverviewMetricCard label="Total Outstanding" value={formatCurrency(summary.totalOs)} detail={`${formatNumber(summary.totalDebtorCount)} debitur aktif`} indicator="OS" icon={Banknote} />
-          <OverviewMetricCard label="Special Mention" value={formatCurrency(summary.smlOs)} detail={`${formatNumber(summary.smlDebtorCount)} debitur dalam SML`} indicator={formatPercent(summary.smlPercent)} tone="orange" icon={AlertTriangle} />
-          <OverviewMetricCard label="Non Performing Loan" value={formatCurrency(summary.nplOs)} detail={`${formatNumber(summary.nplDebtorCount)} debitur dalam NPL`} indicator={formatPercent(summary.nplPercent)} tone="red" icon={ArrowDownRight} />
+          <OverviewMetricCard label="Special Mention Loan (SML)" value={formatCurrency(summary.smlOs)} detail={`${formatNumber(summary.smlDebtorCount)} debitur dalam SML`} indicator={formatPercent(summary.smlPercent)} tone="orange" icon={AlertTriangle} />
+          <OverviewMetricCard label="Non Performing Loan (NPL)" value={formatCurrency(summary.nplOs)} detail={`${formatNumber(summary.nplDebtorCount)} debitur dalam NPL`} indicator={formatPercent(summary.nplPercent)} tone="red" icon={ArrowDownRight} />
           <OverviewMetricCard label="Arsip Aktif" value={`${formatNumber(brimenArchivedActive.length)} nasabah`} detail={`${formatNumber(brimenBorrowed.length)} berkas sedang dipinjam`} indicator={`${brimenSummary?.total ?? brimenRows.length} data`} tone="green" icon={FolderArchive} />
         </div>
       </section>
