@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
@@ -157,19 +157,40 @@ export async function PATCH(request: Request) {
   }
 
   const now = new Date();
-  if (body.action === "toggle-active") {
+  if (body.action === "edit-user") {
+    const name = String(body.name ?? "").trim();
+    const role = String(body.role ?? target.role);
+    const suffix = String(body.usernameSuffix ?? "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+    const displayUsername = `${target.branchCode}-${suffix}`;
+    const normalizedUsername = displayUsername.toLowerCase();
     const active = Boolean(body.active);
-    await db.update(user).set({ active, updatedAt: now }).where(eq(user.id, userId));
+    if (!name || !suffix || !usernamePattern.test(displayUsername)) {
+      return NextResponse.json({ ok: false, message: "Nama dan format username wajib diisi dengan benar." }, { status: 400 });
+    }
+    if (!managedRoles.includes(role as (typeof managedRoles)[number])) {
+      return NextResponse.json({ ok: false, message: "Peran pengguna tidak valid." }, { status: 400 });
+    }
+    if (guard.session.user.role === "SuperAdmin" && role !== "Admin") {
+      return NextResponse.json({ ok: false, message: "SuperAdmin hanya dapat mengelola akun Admin Kaunit/SPV." }, { status: 403 });
+    }
+    if (guard.session.user.role === "Admin" && role === "Admin") {
+      return NextResponse.json({ ok: false, message: "Admin tidak dapat memberikan peran Admin kepada pengguna lain." }, { status: 403 });
+    }
+    const rolePrefix = role === "Admin" ? /^(KAUNIT|SPV)$/ : role === "CS" ? /^CS(?:_[A-Z0-9]+)*$/ : role === "Mantri" ? /^MANTRI(?:_[A-Z0-9]+)+$/ : /^LAINNYA(?:_[A-Z0-9]+)+$/;
+    if (!rolePrefix.test(suffix)) {
+      const expected = role === "Admin" ? "KAUNIT atau SPV" : role === "CS" ? "CS atau CS_NAMA" : role === "Mantri" ? "MANTRI_NAMA" : "LAINNYA_NAMA";
+      return NextResponse.json({ ok: false, message: `Format jabatan tidak sesuai. Gunakan ${target.branchCode}-${expected}.` }, { status: 400 });
+    }
+    const duplicate = (await db.select({ id: user.id }).from(user).where(eq(user.username, normalizedUsername)).limit(1))[0];
+    if (duplicate && duplicate.id !== userId) {
+      return NextResponse.json({ ok: false, message: "Username sudah digunakan." }, { status: 409 });
+    }
+    await db.update(user).set({ name, role, username: normalizedUsername, displayUsername, active, updatedAt: now }).where(eq(user.id, userId));
     if (!active) await db.delete(session).where(eq(session.userId, userId));
     if (!active && target.role === "Admin") {
       const childUsers = await db.select({ id: user.id }).from(user).where(eq(user.createdBy, target.id));
       for (const child of childUsers) await db.delete(session).where(eq(session.userId, child.id));
     }
-  } else if (body.action === "reset-password") {
-    const password = String(body.password ?? "");
-    if (password.length < 8) return NextResponse.json({ ok: false, message: "Kata sandi minimal 8 karakter." }, { status: 400 });
-    await db.update(account).set({ password: await hashPassword(password), updatedAt: now }).where(and(eq(account.userId, userId), eq(account.providerId, "credential")));
-    await db.delete(session).where(eq(session.userId, userId));
   } else {
     return NextResponse.json({ ok: false, message: "Aksi tidak dikenal." }, { status: 400 });
   }
@@ -177,10 +198,10 @@ export async function PATCH(request: Request) {
   await db.insert(auditLogs).values({
     id: crypto.randomUUID(),
     actorId: guard.session.user.id,
-    action: body.action === "reset-password" ? "RESET_USER_PASSWORD" : "UPDATE_USER_STATUS",
+    action: "UPDATE_USER_PROFILE",
     entity: "user",
     entityId: userId,
-    detail: target.displayUsername ?? target.username,
+    detail: `${target.displayUsername ?? target.username} | profil dan status akses`,
     branchCode: target.branchCode,
     createdAt: now,
   });

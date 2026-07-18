@@ -22,6 +22,7 @@ import {
   Database,
   Download,
   Eye,
+  EyeOff,
   FilePlus2,
   FileText,
   FileSpreadsheet,
@@ -805,7 +806,7 @@ type GlobalSearchResult = {
 };
 
 type UserRole = "SuperAdmin" | "Admin" | "Kaunit / SPV" | "CS" | "Mantri" | "User";
-type ControlPanelKey = "none" | "notifications" | "commands" | "audit" | "presentation";
+type ControlPanelKey = "none" | "notifications" | "commands" | "audit" | "presentation" | "account";
 
 type PresentationUploads = {
   almafact: null | { fileName: string; format: string; updatedAt: string; url: string };
@@ -918,7 +919,27 @@ function HeaderActionButton({
   );
 }
 
+function PasswordInput({ className, ...props }: Omit<ComponentProps<typeof Input>, "type">) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span className="relative block">
+      <Input {...props} type={visible ? "text" : "password"} className={cn("pr-11", className)} />
+      <button
+        type="button"
+        aria-label={visible ? "Sembunyikan password" : "Tampilkan password"}
+        title={visible ? "Sembunyikan password" : "Tampilkan password"}
+        aria-pressed={visible}
+        onClick={() => setVisible((current) => !current)}
+        className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-md text-slate-400 transition hover:bg-[#eaf4fd] hover:text-[#00529c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f37021]/60"
+      >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </span>
+  );
+}
+
 function SuperAdminApp({ session }: { session: DashboardSession }) {
+  const [accountOpen, setAccountOpen] = useState(false);
   return (
     <main className="min-h-screen bg-[#f3f7fb] text-slate-800">
       <div className="h-1.5 bg-gradient-to-r from-[#00529c] via-[#0077c8] to-[#f37021]" />
@@ -943,11 +964,12 @@ function SuperAdminApp({ session }: { session: DashboardSession }) {
         <section className="min-w-0 flex-1">
           <header className="sticky top-0 z-40 flex items-center justify-between border-b border-[#cbddeb] bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:px-6">
             <div className="min-w-0"><p className="text-xs font-black uppercase text-[#f37021]">Pengawasan Global</p><h2 className="truncate text-lg font-black text-[#004077]">Aktivitas Admin dan Unit Kerja</h2></div>
-            <div className="flex items-center gap-3"><div className="hidden text-right sm:block"><p className="text-sm font-black text-slate-800">{session.user.name}</p><p className="text-xs text-slate-500">{session.user.displayUsername ?? session.user.username}</p></div><HeaderActionButton type="button" variant="outline" size="icon" label="Keluar dari aplikasi" tooltipAlign="right" className="text-rose-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700" onClick={async () => { await authClient.signOut(); window.location.reload(); }}><LogOut className="h-4 w-4" /></HeaderActionButton></div>
+            <div className="flex items-center gap-3"><div className="hidden text-right sm:block"><p className="text-sm font-black text-slate-800">{session.user.name}</p><p className="text-xs text-slate-500">{session.user.displayUsername ?? session.user.username}</p></div><div className="flex items-center gap-1.5"><HeaderActionButton type="button" variant="outline" size="icon" label="Pengaturan akun" onClick={() => setAccountOpen(true)}><UserCog className="h-4 w-4" /></HeaderActionButton><HeaderActionButton type="button" variant="outline" size="icon" label="Keluar dari aplikasi" tooltipAlign="right" className="text-rose-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700" onClick={async () => { await authClient.signOut(); window.location.reload(); }}><LogOut className="h-4 w-4" /></HeaderActionButton></div></div>
           </header>
           <div className="mx-auto max-w-[1680px] p-3 sm:p-5 lg:p-6"><UserManagementView session={session} /></div>
         </section>
       </div>
+      {accountOpen ? <AccountSettingsPanel session={session} onClose={() => setAccountOpen(false)} /> : null}
     </main>
   );
 }
@@ -1067,7 +1089,7 @@ function LoginView() {
                 <Input value={username} onChange={(event) => setUsername(event.target.value.toUpperCase())} className="mt-1.5 h-11 uppercase" autoComplete="username" placeholder="8014-KAUNIT" required />
               </label>
               <label className="block text-sm font-bold text-slate-700">Kata sandi
-                <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1.5 h-11" autoComplete="current-password" required />
+                <PasswordInput aria-label="Kata sandi" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1.5 h-11" autoComplete="current-password" required />
               </label>
               {error ? <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
               <Button type="submit" className="h-11 w-full bg-[#00529c] font-black hover:bg-[#004077]" disabled={submitting}>
@@ -1729,6 +1751,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   <HeaderActionButton type="button" variant="outline" size="icon" className="h-9 w-9 bg-white" label="Buka mode presentasi" onClick={() => setActiveControlPanel("presentation")}>
                     <Maximize2 className="h-4 w-4" />
                   </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="h-9 w-9 bg-white" label="Pengaturan akun" onClick={() => setActiveControlPanel("account")}>
+                    <UserCog className="h-4 w-4" />
+                  </HeaderActionButton>
                   <HeaderActionButton type="button" variant="outline" size="icon" className="h-9 w-9 bg-white text-rose-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700" label="Keluar dari aplikasi" tooltipAlign="right" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>
                     <LogOut className="h-4 w-4" />
                   </HeaderActionButton>
@@ -1746,6 +1771,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   </HeaderActionButton>
                   <HeaderActionButton type="button" variant="outline" size="icon" wrapperClassName="hidden md:inline-flex" className="h-8 w-8 bg-white" label="Buka mode presentasi" onClick={() => setActiveControlPanel("presentation")}>
                     <Maximize2 className="h-3.5 w-3.5" />
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="h-8 w-8 bg-white" label="Pengaturan akun" onClick={() => setActiveControlPanel("account")}>
+                    <UserCog className="h-3.5 w-3.5" />
                   </HeaderActionButton>
                   <HeaderActionButton type="button" variant="outline" size="icon" className="h-8 w-8 border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700" label="Keluar dari aplikasi" tooltipAlign="right" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>
                     <LogOut className="h-3.5 w-3.5" />
@@ -1949,6 +1977,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
           role={selectedRole}
           onClose={() => setActiveControlPanel("none")}
         />
+      ) : null}
+      {activeControlPanel === "account" ? (
+        <AccountSettingsPanel session={session} onClose={() => setActiveControlPanel("none")} />
       ) : null}
     </main>
   );
@@ -2310,6 +2341,54 @@ function PortfolioGrowthChart({ month, title = "Pertumbuhan Portofolio Kredit" }
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function AccountSettingsPanel({ session, onClose }: { session: DashboardSession; onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function changeOwnPassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    if (newPassword.length < 8) return setError("Password baru minimal 8 karakter.");
+    if (newPassword !== confirmPassword) return setError("Konfirmasi password baru belum sama.");
+    if (currentPassword === newPassword) return setError("Password baru harus berbeda dari password saat ini.");
+    setSaving(true);
+    const result = await authClient.changePassword({ currentPassword, newPassword, revokeOtherSessions: true });
+    setSaving(false);
+    if (result.error) return setError(result.error.message ?? "Password saat ini tidak sesuai atau perubahan gagal disimpan.");
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setMessage("Password berhasil diperbarui. Sesi lain pada akun ini telah dihentikan.");
+  }
+
+  return (
+    <OverlayShell title="Pengaturan Akun" description="Kelola keamanan akun yang sedang Anda gunakan." icon={UserCog} onClose={onClose}>
+      <div className="border-b border-[#d7e3ef] bg-[linear-gradient(120deg,#eef7ff_0%,#ffffff_68%,#fff4ec_100%)] p-5">
+        <div className="flex items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#00529c] text-white"><UserRound className="h-5 w-5" /></span>
+          <div className="min-w-0"><p className="truncate font-black text-[#004077]">{session.user.name}</p><p className="truncate text-xs font-semibold text-slate-500">{session.user.displayUsername ?? session.user.username} | {session.user.role}</p></div>
+        </div>
+      </div>
+      <form className="space-y-4 p-5" onSubmit={changeOwnPassword}>
+        <div><h3 className="font-black text-[#004077]">Ganti Password Saya</h3><p className="mt-1 text-xs leading-5 text-slate-500">Perubahan hanya berlaku untuk akun Anda. Masukkan password saat ini sebagai verifikasi.</p></div>
+        <label className="block text-sm font-bold text-slate-700">Password Saat Ini<PasswordInput aria-label="Password saat ini" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" className="mt-1.5 h-10" required /></label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm font-bold text-slate-700">Password Baru<PasswordInput aria-label="Password baru" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={8} className="mt-1.5 h-10" required /></label>
+          <label className="block text-sm font-bold text-slate-700">Konfirmasi Password<PasswordInput aria-label="Konfirmasi password baru" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} className="mt-1.5 h-10" required /></label>
+        </div>
+        {error ? <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+        {message ? <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{message}</p> : null}
+        <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={onClose}>Tutup</Button><Button type="submit" className="bg-[#00529c] hover:bg-[#004077]" disabled={saving || currentPassword.length < 8 || newPassword.length < 8 || confirmPassword.length < 8}>{saving ? "Menyimpan..." : "Ganti Password"}</Button></div>
+      </form>
+    </OverlayShell>
   );
 }
 
@@ -7988,6 +8067,13 @@ type ManagedUser = {
   lastActiveAt?: string | null;
 };
 
+type ManagedUserEditForm = {
+  usernameSuffix: string;
+  name: string;
+  role: string;
+  active: boolean;
+};
+
 type UserAuditActivity = {
   id: string;
   action: string;
@@ -8012,8 +8098,8 @@ function UserManagementView({ session }: { session: DashboardSession }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [resetUser, setResetUser] = useState<ManagedUser>();
-  const [resetPassword, setResetPassword] = useState("");
+  const [editingUser, setEditingUser] = useState<ManagedUser>();
+  const [editForm, setEditForm] = useState<ManagedUserEditForm>({ usernameSuffix: "", name: "", role: "CS", active: true });
   const [form, setForm] = useState({ branchCode: session.user.branchCode ?? "8014", usernameSuffix: "", name: "", role: session.user.role === "SuperAdmin" ? "Admin" : "CS", password: "" });
   const isSuperAdmin = session.user.role === "SuperAdmin";
 
@@ -8071,9 +8157,24 @@ function UserManagementView({ session }: { session: DashboardSession }) {
     const result = await response.json();
     if (!response.ok || !result.ok) return setMessage(result.message ?? "Perubahan gagal disimpan.");
     setMessage("Perubahan pengguna berhasil disimpan.");
-    setResetUser(undefined);
-    setResetPassword("");
+    setEditingUser(undefined);
     await loadUsers();
+  }
+
+  function openEditUser(item: ManagedUser) {
+    setEditingUser(item);
+    setEditForm({
+      usernameSuffix: item.username.replace(new RegExp(`^${item.branchCode}-`, "i"), ""),
+      name: item.name,
+      role: item.role,
+      active: item.active,
+    });
+  }
+
+  async function saveEditedUser(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingUser) return;
+    await updateUser({ userId: editingUser.id, action: "edit-user", ...editForm });
   }
 
   const branchCount = new Set(rows.filter((item) => item.role === "Admin").map((item) => item.branchCode)).size;
@@ -8117,7 +8218,7 @@ function UserManagementView({ session }: { session: DashboardSession }) {
               {isSuperAdmin ? <Td>{item.role === "Admin" ? <span className="font-bold text-[#00529c]">Admin Utama</span> : item.parentUsername ?? "Belum terhubung"}</Td> : null}
               <Td><span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold", item.online && item.effectiveActive ? "bg-emerald-50 text-emerald-700" : item.effectiveActive ? "bg-slate-100 text-slate-600" : "bg-rose-50 text-rose-700")}><span className={cn("h-2 w-2 rounded-full", item.online && item.effectiveActive ? "bg-emerald-500" : item.effectiveActive ? "bg-slate-400" : "bg-rose-500")} />{item.blockedByAdmin ? "Admin Nonaktif" : item.online ? "Online" : item.active ? "Offline" : "Nonaktif"}</span></Td>
               <Td>{item.lastActiveAt ? formatter.format(new Date(item.lastActiveAt)) : "Belum pernah"}</Td><Td>{item.activeSessions}</Td>
-              <Td><div className="flex min-w-max gap-2">{(!isSuperAdmin || item.role === "Admin") ? <><Button type="button" variant="outline" size="sm" onClick={() => updateUser({ userId: item.id, action: "toggle-active", active: !item.active })}>{item.active ? "Nonaktifkan" : "Aktifkan"}</Button><Button type="button" variant="outline" size="sm" onClick={() => setResetUser(item)}>Reset Password</Button></> : <span className="text-xs font-semibold text-slate-400">Dikelola Admin</span>}</div></Td>
+              <Td><div className="flex min-w-max gap-2">{(!isSuperAdmin || item.role === "Admin") ? <Button type="button" variant="outline" size="sm" className="border-[#b9d2e6] text-[#00529c] hover:bg-[#eaf4fd]" onClick={() => openEditUser(item)}><Settings2 className="mr-1.5 h-3.5 w-3.5" />Edit</Button> : <span className="text-xs font-semibold text-slate-400">Dikelola Admin</span>}</div></Td>
             </tr>
           ))}
           {!loading && !visibleRows.length ? <tr><td colSpan={isSuperAdmin ? 9 : 8} className="px-3 py-8 text-center text-sm text-slate-500">Belum ada pengguna yang dapat ditampilkan.</td></tr> : null}
@@ -8134,13 +8235,22 @@ function UserManagementView({ session }: { session: DashboardSession }) {
           <div className="sm:col-span-2 rounded-md bg-[#eef7ff] px-3 py-2 text-sm font-black text-[#00529c]">Username: {form.branchCode}-{form.usernameSuffix || "NAMA"}</div>
           <label className="text-sm font-bold text-slate-700">Nama Lengkap<Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="mt-1.5 h-10" required /></label>
           <label className="text-sm font-bold text-slate-700">Peran<Select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value, usernameSuffix: "" })} className="mt-1.5 h-10" disabled={isSuperAdmin}><option value="Admin" disabled={!isSuperAdmin}>Admin / Kaunit / SPV</option><option value="CS">CS</option><option value="Mantri">Mantri</option><option value="User">Lainnya</option></Select></label>
-          <label className="text-sm font-bold text-slate-700 sm:col-span-2">Password Awal<Input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} minLength={8} className="mt-1.5 h-10" required /></label>
+          <label className="text-sm font-bold text-slate-700 sm:col-span-2">Password Awal<PasswordInput aria-label="Password awal" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} autoComplete="new-password" minLength={8} className="mt-1.5 h-10" required /></label>
           <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Batal</Button><Button type="submit" className="bg-[#00529c]">Buat Pengguna</Button></div>
         </form>
       </OverlayShell> : null}
 
-      {resetUser ? <OverlayShell title="Reset Password" description={`Tetapkan password baru untuk ${resetUser.username}. Semua sesi lamanya akan dihentikan.`} icon={LockKeyhole} onClose={() => setResetUser(undefined)}>
-        <div className="space-y-4 p-5"><Input type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} minLength={8} placeholder="Password baru minimal 8 karakter" /><div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setResetUser(undefined)}>Batal</Button><Button type="button" className="bg-[#00529c]" disabled={resetPassword.length < 8} onClick={() => updateUser({ userId: resetUser.id, action: "reset-password", password: resetPassword })}>Simpan Password</Button></div></div>
+      {editingUser ? <OverlayShell title="Edit User" description={`Perbarui profil dan status akses ${editingUser.username} tanpa mengubah password.`} icon={UserCog} onClose={() => setEditingUser(undefined)}>
+        <form className="grid gap-4 p-5 sm:grid-cols-2" onSubmit={saveEditedUser}>
+          <label className="text-sm font-bold text-slate-700">Kode Branch<Input value={editingUser.branchCode} className="mt-1.5 h-10 bg-[#f4f8fc]" readOnly /></label>
+          <label className="text-sm font-bold text-slate-700">Jabatan / Username<Input value={editForm.usernameSuffix} onChange={(event) => setEditForm({ ...editForm, usernameSuffix: event.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_") })} className="mt-1.5 h-10 uppercase" required /></label>
+          <div className="rounded-md border border-[#c9ddec] bg-[#eef7ff] px-3 py-2 text-sm font-black text-[#00529c] sm:col-span-2">Username: {editingUser.branchCode}-{editForm.usernameSuffix || "NAMA"}</div>
+          <label className="text-sm font-bold text-slate-700">Nama Lengkap<Input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} className="mt-1.5 h-10" required /></label>
+          <label className="text-sm font-bold text-slate-700">Peran<Select value={editForm.role} onChange={(event) => setEditForm({ ...editForm, role: event.target.value, usernameSuffix: "" })} className="mt-1.5 h-10" disabled={isSuperAdmin}><option value="Admin" disabled={!isSuperAdmin}>Admin / Kaunit / SPV</option><option value="CS">CS</option><option value="Mantri">Mantri</option><option value="User">Lainnya</option></Select></label>
+          <label className="text-sm font-bold text-slate-700 sm:col-span-2">Status Akses<Select value={editForm.active ? "Aktif" : "Nonaktif"} onChange={(event) => setEditForm({ ...editForm, active: event.target.value === "Aktif" })} className="mt-1.5 h-10"><option value="Aktif">Aktif</option><option value="Nonaktif">Nonaktif</option></Select></label>
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800 sm:col-span-2">Password tidak dapat diubah oleh pengelola user. Setiap pengguna dapat mengganti password miliknya melalui tombol Pengaturan Akun pada header.</div>
+          <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="outline" onClick={() => setEditingUser(undefined)}>Batal</Button><Button type="submit" className="bg-[#00529c] hover:bg-[#004077]">Simpan Perubahan</Button></div>
+        </form>
       </OverlayShell> : null}
     </div>
   );
