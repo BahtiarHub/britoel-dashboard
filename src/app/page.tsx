@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -878,6 +878,46 @@ function AccessGate({ session }: { session: DashboardSession }) {
   return <DashboardApp key={sessionKey} session={session} />;
 }
 
+function HeaderActionButton({
+  label,
+  children,
+  className,
+  wrapperClassName,
+  tooltipAlign = "center",
+  ...props
+}: Omit<ComponentProps<typeof Button>, "aria-label"> & {
+  label: string;
+  children: ReactNode;
+  wrapperClassName?: string;
+  tooltipAlign?: "left" | "center" | "right";
+}) {
+  return (
+    <span className={cn("group/header-action relative inline-flex shrink-0", wrapperClassName)}>
+      <Button
+        {...props}
+        aria-label={label}
+        className={cn(
+          "transition duration-200 hover:-translate-y-0.5 hover:border-[#7da8cc] hover:bg-[#eaf4fd] hover:text-[#00529c] hover:shadow-[0_6px_14px_rgba(0,82,156,0.16)]",
+          className,
+        )}
+      >
+        {children}
+      </Button>
+      <span
+        role="tooltip"
+        className={cn(
+          "pointer-events-none absolute top-[calc(100%+0.55rem)] z-[100] hidden w-max max-w-52 rounded-md border border-[#2d78b6] bg-[#003f78] px-2.5 py-1.5 text-[11px] font-bold leading-4 text-white shadow-[0_8px_22px_rgba(0,38,73,0.28)] group-hover/header-action:block group-focus-within/header-action:block",
+          tooltipAlign === "left" && "left-0",
+          tooltipAlign === "center" && "left-1/2 -translate-x-1/2",
+          tooltipAlign === "right" && "right-0",
+        )}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
 function SuperAdminApp({ session }: { session: DashboardSession }) {
   return (
     <main className="min-h-screen bg-[#f3f7fb] text-slate-800">
@@ -903,7 +943,7 @@ function SuperAdminApp({ session }: { session: DashboardSession }) {
         <section className="min-w-0 flex-1">
           <header className="sticky top-0 z-40 flex items-center justify-between border-b border-[#cbddeb] bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:px-6">
             <div className="min-w-0"><p className="text-xs font-black uppercase text-[#f37021]">Pengawasan Global</p><h2 className="truncate text-lg font-black text-[#004077]">Aktivitas Admin dan Unit Kerja</h2></div>
-            <div className="flex items-center gap-3"><div className="hidden text-right sm:block"><p className="text-sm font-black text-slate-800">{session.user.name}</p><p className="text-xs text-slate-500">{session.user.displayUsername ?? session.user.username}</p></div><Button type="button" variant="outline" size="icon" aria-label="Keluar" onClick={async () => { await authClient.signOut(); window.location.reload(); }}><LogOut className="h-4 w-4" /></Button></div>
+            <div className="flex items-center gap-3"><div className="hidden text-right sm:block"><p className="text-sm font-black text-slate-800">{session.user.name}</p><p className="text-xs text-slate-500">{session.user.displayUsername ?? session.user.username}</p></div><HeaderActionButton type="button" variant="outline" size="icon" label="Keluar dari aplikasi" tooltipAlign="right" className="text-rose-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700" onClick={async () => { await authClient.signOut(); window.location.reload(); }}><LogOut className="h-4 w-4" /></HeaderActionButton></div>
           </header>
           <div className="mx-auto max-w-[1680px] p-3 sm:p-5 lg:p-6"><UserManagementView session={session} /></div>
         </section>
@@ -1647,15 +1687,16 @@ function DashboardApp({ session }: { session: DashboardSession }) {
           <header className="app-header sticky top-0 z-40 border-b border-[#cbddeb] bg-white/95 px-3 py-2 shadow-[0_5px_20px_rgba(0,55,105,0.07)] backdrop-blur-md md:px-6">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <Button
+                <HeaderActionButton
                   variant="outline"
                   size="icon"
-                  aria-label={desktopSidebarOpen ? "Buka atau tutup sidebar" : "Buka sidebar"}
+                  label={desktopSidebarOpen ? "Tutup menu navigasi" : "Buka menu navigasi"}
+                  tooltipAlign="left"
                   className="h-9 w-9 shrink-0"
                   onClick={toggleSidebar}
                 >
                   <Menu className="h-4 w-4" />
-                </Button>
+                </HeaderActionButton>
                 <div className="min-w-0">
                   <div className="flex max-w-[min(58vw,19rem)] items-start gap-2 md:hidden">
                     <span className="rounded-md bg-[#00529c] px-2 py-1 text-xs font-black text-white">{activeBranchCode}</span>
@@ -1675,40 +1716,40 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                     <span className="max-w-32 truncate text-xs font-black text-[#004077]">{session.user.displayUsername ?? session.user.username ?? session.user.name}</span>
                     <Badge className="bg-[#00529c]/10 text-[10px] text-[#00529c] hover:bg-[#00529c]/10">{selectedRole}</Badge>
                   </div>
-                  <Button type="button" variant="outline" size="icon" className="h-9 w-9 bg-white" aria-label="Buka perintah cepat" onClick={() => setActiveControlPanel("commands")}>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="h-9 w-9 bg-white" label="Buka perintah cepat" onClick={() => setActiveControlPanel("commands")}>
                     <Command className="h-4 w-4" />
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="relative h-9 w-9 bg-white" aria-label="Buka notifikasi" onClick={() => setActiveControlPanel("notifications")}>
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="relative h-9 w-9 bg-white" label="Buka pusat notifikasi" onClick={() => setActiveControlPanel("notifications")}>
                     <Bell className="h-4 w-4" />
                     {notifications.some((item) => item.tone === "danger" || item.tone === "warning") ? <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#f37021]" /> : null}
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="h-9 w-9 bg-white" aria-label="Buka audit trail" onClick={() => setActiveControlPanel("audit")}>
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="h-9 w-9 bg-white" label="Lihat riwayat aktivitas" onClick={() => setActiveControlPanel("audit")}>
                     <History className="h-4 w-4" />
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="h-9 w-9 bg-white" aria-label="Buka mode presentasi" onClick={() => setActiveControlPanel("presentation")}>
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="h-9 w-9 bg-white" label="Buka mode presentasi" onClick={() => setActiveControlPanel("presentation")}>
                     <Maximize2 className="h-4 w-4" />
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="h-9 w-9 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700" aria-label="Keluar" title="Keluar" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="h-9 w-9 bg-white text-rose-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700" label="Keluar dari aplikasi" tooltipAlign="right" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>
                     <LogOut className="h-4 w-4" />
-                  </Button>
+                  </HeaderActionButton>
                 </div>
                 <div className="flex items-center gap-1 xl:hidden">
-                  <Button type="button" variant="outline" size="icon" className="h-8 w-8 bg-white" aria-label="Buka perintah cepat" onClick={() => setActiveControlPanel("commands")}>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="h-8 w-8 bg-white" label="Buka perintah cepat" onClick={() => setActiveControlPanel("commands")}>
                     <Command className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="relative h-8 w-8 bg-white" aria-label="Buka notifikasi" onClick={() => setActiveControlPanel("notifications")}>
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="relative h-8 w-8 bg-white" label="Buka pusat notifikasi" onClick={() => setActiveControlPanel("notifications")}>
                     <Bell className="h-3.5 w-3.5" />
                     {notifications.some((item) => item.tone === "danger" || item.tone === "warning") ? <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[#f37021]" /> : null}
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="hidden h-8 w-8 bg-white sm:inline-flex" aria-label="Buka audit trail" onClick={() => setActiveControlPanel("audit")}>
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" wrapperClassName="hidden sm:inline-flex" className="h-8 w-8 bg-white" label="Lihat riwayat aktivitas" onClick={() => setActiveControlPanel("audit")}>
                     <History className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="hidden h-8 w-8 bg-white md:inline-flex" aria-label="Buka mode presentasi" onClick={() => setActiveControlPanel("presentation")}>
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" wrapperClassName="hidden md:inline-flex" className="h-8 w-8 bg-white" label="Buka mode presentasi" onClick={() => setActiveControlPanel("presentation")}>
                     <Maximize2 className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="h-8 w-8 border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700" aria-label="Keluar" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>
+                  </HeaderActionButton>
+                  <HeaderActionButton type="button" variant="outline" size="icon" className="h-8 w-8 border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700" label="Keluar dari aplikasi" tooltipAlign="right" onClick={async () => { await authClient.signOut(); window.location.reload(); }}>
                     <LogOut className="h-3.5 w-3.5" />
-                  </Button>
+                  </HeaderActionButton>
                 </div>
                 <div className="hidden w-fit items-center gap-1.5 whitespace-nowrap rounded-md border border-[#d7e3ef] bg-[#f8fbfe] px-2 py-1.5 text-xs font-semibold text-[#004077] md:flex md:gap-2 md:px-2.5 md:text-sm">
                   <CalendarDays className="h-4 w-4 text-[#f37021]" />
