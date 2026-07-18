@@ -13,8 +13,16 @@ export type BrimenLoanRow = {
   borrowerUsername: string;
   loanDate: string;
   returnedDate: string | null;
-  status: "Dipinjam" | "Sudah Dikembalikan";
+  status: "Pengajuan Pinjam Berkas" | "Menunggu Konfirmasi Mantri" | "Dipinjam" | "Pengajuan Pengembalian" | "Sudah Dikembalikan";
   purpose: string;
+  handoverPhoto: string;
+  handoverBy: string;
+  handoverAt: string | null;
+  receivedAt: string | null;
+  returnReason: string;
+  returnPhoto: string;
+  returnRequestedAt: string | null;
+  returnConfirmedBy: string;
   createdAt: Date;
   updatedAt: Date;
   accountNumber?: string;
@@ -69,6 +77,14 @@ export function normalizeLoan(row: BrimenLoanRow) {
     returnedDate: row.returnedDate,
     status: row.status,
     purpose: row.purpose,
+    handoverPhoto: row.handoverPhoto,
+    handoverBy: row.handoverBy,
+    handoverAt: row.handoverAt,
+    receivedAt: row.receivedAt,
+    returnReason: row.returnReason,
+    returnPhoto: row.returnPhoto,
+    returnRequestedAt: row.returnRequestedAt,
+    returnConfirmedBy: row.returnConfirmedBy,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     accountNumber: row.accountNumber,

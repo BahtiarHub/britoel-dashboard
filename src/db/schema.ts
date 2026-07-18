@@ -158,8 +158,10 @@ export const brimenCustomers = pgTable("brimen_customers", {
 
 export const brimenFileLoans = pgTable("brimen_file_loans", {
   id: text("id").primaryKey(), customerId: text("customer_id").notNull().references(() => brimenCustomers.id, { onDelete: "cascade" }), borrowerName: text("borrower_name").notNull(),
-  borrowerUsername: text("borrower_username").notNull(), loanDate: text("loan_date").notNull(), returnedDate: text("returned_date"), status: text("status").notNull().default("Dipinjam"),
-  purpose: text("purpose").notNull().default(""), createdAt: dateTime("created_at").notNull(), updatedAt: dateTime("updated_at").notNull(),
+  borrowerUsername: text("borrower_username").notNull(), loanDate: text("loan_date").notNull(), returnedDate: text("returned_date"), status: text("status").notNull().default("Pengajuan Pinjam Berkas"),
+  purpose: text("purpose").notNull().default(""), handoverPhoto: text("handover_photo").notNull().default(""), handoverBy: text("handover_by").notNull().default(""),
+  handoverAt: text("handover_at"), receivedAt: text("received_at"), returnReason: text("return_reason").notNull().default(""), returnPhoto: text("return_photo").notNull().default(""),
+  returnRequestedAt: text("return_requested_at"), returnConfirmedBy: text("return_confirmed_by").notNull().default(""), createdAt: dateTime("created_at").notNull(), updatedAt: dateTime("updated_at").notNull(),
 }, (table) => [index("brimen_file_loans_customer_status_idx").on(table.customerId, table.status)]);
 
 export const brimenFileLoanLogs = pgTable("brimen_file_loan_logs", {

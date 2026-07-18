@@ -130,10 +130,6 @@ const sidebarItems: {
 ];
 
 const qualityOptions = ["Semua", "Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet", "PL", "NPL"];
-const currentBrimenUser = {
-  name: "User Login Non CS",
-  username: "USER_NON_CS",
-};
 
 type MantriViewKey =
   | "ringkasan"
@@ -216,8 +212,16 @@ type BrimenLoan = {
   borrowerUsername: string;
   loanDate: string;
   returnedDate: string | null;
-  status: "Dipinjam" | "Sudah Dikembalikan";
+  status: "Pengajuan Pinjam Berkas" | "Menunggu Konfirmasi Mantri" | "Dipinjam" | "Pengajuan Pengembalian" | "Sudah Dikembalikan";
   purpose: string;
+  handoverPhoto: string;
+  handoverBy: string;
+  handoverAt: string | null;
+  receivedAt: string | null;
+  returnReason: string;
+  returnPhoto: string;
+  returnRequestedAt: string | null;
+  returnConfirmedBy: string;
   accountNumber?: string;
   customerName?: string;
   plafond?: number;
@@ -1597,6 +1601,11 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         actionMessage={brimenActionMessage}
         setActionMessage={setBrimenActionMessage}
         reload={loadBrimen}
+        currentUser={{
+          name: session.user.name,
+          username: session.user.displayUsername ?? session.user.username ?? session.user.name,
+          role: session.user.role ?? "User",
+        }}
       />
     ),
     unggah: <UnggahView />,
@@ -4968,6 +4977,7 @@ function BrimenView({
   actionMessage,
   setActionMessage,
   reload,
+  currentUser,
 }: {
   rows: BrimenCustomer[];
   summary?: BrimenSummary;
@@ -4993,6 +5003,7 @@ function BrimenView({
   actionMessage: string;
   setActionMessage: (value: string) => void;
   reload: () => Promise<void>;
+  currentUser: { name: string; username: string; role: string };
 }) {
   const [dataPage, setDataPage] = useState(1);
   const [dataPageSize, setDataPageSize] = useState(10);
@@ -5012,6 +5023,11 @@ function BrimenView({
   const [covenanceForm, setCovenanceForm] = useState<CovenanceFormState>(emptyCovenanceForm);
   const [covenanceMessage, setCovenanceMessage] = useState("");
   const [savingCovenance, setSavingCovenance] = useState(false);
+  const [workflowLoan, setWorkflowLoan] = useState<BrimenLoan>();
+  const [workflowAction, setWorkflowAction] = useState<"handover" | "return">();
+  const [workflowPhoto, setWorkflowPhoto] = useState<File>();
+  const [returnReason, setReturnReason] = useState("Pengembalian Biasa");
+  const [workflowSaving, setWorkflowSaving] = useState(false);
   useEffect(() => {
     fetch("/api/covenance", { cache: "no-store" })
       .then((response) => response.json())
@@ -5058,7 +5074,7 @@ function BrimenView({
   const filteredRows = quickFilteredRows.filter(matchesCustomerSearch);
 
   const matchedCredit = rows.filter((item) => item.persistedInBrimen !== false && creditAccountSet.has(normalizeAccount(item.accountNumber))).length;
-  const borrowedLoans = loans.filter((loan) => loan.status === "Dipinjam");
+  const borrowedLoans = loans.filter((loan) => loan.status === "Dipinjam" || loan.status === "Pengajuan Pengembalian");
   const borrowedLoanCustomerIds = new Set(borrowedLoans.map((loan) => loan.customerId));
   const borrowedFileRows: BorrowedFileRow[] = [
     ...borrowedLoans.map((loan) => ({
@@ -5412,15 +5428,17 @@ function BrimenView({
     setActionMessage(`Memproses ${processForm.operationType}...`);
 
     if (processForm.operationType === "Peminjaman Berkas") {
+      if (currentUser.role !== "Mantri") {
+        setActionMessage("Pengajuan peminjaman berkas hanya dapat dilakukan oleh user Mantri.");
+        return;
+      }
       const response = await fetch("/api/brimen/loans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId: loanCustomer.id,
-          borrowerName: currentBrimenUser.name,
-          borrowerUsername: currentBrimenUser.username,
           loanDate: new Date().toISOString().slice(0, 10),
-          purpose: "Konfirmasi penerimaan berkas oleh peminjam.",
+          purpose: "Keperluan operasional Mantri",
         }),
       });
       const payload = await response.json();
@@ -5433,7 +5451,7 @@ function BrimenView({
       setForm(emptyBrimenForm);
       setProcessForm(emptyBrimenProcessForm);
       setInitialProcess(null);
-      setActionMessage("Peminjaman berkas berhasil dikonfirmasi.");
+      setActionMessage("Pengajuan pinjam berkas berhasil dibuat dan menunggu konfirmasi CS.");
       await reload();
       return;
     }
@@ -5515,23 +5533,53 @@ function BrimenView({
     await reload();
   }
 
-  async function returnLoan(loan: BrimenLoan) {
-    setActionMessage("Mengembalikan berkas...");
+  async function transitionLoan(loan: BrimenLoan, action: "confirm-received" | "confirm-return") {
+    setActionMessage(action === "confirm-received" ? "Mengonfirmasi penerimaan berkas..." : "Mengonfirmasi pengembalian berkas...");
     const response = await fetch(`/api/brimen/loans/${loan.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status: "Sudah Dikembalikan",
-        actor: "Dashboard Operasional",
-        note: "Berkas dikembalikan melalui Dashboard Operasional.",
-      }),
+      body: JSON.stringify({ action }),
     });
     const payload = await response.json();
     if (!response.ok || !payload.ok) {
-      setActionMessage(payload.message ?? "Gagal mengembalikan berkas.");
+      setActionMessage(payload.message ?? "Tahap workflow gagal disimpan.");
       return;
     }
-    setActionMessage("Berkas berhasil dikembalikan.");
+    setActionMessage(payload.message ?? "Tahap workflow berhasil disimpan.");
+    await reload();
+  }
+
+  function openWorkflowPhoto(loan: BrimenLoan, action: "handover" | "return") {
+    setWorkflowLoan(loan);
+    setWorkflowAction(action);
+    setWorkflowPhoto(undefined);
+    setReturnReason("Pengembalian Biasa");
+  }
+
+  async function submitWorkflowPhoto(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workflowLoan || !workflowAction) return;
+    const photoRequired = workflowAction === "handover" || returnReason === "Pengembalian Biasa";
+    if (photoRequired && !workflowPhoto) {
+      setActionMessage("Bukti photo wajib diambil terlebih dahulu.");
+      return;
+    }
+    setWorkflowSaving(true);
+    const data = new FormData();
+    data.set("action", workflowAction === "handover" ? "confirm-handover" : "request-return");
+    if (workflowAction === "return") data.set("returnReason", returnReason);
+    if (workflowPhoto) data.set("photo", workflowPhoto);
+    const response = await fetch(`/api/brimen/loans/${workflowLoan.id}`, { method: "PATCH", body: data });
+    const payload = await response.json();
+    setWorkflowSaving(false);
+    if (!response.ok || !payload.ok) {
+      setActionMessage(payload.message ?? "Bukti photo dan workflow gagal disimpan.");
+      return;
+    }
+    setWorkflowLoan(undefined);
+    setWorkflowAction(undefined);
+    setWorkflowPhoto(undefined);
+    setActionMessage(payload.message ?? "Workflow berhasil diperbarui.");
     await reload();
   }
 
@@ -5976,7 +6024,46 @@ function BrimenView({
           }}
           initialProcess={initialProcess ?? undefined}
           onSubmit={submitProcess}
+          currentUser={currentUser}
         />
+      ) : null}
+
+      {workflowLoan && workflowAction ? (
+        <OverlayShell
+          title={workflowAction === "handover" ? "Penyerahan Berkas oleh CS" : "Pengajuan Pengembalian oleh Mantri"}
+          description={workflowAction === "handover" ? "Ambil bukti photo saat CS menyerahkan berkas kepada Mantri pemohon." : "Catat alasan dan bukti photo pengembalian berkas kepada CS."}
+          icon={workflowAction === "handover" ? Send : RotateCcw}
+          onClose={() => { setWorkflowLoan(undefined); setWorkflowAction(undefined); setWorkflowPhoto(undefined); }}
+        >
+          <form className="space-y-4 p-5" onSubmit={submitWorkflowPhoto}>
+            <div className="grid gap-3 rounded-lg border border-[#c9ddec] bg-[#eef7ff] p-4 sm:grid-cols-2">
+              <InfoItem label="Nasabah" value={workflowLoan.customerName ?? "-"} />
+              <InfoItem label="No Rekening" value={formatAccountNumber(workflowLoan.accountNumber)} />
+              <InfoItem label="Mantri Peminjam" value={workflowLoan.borrowerName} />
+              <InfoItem label="Username" value={workflowLoan.borrowerUsername} />
+            </div>
+            {workflowAction === "return" ? (
+              <Field label="Alasan Pengembalian">
+                <Select value={returnReason} onChange={(event) => { setReturnReason(event.target.value); setWorkflowPhoto(undefined); }} className="h-11 bg-white">
+                  <option value="Pengembalian Biasa">Pengembalian Biasa</option>
+                  <option value="Suplesi">Proses Suplesi</option>
+                  <option value="Restrukturisasi">Proses Restrukturisasi</option>
+                </Select>
+              </Field>
+            ) : null}
+            <WorkflowPhotoInput
+              file={workflowPhoto}
+              onChange={setWorkflowPhoto}
+              required={workflowAction === "handover" || returnReason === "Pengembalian Biasa"}
+              title={workflowAction === "handover" ? "Bukti Photo Penyerahan CS" : "Bukti Photo Pengembalian Mantri"}
+              description={workflowAction === "handover" ? "Photo diambil oleh CS saat berkas diserahkan kepada Mantri." : returnReason === "Pengembalian Biasa" ? "Photo diambil oleh Mantri saat mengembalikan berkas." : `Photo tidak wajib untuk pengembalian karena ${returnReason}.`}
+            />
+            <div className="flex justify-end gap-2 border-t border-[#d7e3ef] pt-4">
+              <Button type="button" variant="outline" onClick={() => { setWorkflowLoan(undefined); setWorkflowAction(undefined); setWorkflowPhoto(undefined); }}>Batal</Button>
+              <Button type="submit" className="bg-[#00529c] hover:bg-[#004077]" disabled={workflowSaving || ((workflowAction === "handover" || returnReason === "Pengembalian Biasa") && !workflowPhoto)}>{workflowSaving ? "Menyimpan..." : workflowAction === "handover" ? "Serahkan dan Simpan" : "Ajukan Pengembalian"}</Button>
+            </div>
+          </form>
+        </OverlayShell>
       ) : null}
 
       {showingCovenance ? (
@@ -6121,23 +6208,23 @@ function BrimenView({
                       <div className="text-xs text-muted-foreground">{row.borrowerUsername}</div>
                     </Td>
                     <Td>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-2 text-xs"
-                        disabled={!row.loan || row.borrowerUsername !== currentBrimenUser.username}
-                        onClick={() => row.loan && returnLoan(row.loan)}
-                        title={
-                          !row.loan
-                            ? "Data berstatus dipinjam belum memiliki register peminjaman aktif"
-                            : row.borrowerUsername === currentBrimenUser.username
-                              ? "Kembalikan berkas"
-                              : "Hanya user peminjam yang dapat mengembalikan"
-                        }
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        Kembalikan
-                      </Button>
+                      {row.loan?.status === "Pengajuan Pengembalian" && currentUser.role === "CS" ? <Button size="sm" className="h-8 bg-emerald-600 px-2 text-xs hover:bg-emerald-700" onClick={() => row.loan && transitionLoan(row.loan, "confirm-return")}><Check className="h-3.5 w-3.5" />Konfirmasi Kembali</Button> : row.loan?.status === "Pengajuan Pengembalian" ? <span className="inline-flex rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-700">Menunggu konfirmasi CS</span> : <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          disabled={!row.loan || row.borrowerUsername.toLowerCase() !== currentUser.username.toLowerCase() || currentUser.role !== "Mantri"}
+                          onClick={() => row.loan && openWorkflowPhoto(row.loan, "return")}
+                          title={
+                            !row.loan
+                              ? "Data berstatus dipinjam belum memiliki register peminjaman aktif"
+                            : row.borrowerUsername.toLowerCase() === currentUser.username.toLowerCase() && currentUser.role === "Mantri"
+                                ? "Ajukan pengembalian berkas"
+                                : "Hanya user peminjam yang dapat mengembalikan"
+                          }
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          Ajukan Kembali
+                        </Button>}
                     </Td>
                   </tr>
                 ))}
@@ -6153,7 +6240,7 @@ function BrimenView({
               </div>
             ) : null}
             <p className="mt-3 text-xs text-muted-foreground">
-              Tombol Kembalikan hanya aktif untuk user peminjam. User simulasi saat ini: {currentBrimenUser.name}.
+              Pengembalian hanya dapat diajukan oleh Mantri peminjam yang sedang login: {currentUser.name} ({currentUser.username}).
             </p>
             <PaginationControls
               page={safeLoanPage}
@@ -6171,10 +6258,10 @@ function BrimenView({
         <Card className="bri-card border-[#d7e3ef]">
           <CardHeader>
             <CardTitle>Register Pinjam Berkas</CardTitle>
-            <CardDescription>Riwayat peminjaman dan pengembalian berkas BRIMEN.</CardDescription>
+            <CardDescription>Workflow pengajuan Mantri, penyerahan CS, konfirmasi penerimaan, dan pengembalian berkas.</CardDescription>
           </CardHeader>
           <CardContent>
-            <TableShell minWidth="min-w-[1400px]">
+            <TableShell minWidth="min-w-[1750px]">
               <thead>
                 <tr>
                   <Th>No Rekening</Th>
@@ -6183,37 +6270,52 @@ function BrimenView({
                   <Th>No Brimen Jaminan</Th>
                   <Th>Nama Peminjam</Th>
                   <Th>Username</Th>
+                  <Th>CS Penyerah</Th>
                   <Th>Keperluan</Th>
-                  <Th>Tanggal Pinjam</Th>
+                  <Th>Tanggal Pengajuan</Th>
+                  <Th>Tanggal Diterima</Th>
                   <Th>Tanggal Kembali</Th>
                   <Th>Status</Th>
+                  <Th>Bukti Photo</Th>
                   <Th>Aksi</Th>
                 </tr>
               </thead>
               <tbody>
                 {pagedLoans.map((loan) => (
-                  <tr key={loan.id} className={cn("border-l-4", loan.status === "Dipinjam" ? "border-l-[#f37021] bg-[#fff7ed]/55" : "border-l-emerald-500 bg-emerald-50/50")}>
+                  <tr key={loan.id} className={cn("border-l-4", loan.status === "Dipinjam" ? "border-l-[#f37021] bg-[#fff7ed]/55" : loan.status === "Sudah Dikembalikan" ? "border-l-emerald-500 bg-emerald-50/50" : "border-l-[#00529c] bg-[#eef7ff]/55")}>
                     <Td className="font-mono font-semibold text-[#00529c]">{formatAccountNumber(loan.accountNumber)}</Td>
                     <Td>{loan.customerName}</Td>
                     <Td>{shortText(loan.brimenBerkas ?? "")}</Td>
                     <Td>{shortText(loan.brimenJaminan ?? "")}</Td>
                     <Td>{loan.borrowerName}</Td>
                     <Td>{loan.borrowerUsername}</Td>
+                    <Td>{loan.handoverBy || "-"}</Td>
                     <Td className="max-w-[280px] whitespace-normal">{shortText(loan.purpose)}</Td>
                     <Td>{safeDateLabel(loan.loanDate.slice(0, 10))}</Td>
+                    <Td>{loan.receivedAt ? safeDateLabel(loan.receivedAt.slice(0, 10)) : "-"}</Td>
                     <Td>{loan.returnedDate ? safeDateLabel(loan.returnedDate.slice(0, 10)) : "-"}</Td>
                     <Td>
-                      <Badge variant={loan.status === "Dipinjam" ? "warning" : "success"}>{loan.status}</Badge>
+                      <Badge variant={loan.status === "Dipinjam" || loan.status === "Pengajuan Pengembalian" ? "warning" : loan.status === "Sudah Dikembalikan" ? "success" : "outline"}>{loan.status}</Badge>
+                      {loan.returnReason ? <span className="mt-1 block text-[10px] font-semibold text-slate-500">Alasan: {loan.returnReason}</span> : null}
                     </Td>
                     <Td>
-                      {loan.status === "Dipinjam" ? (
-                        <Button variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={() => returnLoan(loan)}>
-                          <RotateCcw className="h-3.5 w-3.5" />
-                          Kembalikan
-                        </Button>
-                      ) : (
-                        "-"
-                      )}
+                      <div className="flex min-w-max gap-2">
+                        {loan.handoverPhoto ? <a href={`/api/brimen/loans/${loan.id}/photo?kind=handover`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-md border border-[#b9d2e6] bg-white px-2 text-xs font-bold text-[#00529c] hover:bg-[#eaf4fd]"><Camera className="h-3.5 w-3.5" />Penyerahan</a> : null}
+                        {loan.returnPhoto ? <a href={`/api/brimen/loans/${loan.id}/photo?kind=return`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-md border border-[#f7c9aa] bg-white px-2 text-xs font-bold text-[#b54b00] hover:bg-[#fff7ed]"><Camera className="h-3.5 w-3.5" />Pengembalian</a> : null}
+                        {!loan.returnPhoto && ["Suplesi", "Restrukturisasi"].includes(loan.returnReason) ? <span className="inline-flex h-8 items-center rounded-md bg-slate-100 px-2 text-xs font-bold text-slate-600">Tanpa photo: {loan.returnReason}</span> : null}
+                        {!loan.handoverPhoto && !loan.returnPhoto && !["Suplesi", "Restrukturisasi"].includes(loan.returnReason) ? <span className="text-xs text-slate-400">Belum ada</span> : null}
+                      </div>
+                    </Td>
+                    <Td>
+                      {loan.status === "Pengajuan Pinjam Berkas" && currentUser.role === "CS" ? (
+                        <Button variant="outline" size="sm" className="h-8 border-[#b9d2e6] px-2 text-xs text-[#00529c]" onClick={() => openWorkflowPhoto(loan, "handover")}><Send className="h-3.5 w-3.5" />Serahkan Berkas</Button>
+                      ) : loan.status === "Menunggu Konfirmasi Mantri" && currentUser.role === "Mantri" && loan.borrowerUsername.toLowerCase() === currentUser.username.toLowerCase() ? (
+                        <Button size="sm" className="h-8 bg-[#00529c] px-2 text-xs" onClick={() => transitionLoan(loan, "confirm-received")}><CheckCircle2 className="h-3.5 w-3.5" />Konfirmasi Diterima</Button>
+                      ) : loan.status === "Dipinjam" && currentUser.role === "Mantri" && loan.borrowerUsername.toLowerCase() === currentUser.username.toLowerCase() ? (
+                        <Button variant="outline" size="sm" className="h-8 border-[#f7c9aa] px-2 text-xs text-[#b54b00]" onClick={() => openWorkflowPhoto(loan, "return")}><RotateCcw className="h-3.5 w-3.5" />Ajukan Pengembalian</Button>
+                      ) : loan.status === "Pengajuan Pengembalian" && currentUser.role === "CS" ? (
+                        <Button size="sm" className="h-8 bg-emerald-600 px-2 text-xs hover:bg-emerald-700" onClick={() => transitionLoan(loan, "confirm-return")}><Check className="h-3.5 w-3.5" />Konfirmasi Kembali</Button>
+                      ) : loan.status === "Sudah Dikembalikan" ? <span className="text-xs font-semibold text-emerald-700">Selesai</span> : <span className="text-xs font-semibold text-slate-500">Menunggu user terkait</span>}
                     </Td>
                   </tr>
                 ))}
@@ -6812,6 +6914,7 @@ function BrimenProcessForm({
   onCancel,
   initialProcess,
   onSubmit,
+  currentUser,
 }: {
   customer: BrimenCustomer;
   rows: BrimenCustomer[];
@@ -6824,6 +6927,7 @@ function BrimenProcessForm({
   onCancel: () => void;
   initialProcess?: BrimenOperationType;
   onSubmit: () => void;
+  currentUser: { name: string; username: string; role: string };
 }) {
   const [activeProcess, setActiveProcess] = useState<BrimenOperationType | null>(initialProcess ?? null);
   const [addressEditable, setAddressEditable] = useState(false);
@@ -6952,13 +7056,16 @@ function BrimenProcessForm({
     {
       type: "Peminjaman Berkas",
       title: "Peminjaman Berkas",
-      description: "User selain CS mengajukan, menerima, dan status berkas menjadi Dipinjam.",
+      description: "Mantri mengajukan peminjaman, lalu menunggu penyerahan dan bukti photo dari CS.",
       icon: ClipboardList,
       tone: "blue",
       menu: "Menu 05",
     },
   ];
-  const visibleProcessOptions = processOptions.filter((option) => initialProcess === "Suplesi" || option.type !== "Suplesi");
+  const visibleProcessOptions = processOptions.filter((option) =>
+    (initialProcess === "Suplesi" || option.type !== "Suplesi") &&
+    (option.type !== "Peminjaman Berkas" || currentUser.role === "Mantri")
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm">
@@ -7202,13 +7309,13 @@ function BrimenProcessForm({
                     <Input value={formatAccountNumber(currentCustomer.accountNumber)} readOnly className="border-[#d7e3ef] bg-[#f8fbfe] font-mono text-[#0f2942]" />
                   </DarkField>
                   <DarkField label="Nama Peminjam (User)">
-                    <Input value={currentBrimenUser.name} readOnly className="border-[#d7e3ef] bg-[#f8fbfe] text-[#0f2942]" />
+                    <Input value={`${currentUser.name} (${currentUser.username})`} readOnly className="border-[#d7e3ef] bg-[#f8fbfe] text-[#0f2942]" />
                   </DarkField>
-                  <DarkField label="Tanggal Konfirmasi Terima">
+                  <DarkField label="Tanggal Pengajuan">
                     <Input value={safeDateLabel(new Date().toISOString().slice(0, 10))} readOnly className="border-[#d7e3ef] bg-[#f8fbfe] text-[#0f2942]" />
                   </DarkField>
-                  <DarkField label="Status Setelah Proses">
-                    <Input value="Dipinjam" readOnly className="border-[#d7e3ef] bg-[#f8fbfe] text-[#0f2942]" />
+                  <DarkField label="Status Pengajuan">
+                    <Input value="Pengajuan Pinjam Berkas" readOnly className="border-[#d7e3ef] bg-[#f8fbfe] text-[#0f2942]" />
                   </DarkField>
                 </>
               ) : null}
@@ -7367,7 +7474,7 @@ function BrimenProcessForm({
                     : missingRequiredProcessFields
                       ? "Lengkapi Field Wajib"
                     : processForm.operationType === "Peminjaman Berkas"
-                      ? "Konfirmasi Berkas Diterima"
+                      ? "Ajukan Pinjam Berkas"
                       : "Simpan Proses"}
               </Button>
             </div>
@@ -7530,6 +7637,59 @@ function GuaranteeChoice({
       </span>
       {label}
     </button>
+  );
+}
+
+function WorkflowPhotoInput({
+  file,
+  onChange,
+  required,
+  title,
+  description,
+}: {
+  file?: File;
+  onChange: (file: File | undefined) => void;
+  required: boolean;
+  title: string;
+  description: string;
+}) {
+  const [preview, setPreview] = useState("");
+
+  useEffect(() => {
+    if (!file) {
+      setPreview("");
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    setPreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+
+  const selectPhoto = (files: FileList | null) => {
+    const selected = files?.[0];
+    if (!selected) return;
+    onChange(selected);
+  };
+
+  return (
+    <section className="rounded-lg border border-[#f37021]/30 bg-[#fff7ed] p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div><p className="font-black text-[#004077]">{title}</p><p className="mt-1 text-xs leading-5 text-slate-600">{description}</p></div>
+        <Badge variant={file ? "success" : required ? "warning" : "outline"}>{file ? "Photo siap" : required ? "Wajib" : "Opsional"}</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-[#00529c] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#004077]">
+          <Camera className="h-4 w-4" />Ambil Photo
+          <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" onChange={(event) => selectPhoto(event.target.files)} />
+        </label>
+        <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#c9ddec] bg-white px-4 text-sm font-bold text-[#00529c] transition hover:bg-[#eaf4fd]">
+          <Upload className="h-4 w-4" />Upload Photo
+          <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => selectPhoto(event.target.files)} />
+        </label>
+      </div>
+      {preview ? <div className="mt-4 overflow-hidden rounded-lg border border-[#c9ddec] bg-white p-2"><img src={preview} alt={`Preview ${title.toLowerCase()}`} className="max-h-72 w-full rounded-md object-contain" /><div className="mt-2 flex items-center justify-between gap-3 px-1"><p className="truncate text-xs font-semibold text-emerald-700">{file?.name}</p><Button type="button" variant="ghost" size="sm" className="text-rose-600" onClick={() => onChange(undefined)}>Hapus</Button></div></div> : null}
+      <p className="mt-3 text-[11px] font-semibold text-slate-500">Format JPG, PNG, atau WEBP. Maksimal 8 MB.</p>
+    </section>
   );
 }
 
