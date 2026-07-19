@@ -425,6 +425,11 @@ function formatTodayLabel() {
   });
 }
 
+function getLocalDateKey() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function dateLabel(value: string) {
   return new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
@@ -4915,11 +4920,25 @@ function QuickCountView({ month }: { month: MonthKey }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetRows, setSheetRows] = useState<QuickCountSheetRow[]>([{ ...emptyQuickCountSheetRow }]);
   const [loadedSheetKey, setLoadedSheetKey] = useState("");
+  const [quickCountDate, setQuickCountDate] = useState(getLocalDateKey);
   const qualityDropdownRef = useRef<HTMLDivElement | null>(null);
-  const sheetStorageKey = `bri-tool-cektung-${month}`;
+  const sheetStorageKey = `bri-tool-cektung-${month}-${quickCountDate}`;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const currentDate = getLocalDateKey();
+      setQuickCountDate((savedDate) => savedDate === currentDate ? savedDate : currentDate);
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     try {
+      const storagePrefix = `bri-tool-cektung-${month}-`;
+      window.localStorage.removeItem(`bri-tool-cektung-${month}`);
+      Object.keys(window.localStorage)
+        .filter((key) => key.startsWith(storagePrefix) && key !== sheetStorageKey)
+        .forEach((key) => window.localStorage.removeItem(key));
       const saved = window.localStorage.getItem(sheetStorageKey);
       const parsed = saved ? JSON.parse(saved) : undefined;
       setSheetRows(Array.isArray(parsed) && parsed.length ? parsed : [{ ...emptyQuickCountSheetRow }]);
@@ -4961,12 +4980,22 @@ function QuickCountView({ month }: { month: MonthKey }) {
     const result = sheetResultByAccount.get(normalizeAccount(accountNumber));
     return Boolean(result && result.actToday > 0 && result.remaining <= 0);
   };
+  const hasPayment = (accountNumber: string) => (sheetResultByAccount.get(normalizeAccount(accountNumber))?.actToday ?? 0) > 0;
   const smlRows = rows.filter((item) => isSml(item.quality));
   const nplRows = rows.filter((item) => isNpl(item.quality));
   const smlOs = smlRows.reduce((total, item) => total + item.outstanding, 0);
   const nplOs = nplRows.reduce((total, item) => total + item.outstanding, 0);
   const totalArrears = rows.reduce((total, item) => total + item.totalArrears, 0);
+  const paidRows = rows.filter((item) => hasPayment(item.accountNumber));
   const resolvedRows = rows.filter((item) => isResolved(item.accountNumber));
+  const paidRiskReductionByMantri = allRows.filter((item) => isResolved(item.accountNumber)).reduce((map, item) => {
+    const mantri = item.mantri || "Belum Ada Mantri";
+    const current = map.get(mantri) ?? { sml: 0, npl: 0 };
+    if (isSml(item.quality)) current.sml += item.outstanding;
+    if (isNpl(item.quality)) current.npl += item.outstanding;
+    map.set(mantri, current);
+    return map;
+  }, new Map<string, QuickRiskPosition>());
   const previousMonth = getPreviousMonth(month);
   const yearEndComparisonMonth = getYearEndComparisonMonth(month);
   const previousRecap = new Map((previousMonth ? getMantriRecap(previousMonth) : []).map((item) => [item.mantri || "Belum Ada Mantri", item]));
@@ -4974,11 +5003,17 @@ function QuickCountView({ month }: { month: MonthKey }) {
   const quickMantriRecap = getMantriRecap(month)
     .map((item) => {
       const mantri = item.mantri || "Belum Ada Mantri";
-      const latest = getQuickRiskPosition(item);
+      const actualLatest = getQuickRiskPosition(item);
+      const paidReduction = paidRiskReductionByMantri.get(mantri) ?? { sml: 0, npl: 0 };
+      const latest = {
+        sml: Math.max(0, actualLatest.sml - paidReduction.sml),
+        npl: Math.max(0, actualLatest.npl - paidReduction.npl),
+      };
       const previous = getQuickRiskPosition(previousRecap.get(mantri));
       const yearEnd = getQuickRiskPosition(yearEndRecap.get(mantri));
       return {
         mantri,
+        paidReduction,
         latest,
         previous,
         yearEnd,
@@ -5026,7 +5061,7 @@ function QuickCountView({ month }: { month: MonthKey }) {
         <MetricCard label="SML Terfilter" value={formatCurrency(smlOs)} helper={`${formatNumber(smlRows.length)} rekening`} tone="warning" icon={AlertTriangle} />
         <MetricCard label="NPL Terfilter" value={formatCurrency(nplOs)} helper={`${formatNumber(nplRows.length)} rekening`} tone="danger" icon={ArrowDownRight} />
         <MetricCard label="Total Tunggakan" value={formatCurrency(totalArrears)} helper={`${formatNumber(rows.length)} rekening`} icon={Banknote} />
-        <MetricCard label="Tunggakan Bayar" value={`${formatNumber(resolvedRows.length)} rekening`} helper="Sisa tagihan hasil cektung nol" tone="success" icon={CheckCircle2} />
+        <MetricCard label="Tunggakan Bayar" value={`${formatNumber(paidRows.length)} rekening`} helper={`${formatNumber(resolvedRows.length)} tagihan menjadi nol`} tone="success" icon={CheckCircle2} />
       </div>
 
       <section className="surface-panel space-y-3 p-3 sm:p-4">
@@ -5083,13 +5118,14 @@ function QuickCountView({ month }: { month: MonthKey }) {
         <div className="flex flex-col gap-2 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="font-black text-[#00529c]">Rekap Quick Count per Mantri</h3>
           <div className="flex flex-wrap gap-2 text-[10px] font-bold text-muted-foreground">
+            <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">Simulasi harian - khusus Quick Count</span>
             <span>YTD: vs {getMonthLabel(yearEndComparisonMonth)}</span>
             <span>MTD: vs {getMonthLabel(previousMonth ?? month)}</span>
           </div>
         </div>
         <TableShell minWidth="min-w-[1250px]">
-          <thead><tr><Th>Mantri</Th><Th>Posisi Akhir Tahun</Th><Th>Posisi Bulan Lalu</Th><Th>Posisi Terbaru</Th><Th>Delta YTD</Th><Th>Delta MTD</Th></tr></thead>
-          <tbody>{recapPagination.pagedRows.map((item) => <tr key={item.mantri}><Td className="font-bold text-[#00529c]">{item.mantri}</Td><Td><QuickRiskPositionCell position={item.yearEnd} /></Td><Td><QuickRiskPositionCell position={item.previous} /></Td><Td><QuickRiskPositionCell position={item.latest} /></Td><Td><QuickRiskDeltaCell delta={item.ytd} /></Td><Td><QuickRiskDeltaCell delta={item.mtd} /></Td></tr>)}</tbody>
+          <thead><tr><Th>Mantri</Th><Th>Posisi Akhir Tahun</Th><Th>Posisi Bulan Lalu</Th><Th>Prediksi Terbaru</Th><Th>Delta YTD</Th><Th>Delta MTD</Th></tr></thead>
+          <tbody>{recapPagination.pagedRows.map((item) => <tr key={item.mantri}><Td className="font-bold text-[#00529c]">{item.mantri}</Td><Td><QuickRiskPositionCell position={item.yearEnd} /></Td><Td><QuickRiskPositionCell position={item.previous} /></Td><Td><QuickRiskPositionCell position={item.latest} />{item.paidReduction.sml || item.paidReduction.npl ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Setelah tunggakan bayar</p> : null}</Td><Td><QuickRiskDeltaCell delta={item.ytd} /></Td><Td><QuickRiskDeltaCell delta={item.mtd} /></Td></tr>)}</tbody>
         </TableShell>
         <PaginationControls page={recapPagination.page} pageSize={recapPagination.pageSize} totalItems={quickMantriRecap.length} onPageChange={recapPagination.setPage} onPageSizeChange={recapPagination.setPageSize} />
       </section>
