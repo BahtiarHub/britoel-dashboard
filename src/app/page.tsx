@@ -4899,6 +4899,8 @@ function QuickRiskDeltaValue({ value }: { value: number }) {
 }
 
 type QuickCountPage = "recap" | "unpaid" | "paid";
+const quickCountForecastOptions = ["Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet"] as const;
+type QuickCountForecast = (typeof quickCountForecastOptions)[number];
 
 function QuickCountView({ month }: { month: MonthKey }) {
   const [activePage, setActivePage] = useState<QuickCountPage>("recap");
@@ -4910,9 +4912,12 @@ function QuickCountView({ month }: { month: MonthKey }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetRows, setSheetRows] = useState<QuickCountSheetRow[]>([{ ...emptyQuickCountSheetRow }]);
   const [loadedSheetKey, setLoadedSheetKey] = useState("");
+  const [collectibilityForecasts, setCollectibilityForecasts] = useState<Record<string, QuickCountForecast>>({});
+  const [loadedForecastKey, setLoadedForecastKey] = useState("");
   const [quickCountDate, setQuickCountDate] = useState(getLocalDateKey);
   const qualityDropdownRef = useRef<HTMLDivElement | null>(null);
   const sheetStorageKey = `bri-tool-cektung-${month}-${quickCountDate}`;
+  const forecastStorageKey = `bri-tool-cektung-prognosa-${month}-${quickCountDate}`;
 
   useEffect(() => {
     const desktopQuery = window.matchMedia("(min-width: 1280px) and (hover: hover) and (pointer: fine)");
@@ -4956,6 +4961,26 @@ function QuickCountView({ month }: { month: MonthKey }) {
   }, [loadedSheetKey, sheetRows, sheetStorageKey]);
 
   useEffect(() => {
+    try {
+      const storagePrefix = `bri-tool-cektung-prognosa-${month}-`;
+      Object.keys(window.localStorage)
+        .filter((key) => key.startsWith(storagePrefix) && key !== forecastStorageKey)
+        .forEach((key) => window.localStorage.removeItem(key));
+      const saved = window.localStorage.getItem(forecastStorageKey);
+      const parsed = saved ? JSON.parse(saved) : undefined;
+      setCollectibilityForecasts(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
+    } catch {
+      setCollectibilityForecasts({});
+    }
+    setLoadedForecastKey(forecastStorageKey);
+  }, [forecastStorageKey, month]);
+
+  useEffect(() => {
+    if (loadedForecastKey !== forecastStorageKey) return;
+    window.localStorage.setItem(forecastStorageKey, JSON.stringify(collectibilityForecasts));
+  }, [collectibilityForecasts, forecastStorageKey, loadedForecastKey]);
+
+  useEffect(() => {
     if (!qualityDropdownOpen) return;
     function closeDropdown(event: PointerEvent) {
       if (!qualityDropdownRef.current?.contains(event.target as Node)) setQualityDropdownOpen(false);
@@ -4973,10 +4998,6 @@ function QuickCountView({ month }: { month: MonthKey }) {
       actToday: parseQuickCountAmount(item.actToday),
       remaining: parseQuickCountAmount(item.remaining),
     }]));
-  const isCleared = (accountNumber: string) => {
-    const result = sheetResultByAccount.get(normalizeAccount(accountNumber));
-    return Boolean(result && result.remaining <= 0);
-  };
   const candidateRows = allRows.filter((item) =>
     selectedQualities.includes(item.quality) &&
     (mantriFilter === "Semua" || (item.mantri || "Belum Ada Mantri") === mantriFilter),
@@ -4995,11 +5016,27 @@ function QuickCountView({ month }: { month: MonthKey }) {
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
   const paidPagination = useTablePagination(paidRows, `${month}-${selectedQualities.join("-")}-${mantriFilter}-paid-${paidRows.length}-${paidRows.reduce((total, item) => total + item.actToday, 0)}`);
-  const paidRiskReductionByMantri = allRows.filter((item) => isCleared(item.accountNumber)).reduce((map, item) => {
+  const quickRiskAdjustmentByMantri = allRows.reduce((map, item) => {
+    const accountNumber = normalizeAccount(item.accountNumber);
+    const payment = sheetResultByAccount.get(accountNumber);
+    if (!payment || payment.actToday <= 0) return map;
+
+    const currentIsSml = isSml(item.quality);
+    const currentIsNpl = isNpl(item.quality);
+    if (!currentIsSml && !currentIsNpl) return map;
+
+    const manualForecast = collectibilityForecasts[accountNumber];
+    if (currentIsNpl && !manualForecast) return map;
+
+    const targetIsSml = manualForecast ? isSml(manualForecast) : false;
+    const targetIsNpl = manualForecast ? isNpl(manualForecast) : false;
+    const autoSmlPaidOff = currentIsSml && !manualForecast && payment.remaining <= 0;
+    if (!manualForecast && !autoSmlPaidOff) return map;
+
     const mantri = item.mantri || "Belum Ada Mantri";
     const current = map.get(mantri) ?? { sml: 0, npl: 0 };
-    if (isSml(item.quality)) current.sml += item.outstanding;
-    if (isNpl(item.quality)) current.npl += item.outstanding;
+    current.sml += (targetIsSml ? item.outstanding : 0) - (currentIsSml ? item.outstanding : 0);
+    current.npl += (targetIsNpl ? item.outstanding : 0) - (currentIsNpl ? item.outstanding : 0);
     map.set(mantri, current);
     return map;
   }, new Map<string, QuickRiskPosition>());
@@ -5011,16 +5048,16 @@ function QuickCountView({ month }: { month: MonthKey }) {
     .map((item) => {
       const mantri = item.mantri || "Belum Ada Mantri";
       const actualLatest = getQuickRiskPosition(item);
-      const paidReduction = paidRiskReductionByMantri.get(mantri) ?? { sml: 0, npl: 0 };
+      const riskAdjustment = quickRiskAdjustmentByMantri.get(mantri) ?? { sml: 0, npl: 0 };
       const latest = {
-        sml: Math.max(0, actualLatest.sml - paidReduction.sml),
-        npl: Math.max(0, actualLatest.npl - paidReduction.npl),
+        sml: Math.max(0, actualLatest.sml + riskAdjustment.sml),
+        npl: Math.max(0, actualLatest.npl + riskAdjustment.npl),
       };
       const previous = getQuickRiskPosition(previousRecap.get(mantri));
       const yearEnd = getQuickRiskPosition(yearEndRecap.get(mantri));
       return {
         mantri,
-        paidReduction,
+        riskAdjustment,
         latest,
         previous,
         yearEnd,
@@ -5038,11 +5075,25 @@ function QuickCountView({ month }: { month: MonthKey }) {
       : selectedQualities.length <= 2
         ? selectedQualities.join(", ")
         : `${selectedQualities.length} Kolektibilitas`;
+  const pendingNplForecastCount = paidRows.filter((item) => isNpl(item.quality) && !collectibilityForecasts[normalizeAccount(item.accountNumber)]).length;
 
   function toggleQuality(quality: string) {
     setSelectedQualities((current) => current.includes(quality)
       ? current.filter((item) => item !== quality)
       : [...current, quality]);
+  }
+
+  function updateCollectibilityForecast(accountNumber: string, value: string) {
+    const normalizedAccount = normalizeAccount(accountNumber);
+    setCollectibilityForecasts((current) => {
+      const next = { ...current };
+      if (quickCountForecastOptions.includes(value as QuickCountForecast)) {
+        next[normalizedAccount] = value as QuickCountForecast;
+      } else {
+        delete next[normalizedAccount];
+      }
+      return next;
+    });
   }
 
   async function copyFilteredAccounts() {
@@ -5167,7 +5218,7 @@ function QuickCountView({ month }: { month: MonthKey }) {
                 {riskIndex === 0 ? (
                   <td rowSpan={2} className="min-w-48 border-b-2 border-r border-[#d7e3ef] border-[#c9dbea] bg-[#f4f9fd] px-3 py-3.5 align-middle">
                     <p className="font-black text-[#00529c]">{item.mantri}</p>
-                    {item.paidReduction.sml || item.paidReduction.npl ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Prognosa sudah diperbarui</p> : null}
+                    {item.riskAdjustment.sml || item.riskAdjustment.npl ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Prognosa sudah diperbarui</p> : null}
                   </td>
                 ) : null}
                 <Td><Badge variant={risk === "sml" ? "warning" : "danger"}>{risk.toUpperCase()}</Badge></Td>
@@ -5189,12 +5240,15 @@ function QuickCountView({ month }: { month: MonthKey }) {
             <h3 className="font-black text-[#00529c]">Pembayaran Hari Ini</h3>
             <p className="mt-1 text-xs text-muted-foreground">{formatTodayLabel()}</p>
           </div>
-          <Badge variant="success">{formatNumber(paidRows.length)} rekening membayar</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            {pendingNplForecastCount ? <Badge variant="warning">{formatNumber(pendingNplForecastCount)} NPL belum diprognosa</Badge> : null}
+            <Badge variant="success">{formatNumber(paidRows.length)} rekening membayar</Badge>
+          </div>
         </div>
         {paidRows.length ? (
           <>
-            <TableShell minWidth="min-w-[1180px]">
-              <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Kolektibilitas</Th><Th>Billing</Th><Th>Bayar Hari Ini</Th><Th>Sisa Tagihan</Th><Th>Status</Th></tr></thead>
+            <TableShell minWidth="min-w-[1380px]">
+              <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Kolektibilitas</Th><Th>Billing</Th><Th>Bayar Hari Ini</Th><Th>Sisa Tagihan</Th><Th>Prognosa Kolek</Th><Th>Status</Th></tr></thead>
               <tbody>{paidPagination.pagedRows.map((item) => (
                 <tr key={item.accountNumber}>
                   <Td className="font-mono font-bold text-[#00529c]">{normalizeAccount(item.accountNumber)}</Td>
@@ -5204,6 +5258,20 @@ function QuickCountView({ month }: { month: MonthKey }) {
                   <Td>{formatCurrency(item.billing)}</Td>
                   <Td className="font-black text-emerald-700">{formatCurrency(item.actToday)}</Td>
                   <Td className={cn("font-black", item.remaining <= 0 ? "text-emerald-700" : "text-rose-700")}>{formatCurrency(item.remaining)}</Td>
+                  <Td>
+                    {isNpl(item.quality) ? canExecuteQuickCount ? (
+                      <Select
+                        value={collectibilityForecasts[normalizeAccount(item.accountNumber)] ?? ""}
+                        onChange={(event) => updateCollectibilityForecast(item.accountNumber, event.target.value)}
+                        className="min-w-44 border-[#b8cee0] bg-white font-bold text-[#00529c]"
+                      >
+                        <option value="">Pilih Prognosa</option>
+                        {quickCountForecastOptions.map((quality) => <option key={quality} value={quality}>{quality}</option>)}
+                      </Select>
+                    ) : collectibilityForecasts[normalizeAccount(item.accountNumber)] ? (
+                      <QualityBadge bucket={collectibilityForecasts[normalizeAccount(item.accountNumber)]} />
+                    ) : <Badge variant="warning">Belum dipilih</Badge> : <span className="text-muted-foreground">-</span>}
+                  </Td>
                   <Td><Badge variant={item.remaining <= 0 ? "success" : "warning"}>{item.remaining <= 0 ? "Lunas Tagihan" : "Bayar Sebagian"}</Badge></Td>
                 </tr>
               ))}</tbody>
