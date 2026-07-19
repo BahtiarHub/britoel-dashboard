@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Clock3,
   ClipboardList,
+  ClipboardPaste,
   Command,
   Copy,
   Database,
@@ -4738,6 +4739,15 @@ function createQuickCountSheetRow(values: string[]): QuickCountSheetRow {
   };
 }
 
+function parseQuickCountClipboard(pastedText: string) {
+  return pastedText
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.split("\t"))
+    .filter((values) => values.some((value) => value.trim()))
+    .map(createQuickCountSheetRow);
+}
+
 function QuickCountSheetDialog({
   rows,
   setRows,
@@ -4747,6 +4757,7 @@ function QuickCountSheetDialog({
   setRows: (rows: QuickCountSheetRow[]) => void;
   onClose: () => void;
 }) {
+  const [pasteMessage, setPasteMessage] = useState("");
   const fields: { key: keyof QuickCountSheetRow; label: string; readOnly?: boolean; align?: string }[] = [
     { key: "accountNumber", label: "No rekening" },
     { key: "name", label: "Nama" },
@@ -4775,13 +4786,22 @@ function QuickCountSheetDialog({
     const pastedText = event.clipboardData.getData("text/plain");
     if (!pastedText.includes("\t") && !pastedText.includes("\n") && !pastedText.includes("\r")) return;
     event.preventDefault();
-    const pastedRows = pastedText
-      .replace(/\r/g, "")
-      .split("\n")
-      .map((line) => line.split("\t"))
-      .filter((values) => values.some((value) => value.trim()))
-      .map(createQuickCountSheetRow);
+    const pastedRows = parseQuickCountClipboard(pastedText);
     setRows(pastedRows.length ? pastedRows : [{ ...emptyQuickCountSheetRow }]);
+    setPasteMessage(`${formatNumber(pastedRows.length)} baris berhasil ditempel.`);
+  }
+
+  async function pasteFromClipboard() {
+    setPasteMessage("");
+    try {
+      const pastedText = await navigator.clipboard.readText();
+      const pastedRows = parseQuickCountClipboard(pastedText);
+      if (!pastedRows.length) throw new Error("Clipboard kosong");
+      setRows(pastedRows);
+      setPasteMessage(`${formatNumber(pastedRows.length)} baris berhasil ditempel.`);
+    } catch {
+      setPasteMessage("Clipboard belum dapat dibaca. Klik sel pertama lalu gunakan Ctrl+V.");
+    }
   }
 
   return (
@@ -4797,13 +4817,16 @@ function QuickCountSheetDialog({
         <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Tutup Hasil Cektung" className="text-white hover:bg-white/15 hover:text-white"><X className="h-5 w-5" /></Button>
       </header>
 
-      <div className="flex items-center justify-between gap-3 border-b border-[#d7e3ef] bg-white px-3 py-2 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d7e3ef] bg-white px-3 py-2 sm:px-5">
         <Badge className="border-0 bg-[#eaf3fb] text-[#00529c]">7 kolom</Badge>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={pasteFromClipboard} className="border-[#00529c]/25 text-[#00529c]"><ClipboardPaste className="h-4 w-4" />Paste</Button>
           <Button type="button" variant="outline" size="sm" onClick={() => setRows([{ ...emptyQuickCountSheetRow }])}>Kosongkan</Button>
           <Button type="button" size="sm" className="bg-[#00529c] text-white hover:bg-[#004077]" onClick={onClose}><Check className="h-4 w-4" />Simpan Hasil</Button>
         </div>
       </div>
+
+      {pasteMessage ? <div className="border-b border-[#d7e3ef] bg-[#f8fbfe] px-3 py-2 text-xs font-bold text-[#00529c] sm:px-5">{pasteMessage}</div> : null}
 
       <div className="flex-1 overflow-auto p-2 sm:p-4" onPaste={handlePaste}>
         <div className="min-w-[1210px] overflow-hidden border border-[#9eb7ca] bg-white shadow-sm">
