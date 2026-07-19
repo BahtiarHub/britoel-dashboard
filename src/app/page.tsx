@@ -6042,10 +6042,8 @@ function BrimenView({
   const [covenanceDateFrom, setCovenanceDateFrom] = useState("");
   const [covenanceDateTo, setCovenanceDateTo] = useState("");
   const [covenanceSelected, setCovenanceSelected] = useState<(LoanSnapshot & { record?: CovenanceRecord; dataStatus: "Lengkap" | "Belum Lengkap" })>();
-  const [covenanceMode, setCovenanceMode] = useState<"detail" | "edit">();
+  const [covenanceMode, setCovenanceMode] = useState<"detail">();
   const [covenanceForm, setCovenanceForm] = useState<CovenanceFormState>(emptyCovenanceForm);
-  const [covenanceMessage, setCovenanceMessage] = useState("");
-  const [savingCovenance, setSavingCovenance] = useState(false);
   const [workflowLoan, setWorkflowLoan] = useState<BrimenLoan>();
   const [workflowAction, setWorkflowAction] = useState<"handover" | "return">();
   const [workflowPhoto, setWorkflowPhoto] = useState<File>();
@@ -6370,9 +6368,9 @@ function BrimenView({
     );
   }
 
-  function openCovenanceForm(item: LoanSnapshot & { record?: CovenanceRecord; dataStatus: "Lengkap" | "Belum Lengkap" }, mode: "detail" | "edit") {
+  function openCovenanceForm(item: LoanSnapshot & { record?: CovenanceRecord; dataStatus: "Lengkap" | "Belum Lengkap" }) {
     setCovenanceSelected(item);
-    setCovenanceMode(mode);
+    setCovenanceMode("detail");
     setCovenanceForm(item.record ? {
       sphNumber: item.record.sphNumber,
       creditApplicationNumber: item.record.creditApplicationNumber,
@@ -6381,39 +6379,6 @@ function BrimenView({
       skuNibNumber: item.record.skuNibNumber,
       slikOjk: item.record.slikOjk,
     } : emptyCovenanceForm);
-    setCovenanceMessage("");
-  }
-
-  async function saveCovenance() {
-    if (!covenanceSelected) return;
-    setSavingCovenance(true);
-    setCovenanceMessage("");
-    try {
-      const response = await fetch("/api/covenance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          period: latestLoanPeriod,
-          accountNumber: covenanceSelected.accountNumber,
-          debtorName: covenanceSelected.debtorName,
-          realizedDate: covenanceSelected.realizedDate,
-          ...covenanceForm,
-        }),
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Data Covenance belum dapat disimpan.");
-      const saved = payload.data as CovenanceRecord;
-      setCovenanceRecords((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
-      setActionMessage(isCovenanceComplete(saved) ? `Data Covenance ${saved.debtorName} berhasil disimpan dengan status Lengkap.` : `Data Covenance ${saved.debtorName} berhasil disimpan dengan status Belum Lengkap.`);
-      setCovenanceSelected(undefined);
-      setCovenanceMode(undefined);
-      setCovenanceForm(emptyCovenanceForm);
-      setCovenanceMessage("");
-    } catch (error) {
-      setCovenanceMessage(error instanceof Error ? error.message : "Data Covenance belum dapat disimpan.");
-    } finally {
-      setSavingCovenance(false);
-    }
   }
 
   async function submitCustomer() {
@@ -7037,6 +7002,8 @@ function BrimenView({
         <BrimenProcessForm
           customer={loanCustomer}
           rows={rows}
+          latestLoanRows={latestLoanRows}
+          latestLoanPeriod={latestLoanPeriod}
           previousLoanRows={getSnapshots(getPreviousMonth(latestLoanPeriod) ?? latestLoanPeriod)}
           previousLoanPeriod={getPreviousMonth(latestLoanPeriod) ?? latestLoanPeriod}
           customerForm={form}
@@ -7128,8 +7095,7 @@ function BrimenView({
                       <Td><Badge variant={item.dataStatus === "Lengkap" ? "success" : "warning"}>{item.dataStatus}</Badge></Td>
                       <Td>
                         <div className="flex min-w-max gap-2">
-                          <Button type="button" variant="outline" size="sm" onClick={() => openCovenanceForm(item, "detail")}><Eye className="h-4 w-4" />Detail</Button>
-                          <Button type="button" size="sm" className="bg-[#00529c] text-white hover:bg-[#004077]" onClick={() => openCovenanceForm(item, "edit")}><FilePlus2 className="h-4 w-4" />Isi Data</Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => openCovenanceForm(item)}><Eye className="h-4 w-4" />Detail</Button>
                         </div>
                       </Td>
                     </tr>
@@ -7143,10 +7109,10 @@ function BrimenView({
 
           {covenanceSelected && covenanceMode ? (
             <OverlayShell
-              title={covenanceMode === "detail" ? `Detail Covenance - ${covenanceSelected.debtorName}` : `Isi Data Covenance - ${covenanceSelected.debtorName}`}
+              title={`Detail Covenance - ${covenanceSelected.debtorName}`}
               description={`No Rekening ${normalizeAccount(covenanceSelected.accountNumber)} | Realisasi ${safeDateLabel(covenanceSelected.realizedDate)}`}
-              icon={covenanceMode === "detail" ? Eye : FilePlus2}
-              onClose={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); setCovenanceMessage(""); }}
+              icon={Eye}
+              onClose={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); }}
             >
               <div className="max-h-[75vh] overflow-y-auto bg-[#f4f8fc]">
                 <section className="relative overflow-hidden border-t-4 border-[#f37021] bg-[#00529c] px-4 py-5 text-white sm:px-5">
@@ -7168,34 +7134,21 @@ function BrimenView({
 
                 <section className="p-4 sm:p-5">
                   <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#d7e3ef] pb-3">
-                    <div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-md bg-[#eaf3fb] text-[#00529c]"><ClipboardList className="h-4 w-4" /></span><div><p className="text-xs font-black uppercase text-[#00529c]">Dokumen Pengajuan Kredit</p><p className="text-[11px] text-muted-foreground">{covenanceMode === "detail" ? "Data tersimpan pada Covenance Day" : "Lengkapi identitas dokumen debitur"}</p></div></div>
+                    <div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-md bg-[#eaf3fb] text-[#00529c]"><ClipboardList className="h-4 w-4" /></span><div><p className="text-xs font-black uppercase text-[#00529c]">Dokumen Pengajuan Kredit</p><p className="text-[11px] text-muted-foreground">Data tersimpan pada Covenance Day</p></div></div>
                     <span className="text-xs font-black text-[#f37021]">{Math.round((covenanceCompletionCount / 6) * 100)}%</span>
                   </div>
                   <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-[#dbe8f3]"><div className={cn("h-full rounded-full transition-all", covenanceCompletionCount === 6 ? "bg-emerald-500" : "bg-[#f37021]")} style={{ width: `${(covenanceCompletionCount / 6) * 100}%` }} /></div>
 
-                  {covenanceMode === "detail" ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <ReadOnlyField label="No SPH" value={covenanceForm.sphNumber || "-"} />
-                      <ReadOnlyField label="No Surat Permohonan Kredit" value={covenanceForm.creditApplicationNumber || "-"} />
-                      <ReadOnlyField label="No KTP" value={covenanceForm.ktpNumber || "-"} />
-                      <ReadOnlyField label="No KK" value={covenanceForm.kkNumber || "-"} />
-                      <ReadOnlyField label="No SKU/NIB" value={covenanceForm.skuNibNumber || "-"} />
-                      <ReadOnlyField label="No NPWP" value={covenanceForm.slikOjk || "-"} />
-                    </div>
-                  ) : (
-                    <div className="grid gap-4 sm:grid-cols-2 [&_input]:h-11 [&_input]:border-[#b9cfe2] [&_input]:bg-white [&_input]:font-semibold [&_input]:text-[#0f2942] focus-within:[&_input]:border-[#00529c]">
-                      <Field label="No SPH"><Input placeholder="Masukkan nomor SPH" value={covenanceForm.sphNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, sphNumber: event.target.value }))} /></Field>
-                      <Field label="No Surat Permohonan Kredit"><Input placeholder="Masukkan nomor surat permohonan" value={covenanceForm.creditApplicationNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, creditApplicationNumber: event.target.value }))} /></Field>
-                      <Field label="No KTP"><Input inputMode="numeric" placeholder="Nomor identitas debitur" value={covenanceForm.ktpNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, ktpNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
-                      <Field label="No KK"><Input inputMode="numeric" placeholder="Nomor kartu keluarga" value={covenanceForm.kkNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, kkNumber: event.target.value.replace(/\D/g, "") }))} /></Field>
-                      <Field label="No SKU/NIB"><Input placeholder="Nomor SKU atau NIB" value={covenanceForm.skuNibNumber} onChange={(event) => setCovenanceForm((current) => ({ ...current, skuNibNumber: event.target.value }))} /></Field>
-                      <Field label="No NPWP"><Input inputMode="numeric" placeholder="Masukkan nomor NPWP" value={covenanceForm.slikOjk} onChange={(event) => setCovenanceForm((current) => ({ ...current, slikOjk: event.target.value.replace(/\D/g, "") }))} /></Field>
-                    </div>
-                  )}
-                  {covenanceMessage ? <p className={cn("mt-4 rounded-md border px-3 py-2 text-sm font-bold", covenanceMessage.includes("berhasil") ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700")}>{covenanceMessage}</p> : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <ReadOnlyField label="No SPH" value={covenanceForm.sphNumber || "-"} />
+                    <ReadOnlyField label="No Surat Permohonan Kredit" value={covenanceForm.creditApplicationNumber || "-"} />
+                    <ReadOnlyField label="No KTP" value={covenanceForm.ktpNumber || "-"} />
+                    <ReadOnlyField label="No KK" value={covenanceForm.kkNumber || "-"} />
+                    <ReadOnlyField label="No SKU/NIB" value={covenanceForm.skuNibNumber || "-"} />
+                    <ReadOnlyField label="No NPWP" value={covenanceForm.slikOjk || "-"} />
+                  </div>
                   <div className="mt-5 flex justify-end gap-2 border-t border-[#d7e3ef] pt-4">
-                    <Button type="button" variant="outline" className="border-[#b9cfe2] text-[#004077]" onClick={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); setCovenanceMessage(""); }}>{covenanceMode === "detail" ? "Tutup" : "Batal"}</Button>
-                    {covenanceMode === "edit" ? <Button type="button" onClick={saveCovenance} disabled={savingCovenance} className="bg-[#00529c] text-white shadow-[0_8px_16px_rgba(0,82,156,0.18)] hover:bg-[#004077]"><Check className="h-4 w-4" />{savingCovenance ? "Menyimpan..." : "Simpan Data"}</Button> : null}
+                    <Button type="button" variant="outline" className="border-[#b9cfe2] text-[#004077]" onClick={() => { setCovenanceSelected(undefined); setCovenanceMode(undefined); }}>Tutup</Button>
                   </div>
                 </section>
               </div>
@@ -7721,27 +7674,15 @@ function BrimenCustomerForm({
                     placeholder="Nama mantri"
                   />
                 </Field>
-                {mode === "add" ? (
-                  <Field label="Status">
-                    <Select
-                      value={form.status}
-                      onChange={(event) => update("status", event.target.value as BrimenCustomer["status"])}
-                    >
-                      {["Disimpan", "Dipinjam", "Diambil", "Lunas"].map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </Select>
+                {isEditMode ? (
+                  <Field label="Branch Code">
+                    <Input
+                      value={form.branchCode}
+                      onChange={(event) => update("branchCode", event.target.value)}
+                      placeholder="Kode unit"
+                    />
                   </Field>
                 ) : null}
-                <Field label="Branch Code">
-                  <Input
-                    value={form.branchCode}
-                    onChange={(event) => update("branchCode", event.target.value)}
-                    placeholder="Kode unit"
-                  />
-                </Field>
               </>
             ) : null}
           </div>
@@ -7933,6 +7874,8 @@ function ReadOnlyField({ label, value, multiline = false }: { label: string; val
 function BrimenProcessForm({
   customer,
   rows,
+  latestLoanRows,
+  latestLoanPeriod,
   previousLoanRows,
   previousLoanPeriod,
   customerForm,
@@ -7946,6 +7889,8 @@ function BrimenProcessForm({
 }: {
   customer: BrimenCustomer;
   rows: BrimenCustomer[];
+  latestLoanRows: LoanSnapshot[];
+  latestLoanPeriod: MonthKey;
   previousLoanRows: LoanSnapshot[];
   previousLoanPeriod: MonthKey;
   customerForm: BrimenFormState;
@@ -7960,6 +7905,7 @@ function BrimenProcessForm({
   const [activeProcess, setActiveProcess] = useState<BrimenOperationType | null>(initialProcess ?? null);
   const [addressEditable, setAddressEditable] = useState(false);
   const [suplesiSearchStatus, setSuplesiSearchStatus] = useState<"idle" | "found" | "not-found">("idle");
+  const [suplesiNewAccountStatus, setSuplesiNewAccountStatus] = useState<"idle" | "found" | "not-found">("idle");
   const [selectedCustomer, setSelectedCustomer] = useState(customer);
   const currentCustomer = selectedCustomer;
   const updateProcess = (key: keyof BrimenProcessFormState, value: string) => {
@@ -7975,7 +7921,7 @@ function BrimenProcessForm({
     const matched = activeArchivedRows.find((row) => formatAccountNumber(row.accountNumber) === accountNumber);
 
     if (matched && matchedLoan) {
-      const matchedHasGuarantee = [matched.brimenJaminan, matched.guarantee].some((item) => Boolean(item && item.trim() && item.trim() !== "-"));
+      const matchedHasGuarantee = hasBrimenGuarantee(matched);
       setSelectedCustomer(matched);
       setCustomerForm({
         ...customerToForm(matched),
@@ -8000,16 +7946,46 @@ function BrimenProcessForm({
         newGuarantee: matched.guarantee,
       });
       setSuplesiSearchStatus("found");
+      setSuplesiNewAccountStatus("idle");
       return;
     }
 
     setCustomerForm({ ...customerForm, accountNumber });
     setSuplesiSearchStatus(accountNumber.length >= 15 ? "not-found" : "idle");
   };
+  const handleSuplesiNewAccount = (value: string) => {
+    const accountNumber = formatAccountNumber(value);
+    const matchedLoan = latestLoanRows.find((row) => formatAccountNumber(row.accountNumber) === accountNumber);
+
+    if (matchedLoan) {
+      setCustomerForm({
+        ...customerForm,
+        accountNumber,
+        name: matchedLoan.debtorName,
+        plafond: formatRupiahInput(matchedLoan.plafond),
+        realizationDate: matchedLoan.realizedDate,
+        mantri: matchedLoan.mantri,
+      });
+      setProcessForm({ ...processForm, newPlafond: formatRupiahInput(matchedLoan.plafond) });
+      setSuplesiNewAccountStatus("found");
+      return;
+    }
+
+    setCustomerForm({
+      ...customerForm,
+      accountNumber,
+      name: "",
+      plafond: "",
+      realizationDate: "",
+      mantri: "",
+    });
+    setProcessForm({ ...processForm, newPlafond: "" });
+    setSuplesiNewAccountStatus(accountNumber.length >= 15 ? "not-found" : "idle");
+  };
   const workingBrimenBerkas = processForm.operationType === "Suplesi" ? customerForm.brimenBerkas : currentCustomer.brimenBerkas;
   const workingBrimenJaminan = processForm.operationType === "Suplesi" ? customerForm.brimenJaminan : currentCustomer.brimenJaminan;
   const workingGuarantee = processForm.operationType === "Suplesi" ? customerForm.guarantee : currentCustomer.guarantee;
-  const hasGuarantee = [workingBrimenJaminan, workingGuarantee].some((value) => Boolean(value && value.trim() && value.trim() !== "-"));
+  const hasGuarantee = hasBrimenGuarantee({ brimenJaminan: workingBrimenJaminan, guarantee: workingGuarantee });
   const showGuaranteeChoice = processForm.operationType === "Suplesi";
   const showPickupForm =
     hasGuarantee &&
@@ -8022,7 +7998,8 @@ function BrimenProcessForm({
   const needsSupportFile = showPickupForm && processForm.pickupRelationship !== "Pemilik Jaminan" && !processForm.pickupSupportFileName;
   const missingSuplesiCovenance =
     processForm.operationType === "Suplesi" &&
-    (!customerForm.realizationDate ||
+    (suplesiNewAccountStatus !== "found" ||
+      !customerForm.realizationDate ||
       !customerForm.sphNumber.trim() ||
       !customerForm.creditApplicationNumber.trim() ||
       !customerForm.ktpNumber.trim() ||
@@ -8163,6 +8140,7 @@ function BrimenProcessForm({
                     setActiveProcess(option.type);
                     setAddressEditable(option.type === "Edit Data");
                     setSuplesiSearchStatus("idle");
+                    setSuplesiNewAccountStatus("idle");
                     if (option.type === "Edit Data") {
                       setCustomerForm({
                         ...customerToForm(currentCustomer),
@@ -8240,11 +8218,13 @@ function BrimenProcessForm({
               </div>
             ) : null}
 
-            <div className={cn("grid gap-4 md:grid-cols-2 xl:grid-cols-4", processForm.operationType === "Suplesi" && "xl:grid-cols-2")}>
+            <div className={cn("grid gap-4 md:grid-cols-2 xl:grid-cols-4", processForm.operationType === "Suplesi" && "xl:grid-cols-3")}>
               {processForm.operationType === "Suplesi" || showEditData ? (
                 <>
                   <div className="space-y-1.5">
-                    <p className="text-xs font-black uppercase tracking-[0.1em] text-muted-foreground">No Rekening</p>
+                    <p className="text-xs font-black uppercase tracking-[0.1em] text-muted-foreground">
+                      {processForm.operationType === "Suplesi" && suplesiSearchStatus === "found" ? "No Rekening Baru" : "No Rekening"}
+                    </p>
                     {processForm.operationType === "Suplesi" && suplesiSearchStatus !== "found" ? (
                       <>
                         <div className="relative">
@@ -8270,7 +8250,7 @@ function BrimenProcessForm({
                       <div className="space-y-2">
                         <Input
                           value={formatAccountNumber(customerForm.accountNumber)}
-                          onChange={(event) => updateCustomer("accountNumber", formatAccountNumber(event.target.value))}
+                          onChange={(event) => processForm.operationType === "Suplesi" ? handleSuplesiNewAccount(event.target.value) : updateCustomer("accountNumber", formatAccountNumber(event.target.value))}
                           inputMode="numeric"
                           maxLength={15}
                           required
@@ -8281,23 +8261,39 @@ function BrimenProcessForm({
                           )}
                         />
                         {processForm.operationType === "Suplesi" ? (
-                          <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                            Data lama sudah dimuat. No rekening kini dapat diubah untuk pinjaman hasil suplesi.
-                          </div>
+                          <>
+                            <div className="flex items-start gap-2 rounded-md border border-[#b9cfe2] bg-[#eaf3fb] px-3 py-2 text-xs font-semibold text-[#004077]">
+                              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                              Arsip lama sudah dimuat. Ketik No Rekening baru untuk mengambil data kredit dari LW321 terbaru.
+                            </div>
+                            <SearchStatusNotice
+                              status={suplesiNewAccountStatus}
+                              accountLength={formatAccountNumber(customerForm.accountNumber) === formatAccountNumber(currentCustomer.accountNumber) ? 0 : formatAccountNumber(customerForm.accountNumber).length}
+                              sourceLabel={`LW321 terbaru posisi ${getMonthLabel(latestLoanPeriod)}`}
+                              notFoundMessage="No rekening baru tidak ditemukan pada LW321 terbaru. Periksa kembali nomor yang diketik."
+                            />
+                          </>
                         ) : null}
                       </div>
                     )}
                   </div>
-                  <DarkField label="Nama Nasabah">
-                    <Input value={customerForm.name} onChange={(event) => updateCustomer("name", event.target.value)} required className="border-[#d7e3ef] bg-white text-[#0f2942]" />
+                  <DarkField label={processForm.operationType === "Suplesi" ? "Nama Debitur" : "Nama Nasabah"}>
+                    <Input
+                      value={customerForm.name}
+                      onChange={(event) => updateCustomer("name", event.target.value)}
+                      readOnly={processForm.operationType === "Suplesi"}
+                      required
+                      className={cn("border-[#d7e3ef] text-[#0f2942]", processForm.operationType === "Suplesi" ? "border-[#b9cfe2] bg-[#eaf3fb] font-semibold text-[#004077]" : "bg-white")}
+                    />
                   </DarkField>
                   <DarkField label="Tanggal Realisasi">
                     <Input
                       type="date"
                       value={customerForm.realizationDate}
                       onChange={(event) => updateCustomer("realizationDate", event.target.value)}
-                      className="border-[#d7e3ef] bg-white text-[#0f2942]"
+                      readOnly={processForm.operationType === "Suplesi"}
+                      required={processForm.operationType === "Suplesi"}
+                      className={cn("border-[#d7e3ef] text-[#0f2942]", processForm.operationType === "Suplesi" ? "border-[#b9cfe2] bg-[#eaf3fb] font-semibold text-[#004077]" : "bg-white")}
                     />
                   </DarkField>
                 </>
@@ -8308,9 +8304,20 @@ function BrimenProcessForm({
                     value={showEditData ? customerForm.plafond : processForm.newPlafond}
                     onChange={(event) => showEditData ? updateCustomer("plafond", event.target.value) : updateProcess("newPlafond", formatRupiahInput(event.target.value))}
                     inputMode="numeric"
+                    readOnly={processForm.operationType === "Suplesi"}
                     required
                     placeholder="Rp 0"
-                    className="border-[#d7e3ef] bg-white text-[#0f2942]"
+                    className={cn("border-[#d7e3ef] text-[#0f2942]", processForm.operationType === "Suplesi" ? "border-[#b9cfe2] bg-[#eaf3fb] font-semibold text-[#004077]" : "bg-white")}
+                  />
+                </DarkField>
+              ) : null}
+              {processForm.operationType === "Suplesi" ? (
+                <DarkField label="Mantri / Officer">
+                  <Input
+                    value={customerForm.mantri}
+                    readOnly
+                    placeholder="Terisi dari LW321 terbaru"
+                    className="border-[#b9cfe2] bg-[#eaf3fb] font-semibold text-[#004077]"
                   />
                 </DarkField>
               ) : null}
@@ -8380,7 +8387,7 @@ function BrimenProcessForm({
                     placeholder="Edit bila nasabah pindah alamat"
                     className={cn(
                       "h-11 border-[#d7e3ef] text-[#0f2942]",
-                      processForm.operationType === "Suplesi" && !addressEditable ? "bg-[#f8fbfe]" : "bg-white",
+                      processForm.operationType === "Suplesi" && !addressEditable ? "border-[#b9cfe2] bg-[#eaf3fb] font-semibold text-[#004077]" : "bg-white",
                     )}
                   />
                 </DarkField>
@@ -8443,7 +8450,7 @@ function BrimenProcessForm({
                     onChange={(event) => updateCustomer("brimenBerkas", formatBrimenStorageInput(event.target.value))}
                     readOnly={!showEditData}
                     placeholder="II.C.3.18"
-                    className={cn("border-[#d7e3ef] font-mono text-[#0f2942]", showEditData ? "bg-white" : "bg-[#f8fbfe]")}
+                    className={cn("border-[#d7e3ef] font-mono text-[#0f2942]", showEditData ? "bg-white" : "border-[#b9cfe2] bg-[#eaf3fb] font-semibold text-[#004077]")}
                   />
                 </DarkField>
                 <DarkField label="No BRIMEN Jaminan">
@@ -8456,7 +8463,7 @@ function BrimenProcessForm({
                     }
                     readOnly={!showEditData && processForm.operationType === "Suplesi"}
                     placeholder="II.C.3.18"
-                    className={cn("border-[#d7e3ef] font-mono text-[#0f2942]", showEditData ? "bg-white" : "bg-[#f8fbfe]")}
+                    className={cn("border-[#d7e3ef] font-mono text-[#0f2942]", showEditData ? "bg-white" : "border-[#b9cfe2] bg-[#eaf3fb] font-semibold text-[#004077]")}
                   />
                 </DarkField>
                 <DarkField label={processForm.guaranteeAction === "ganti" || processForm.guaranteeAction === "tambah" ? "Detail Jaminan Baru" : "Data Jaminan"}>
@@ -8471,7 +8478,7 @@ function BrimenProcessForm({
                     onChange={(event) => showEditData ? updateCustomer("guarantee", event.target.value) : updateProcess("newGuarantee", event.target.value)}
                     readOnly={!showEditData && processForm.guaranteeAction !== "ganti" && processForm.guaranteeAction !== "tambah"}
                     placeholder="Input detail jaminan baru"
-                    className={cn("border-[#d7e3ef] text-[#0f2942]", showEditData || processForm.guaranteeAction === "ganti" || processForm.guaranteeAction === "tambah" ? "bg-white" : "bg-[#f8fbfe]")}
+                    className={cn("border-[#d7e3ef] text-[#0f2942]", showEditData || processForm.guaranteeAction === "ganti" || processForm.guaranteeAction === "tambah" ? "bg-white" : "border-[#b9cfe2] bg-[#eaf3fb] font-semibold text-[#004077]")}
                   />
                 </DarkField>
               </div>
