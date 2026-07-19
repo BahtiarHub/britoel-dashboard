@@ -2326,63 +2326,62 @@ function PortfolioGrowthChart({ month, title = "Pertumbuhan Portofolio Kredit" }
   const previousSummary = getSummary(previousMonth);
   const yearEndSummary = getSummary(yearEndMonth);
   const data = [
-    { period: "Akhir Tahun", month: getMonthLabel(yearEndMonth), os: yearEndSummary.totalOs, sml: yearEndSummary.smlOs, npl: yearEndSummary.nplOs },
-    { period: "Bulan Lalu", month: getMonthLabel(previousMonth), os: previousSummary.totalOs, sml: previousSummary.smlOs, npl: previousSummary.nplOs },
-    { period: "Terbaru", month: getMonthLabel(month), os: currentSummary.totalOs, sml: currentSummary.smlOs, npl: currentSummary.nplOs },
+    { period: "Akhir Tahun", shortPeriod: "Thn Lalu", month: getMonthLabel(yearEndMonth), os: yearEndSummary.totalOs, sml: yearEndSummary.smlOs, npl: yearEndSummary.nplOs },
+    { period: "Bulan Lalu", shortPeriod: "Bln Lalu", month: getMonthLabel(previousMonth), os: previousSummary.totalOs, sml: previousSummary.smlOs, npl: previousSummary.nplOs },
+    { period: "Terbaru", shortPeriod: "Terbaru", month: getMonthLabel(month), os: currentSummary.totalOs, sml: currentSummary.smlOs, npl: currentSummary.nplOs },
   ];
   const growth = [
-    { label: "OS", value: currentSummary.totalOs, delta: currentSummary.totalOs - yearEndSummary.totalOs, color: "#00529c", background: "bg-[#e8f3fb]" },
-    { label: "SML", value: currentSummary.smlOs, delta: currentSummary.smlOs - yearEndSummary.smlOs, color: "#f37021", background: "bg-[#fff0e6]" },
-    { label: "NPL", value: currentSummary.nplOs, delta: currentSummary.nplOs - yearEndSummary.nplOs, color: "#dc2626", background: "bg-rose-50" },
-  ];
+    { key: "os" as const, label: "OS", value: currentSummary.totalOs, delta: currentSummary.totalOs - yearEndSummary.totalOs, color: "#00529c", background: "bg-[#e8f3fb]" },
+    { key: "sml" as const, label: "SML", value: currentSummary.smlOs, delta: currentSummary.smlOs - yearEndSummary.smlOs, color: "#f37021", background: "bg-[#fff0e6]" },
+    { key: "npl" as const, label: "NPL", value: currentSummary.nplOs, delta: currentSummary.nplOs - yearEndSummary.nplOs, color: "#dc2626", background: "bg-rose-50" },
+  ].map((item) => {
+    const values = data.map((row) => row[item.key]);
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    const spread = maximum - minimum;
+    const padding = spread > 0 ? spread * 0.25 : Math.max(maximum * 0.03, 1);
+    return { ...item, domain: [Math.max(0, minimum - padding), maximum + padding] as [number, number] };
+  });
 
   return (
     <Card className="bri-card overflow-hidden border-[#d7e3ef]">
       <CardHeader className="border-b border-[#e3edf6] bg-[linear-gradient(110deg,#f8fbfe_0%,#eef7ff_68%,#fff5ee_100%)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><CardTitle>{title}</CardTitle><CardDescription>Tren OS, SML, dan NPL dari akhir tahun hingga posisi terbaru.</CardDescription></div>
-          <Badge variant="outline" className="w-fit border-[#9fc3df] bg-white text-[#00529c]">Nilai aktual · satu skala</Badge>
+          <div><CardTitle>{title}</CardTitle><CardDescription>Tren nominal aktual dengan rentang yang disesuaikan untuk setiap metrik.</CardDescription></div>
+          <Badge variant="outline" className="w-fit border-[#9fc3df] bg-white text-[#00529c]">3 grafik tren aktual</Badge>
         </div>
       </CardHeader>
       <CardContent className="p-4 sm:p-5">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_230px]">
-          <div className="h-[310px] min-w-0 rounded-lg border border-[#e3edf6] bg-white p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsLineChart data={data} margin={{ top: 18, right: 8, left: 2, bottom: 4 }}>
-                <defs>
-                  <filter id="portfolioLineGlow" x="-30%" y="-30%" width="160%" height="160%">
-                    <feDropShadow dx="0" dy="3" stdDeviation="2.5" floodColor="#003765" floodOpacity="0.22" />
-                  </filter>
-                </defs>
-                <CartesianGrid stroke="#dce9f4" strokeDasharray="4 5" vertical={false} />
-                <XAxis dataKey="period" axisLine={{ stroke: "#aac4d9" }} tickLine={false} tick={{ fontSize: 12, fontWeight: 700, fill: "#35546d" }} dy={8} />
-                <YAxis tickFormatter={formatChartAxis} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#60778b" }} width={58} domain={[0, "auto"]} />
-                <Tooltip
-                  formatter={(value: number, name: string) => [formatCurrency(value), name]}
-                  labelFormatter={(_, payload) => payload?.[0]?.payload?.month ?? ""}
-                  contentStyle={{ borderRadius: 8, borderColor: "#bfd3e5", boxShadow: "0 12px 28px rgba(0,55,105,.16)", fontSize: 12 }}
-                />
-                <RechartsLine type="monotone" dataKey="os" name="OS" stroke="#00529c" strokeWidth={4} dot={{ r: 5, fill: "#00529c", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
-                <RechartsLine type="monotone" dataKey="sml" name="SML" stroke="#f37021" strokeWidth={4} dot={{ r: 5, fill: "#f37021", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
-                <RechartsLine type="monotone" dataKey="npl" name="NPL" stroke="#dc2626" strokeWidth={4} dot={{ r: 5, fill: "#dc2626", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
-              </RechartsLineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="grid gap-2.5 sm:grid-cols-3 xl:grid-cols-1">
-            {growth.map((item) => (
-              <div key={item.label} className={cn("relative overflow-hidden rounded-lg border border-[#dbe7f1] p-3.5", item.background)}>
-                <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: item.color }} />
-                <div className="flex items-center justify-between gap-3"><p className="text-xs font-black uppercase text-slate-600">{item.label} Terbaru</p><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color, boxShadow: `0 0 0 4px ${item.color}18` }} /></div>
-                <p className="metric-value mt-1.5 text-base font-black text-[#0b355a]">{formatCurrency(item.value)}</p>
-                <p className={cn("mt-1 text-xs font-black", item.delta > 0 ? "text-rose-700" : item.delta < 0 ? "text-emerald-700" : "text-slate-500")}>{item.delta > 0 ? "+" : ""}{formatCurrency(item.delta)} <span className="font-semibold text-slate-500">YTD</span></p>
+        <div className="grid gap-4 md:grid-cols-3">
+          {growth.map((item) => (
+            <div key={item.key} className="min-w-0 overflow-hidden rounded-lg border border-[#d7e3ef] bg-white shadow-[0_6px_16px_rgba(0,55,105,0.05)]">
+              <div className={cn("border-b border-[#d7e3ef] px-3 py-3", item.background)}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} /><p className="text-xs font-black uppercase text-slate-700">{item.label}</p></div>
+                  <span className="text-[10px] font-black uppercase text-slate-500">Posisi terbaru</span>
+                </div>
+                <p className="metric-value mt-1.5 text-sm font-black text-[#0b355a] sm:text-base">{formatCurrency(item.value)}</p>
+                <p className={cn("mt-1 text-[11px] font-black", item.delta > 0 ? "text-rose-700" : item.delta < 0 ? "text-emerald-700" : "text-slate-500")}>{item.delta > 0 ? "+" : ""}{formatCurrency(item.delta)} <span className="font-semibold text-slate-500">YTD</span></p>
               </div>
-            ))}
-          </div>
+              <div className="h-[220px] p-2 pt-3">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsLineChart data={data} margin={{ top: 10, right: 8, left: 0, bottom: 5 }}>
+                    <CartesianGrid stroke="#dce9f4" strokeDasharray="4 5" vertical={false} />
+                    <XAxis dataKey="shortPeriod" axisLine={{ stroke: "#aac4d9" }} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: "#35546d" }} dy={7} />
+                    <YAxis tickFormatter={formatChartAxis} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#60778b" }} width={54} domain={item.domain} />
+                    <Tooltip
+                      formatter={(value: number) => [formatCurrency(value), item.label]}
+                      labelFormatter={(_, payload) => payload?.[0]?.payload?.month ?? ""}
+                      contentStyle={{ borderRadius: 8, borderColor: "#bfd3e5", boxShadow: "0 12px 28px rgba(0,55,105,.16)", fontSize: 12 }}
+                    />
+                    <RechartsLine type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={4} dot={{ r: 5, fill: item.color, stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} />
+                  </RechartsLineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ))}
         </div>
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#e3edf6] pt-3">
-          {growth.map((item) => <div key={item.label} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span className="h-1 w-7 rounded-full" style={{ backgroundColor: item.color }} />{item.label}</div>)}
-          <p className="ml-auto text-xs font-semibold text-slate-500">Semua garis menggunakan skala rupiah yang sama.</p>
-        </div>
+        <p className="mt-3 rounded-md border border-[#d7e3ef] bg-[#f8fbfe] px-3 py-2 text-xs font-semibold text-slate-600">Setiap grafik memakai rentang rupiah aktual masing-masing agar perubahan kecil tetap terlihat. Nominal lengkap tersedia pada rincian periode di bawah.</p>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {data.map((item) => (
             <div key={item.period} className="overflow-hidden rounded-lg border border-[#d7e3ef] bg-[#f8fbfe]">
