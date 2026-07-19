@@ -1005,9 +1005,10 @@ export function getPrognosaCkpnRows(month: MonthKey) {
       const previousRate = getLossRate(item, previousMonth);
       if (previousRate === undefined) return undefined;
 
-      const expectedCurrentQuality = getExpectedQualityByNpd(item.nextPaymentDate, previousMonth);
-      const expectedTargetQuality = getExpectedQualityByNpd(item.nextPaymentDate, month);
-      const isKts = Boolean(expectedCurrentQuality && expectedCurrentQuality !== previousQuality);
+      const latestSystemRow = getCompareSnapshot(month, item.accountNumber);
+      const systemQuality = latestSystemRow ? classifyQuality(latestSystemRow, month) : previousQuality;
+      const expectedTargetQuality = getExpectedQualityByNpd(latestSystemRow?.nextPaymentDate ?? item.nextPaymentDate, month);
+      const isKts = Boolean(expectedTargetQuality && expectedTargetQuality !== systemQuality);
       const qualityOrder: ExpectedQuality[] = ["Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet"];
       const previousIndex = qualityOrder.indexOf(previousQuality === "LR" ? "Lancar" : previousQuality);
       const normalTargets = previousIndex >= 0 ? qualityOrder.slice(0, Math.min(previousIndex + 2, qualityOrder.length)) : [];
@@ -1063,7 +1064,7 @@ export function getPrognosaCkpnRows(month: MonthKey) {
         productType,
         previousBucket,
         previousQuality,
-        expectedCurrentQuality,
+        systemQuality,
         expectedTargetQuality,
         isKts,
         allowedTargets,
