@@ -2341,7 +2341,7 @@ function PortfolioGrowthChart({ month, title = "Pertumbuhan Portofolio Kredit" }
       <CardHeader className="border-b border-[#e3edf6] bg-[linear-gradient(110deg,#f8fbfe_0%,#eef7ff_68%,#fff5ee_100%)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><CardTitle>{title}</CardTitle><CardDescription>Tren OS, SML, dan NPL dari akhir tahun hingga posisi terbaru.</CardDescription></div>
-          <Badge variant="outline" className="w-fit border-[#9fc3df] bg-white text-[#00529c]">3 posisi laporan</Badge>
+          <Badge variant="outline" className="w-fit border-[#9fc3df] bg-white text-[#00529c]">Nilai aktual · satu skala</Badge>
         </div>
       </CardHeader>
       <CardContent className="p-4 sm:p-5">
@@ -2356,16 +2356,15 @@ function PortfolioGrowthChart({ month, title = "Pertumbuhan Portofolio Kredit" }
                 </defs>
                 <CartesianGrid stroke="#dce9f4" strokeDasharray="4 5" vertical={false} />
                 <XAxis dataKey="period" axisLine={{ stroke: "#aac4d9" }} tickLine={false} tick={{ fontSize: 12, fontWeight: 700, fill: "#35546d" }} dy={8} />
-                <YAxis yAxisId="os" tickFormatter={formatChartAxis} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#60778b" }} width={52} />
-                <YAxis yAxisId="risk" orientation="right" tickFormatter={formatChartAxis} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#60778b" }} width={48} />
+                <YAxis tickFormatter={formatChartAxis} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#60778b" }} width={58} domain={[0, "auto"]} />
                 <Tooltip
                   formatter={(value: number, name: string) => [formatCurrency(value), name]}
                   labelFormatter={(_, payload) => payload?.[0]?.payload?.month ?? ""}
                   contentStyle={{ borderRadius: 8, borderColor: "#bfd3e5", boxShadow: "0 12px 28px rgba(0,55,105,.16)", fontSize: 12 }}
                 />
-                <RechartsLine yAxisId="os" type="monotone" dataKey="os" name="OS" stroke="#00529c" strokeWidth={4} dot={{ r: 5, fill: "#00529c", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
-                <RechartsLine yAxisId="risk" type="monotone" dataKey="sml" name="SML" stroke="#f37021" strokeWidth={4} dot={{ r: 5, fill: "#f37021", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
-                <RechartsLine yAxisId="risk" type="monotone" dataKey="npl" name="NPL" stroke="#dc2626" strokeWidth={4} dot={{ r: 5, fill: "#dc2626", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
+                <RechartsLine type="monotone" dataKey="os" name="OS" stroke="#00529c" strokeWidth={4} dot={{ r: 5, fill: "#00529c", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
+                <RechartsLine type="monotone" dataKey="sml" name="SML" stroke="#f37021" strokeWidth={4} dot={{ r: 5, fill: "#f37021", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
+                <RechartsLine type="monotone" dataKey="npl" name="NPL" stroke="#dc2626" strokeWidth={4} dot={{ r: 5, fill: "#dc2626", stroke: "#fff", strokeWidth: 3 }} activeDot={{ r: 8, stroke: "#fff", strokeWidth: 3 }} style={{ filter: "url(#portfolioLineGlow)" }} />
               </RechartsLineChart>
             </ResponsiveContainer>
           </div>
@@ -2382,7 +2381,22 @@ function PortfolioGrowthChart({ month, title = "Pertumbuhan Portofolio Kredit" }
         </div>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#e3edf6] pt-3">
           {growth.map((item) => <div key={item.label} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span className="h-1 w-7 rounded-full" style={{ backgroundColor: item.color }} />{item.label}</div>)}
-          <p className="ml-auto text-xs font-semibold text-slate-500">Arah garis menunjukkan perubahan nominal, bukan persentase.</p>
+          <p className="ml-auto text-xs font-semibold text-slate-500">Semua garis menggunakan skala rupiah yang sama.</p>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {data.map((item) => (
+            <div key={item.period} className="overflow-hidden rounded-lg border border-[#d7e3ef] bg-[#f8fbfe]">
+              <div className="flex items-center justify-between border-b border-[#d7e3ef] bg-white px-3 py-2.5">
+                <p className="text-xs font-black uppercase text-[#00529c]">{item.period}</p>
+                <span className="text-[11px] font-bold text-slate-500">{item.month}</span>
+              </div>
+              <div className="grid gap-2 px-3 py-3 text-xs">
+                <div className="flex items-center justify-between gap-3"><span className="font-bold text-slate-600">OS</span><span className="font-black text-[#00529c]">{formatCurrency(item.os)}</span></div>
+                <div className="flex items-center justify-between gap-3"><span className="font-bold text-slate-600">SML</span><span className="font-black text-[#b54b00]">{formatCurrency(item.sml)}</span></div>
+                <div className="flex items-center justify-between gap-3"><span className="font-bold text-slate-600">NPL</span><span className="font-black text-rose-700">{formatCurrency(item.npl)}</span></div>
+              </div>
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>
