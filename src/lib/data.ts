@@ -733,17 +733,22 @@ export function getExpectedQualityByNpd(nextPaymentDate: string, month: MonthKey
   const monthMatch = month.match(/^(\d{4})-(\d{2})$/);
   if (!dateMatch || !monthMatch) return undefined;
 
-  const dueTime = Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]));
-  const asOfTime = Date.UTC(Number(monthMatch[1]), Number(monthMatch[2]), 0);
+  const dueYear = Number(dateMatch[1]);
+  const dueMonth = Number(dateMatch[2]);
+  const dueTime = Date.UTC(dueYear, dueMonth - 1, Number(dateMatch[3]));
+  const asOfYear = Number(monthMatch[1]);
+  const asOfMonth = Number(monthMatch[2]);
+  const asOfTime = Date.UTC(asOfYear, asOfMonth, 0);
   if (!Number.isFinite(dueTime) || !Number.isFinite(asOfTime)) return undefined;
   if (dueTime > asOfTime) return "Lancar";
 
-  const daysPastDue = Math.floor((asOfTime - dueTime) / 86_400_000) + 1;
-  if (daysPastDue <= 30) return "SML1";
-  if (daysPastDue <= 60) return "SML2";
-  if (daysPastDue <= 90) return "SML3";
-  if (daysPastDue <= 120) return "KL";
-  if (daysPastDue <= 180) return "Diragukan";
+  // Bulan NPD dihitung sebagai bulan tunggakan pertama.
+  const arrearsAgeMonths = (asOfYear - dueYear) * 12 + (asOfMonth - dueMonth) + 1;
+  if (arrearsAgeMonths === 1) return "SML1";
+  if (arrearsAgeMonths === 2) return "SML2";
+  if (arrearsAgeMonths === 3) return "SML3";
+  if (arrearsAgeMonths === 4) return "KL";
+  if (arrearsAgeMonths <= 6) return "Diragukan";
   return "Macet";
 }
 
