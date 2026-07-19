@@ -426,6 +426,14 @@ function dateLabel(value: string) {
   }).format(new Date(`${value}T00:00:00`));
 }
 
+function compareDateAsc(left: string, right: string) {
+  const leftTime = Date.parse(`${left}T00:00:00`);
+  const rightTime = Date.parse(`${right}T00:00:00`);
+  if (Number.isNaN(leftTime)) return Number.isNaN(rightTime) ? 0 : 1;
+  if (Number.isNaN(rightTime)) return -1;
+  return leftTime - rightTime;
+}
+
 function QualityBadge({ bucket }: { bucket: QualityBucket | "KL/D" | string }) {
   const variant =
     bucket === "Lancar" || bucket === "Lunas"
@@ -3437,7 +3445,9 @@ function NewQualityView({ month, quality }: { month: MonthKey; quality: "SML" | 
       ? classifyQuality(latestRow, month)
       : getMissingLoanDisplayStatus(month, item);
     return { ...item, latestBucket, latestMovement: getQualityMovement(item.targetBucket, latestBucket) };
-  });
+  }).sort((left, right) =>
+    compareDateAsc(left.nextPaymentDate, right.nextPaymentDate) || left.accountNumber.localeCompare(right.accountNumber),
+  );
   const pagination = useTablePagination(rows, `${month}-new-${quality}-${rows.length}`);
 
   return (
@@ -3531,7 +3541,9 @@ function KualitasTableView({
       return searchMatch && qualityMatch &&
         (mantriFilter === "Semua" || item.mantri === mantriFilter) &&
         (productFilter === "Semua" || getProductType(item.description, item.loanType) === productFilter);
-    });
+    }).sort((left, right) =>
+      compareDateAsc(left.nextPaymentDate, right.nextPaymentDate) || left.accountNumber.localeCompare(right.accountNumber),
+    );
   }, [baseRows, deferredQualitySearch, mantriFilter, productFilter, qualityFilter]);
   const filteredOutstanding = rows.reduce((total, item) => total + item.outstanding, 0);
   const filteredDebtors = new Set(
@@ -4030,6 +4042,7 @@ function TunggakanView({
   embedded?: boolean;
 }) {
   const [arrearsBand, setArrearsBand] = useState<ArrearsBand>("Semua");
+  const [arrearsQuality, setArrearsQuality] = useState("Semua");
   const [warningLetters, setWarningLetters] = useState<WarningLetterRecord[]>([]);
   const [warningCustomer, setWarningCustomer] = useState<ReturnType<typeof getArrearsRows>[number]>();
   const [completedWarning, setCompletedWarning] = useState<WarningLetterRecord>();
@@ -4088,8 +4101,15 @@ function TunggakanView({
       savingsBalance: savingsAccounts.reduce((total, [, balance]) => total + balance, 0),
     };
   });
-  const rows = segmentedRows.filter((item) => mantri === "Semua" || item.mantri === mantri);
-  const mantriRecap = [...segmentedRows.reduce((map, item) => {
+  const qualityRows = segmentedRows.filter((item) => {
+    const bucket = classifyQuality(item, month);
+    return arrearsQuality === "Semua" ||
+      (arrearsQuality === "PL" && isPl(bucket)) ||
+      (arrearsQuality === "NPL" && isNpl(bucket)) ||
+      bucket === arrearsQuality;
+  });
+  const rows = qualityRows.filter((item) => mantri === "Semua" || item.mantri === mantri);
+  const mantriRecap = [...qualityRows.reduce((map, item) => {
     const current = map.get(item.mantri) ?? { mantri: item.mantri, debtors: new Set<string>(), outstanding: 0 };
     current.debtors.add(item.cif?.trim() || item.debtorName.trim().toUpperCase() || item.accountNumber);
     current.outstanding += item.outstanding;
@@ -4098,7 +4118,7 @@ function TunggakanView({
   }, new Map<string, { mantri: string; debtors: Set<string>; outstanding: number }>()).values()]
     .map((item) => ({ ...item, debtorCount: item.debtors.size }))
     .sort((a, b) => b.outstanding - a.outstanding);
-  const pagination = useTablePagination(rows, `${month}-${arrearsBand}-${mantri}-${rows.length}`);
+  const pagination = useTablePagination(rows, `${month}-${arrearsBand}-${arrearsQuality}-${mantri}-${rows.length}`);
   const exportHeaders = ["No Rekening", "Nama Debitur", "Mantri", "Outstanding", "Kolektibilitas", "Total Tunggakan (Pokok + Bunga)", "No Rekening Simpanan", "Saldo per Rekening Simpanan", "Total Saldo Simpanan", "Kategori"];
   const exportData = rows.map((item) => [
     item.accountNumber,
@@ -4444,7 +4464,7 @@ function TunggakanView({
         </div>
       </section>
       <div className="surface-panel flex flex-col gap-3 p-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <Field label="Filter Tunggakan">
             <Select value={arrearsBand} onChange={(event) => setArrearsBand(event.target.value as ArrearsBand)} className="min-w-48">
               <option value="Semua">Semua Tunggakan</option>
@@ -4455,6 +4475,11 @@ function TunggakanView({
           <Field label="Filter Mantri">
             <Select value={mantri} onChange={(event) => setMantri(event.target.value)} className="min-w-64">
               {["Semua", ...mantriNames].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Mantri" : item}</option>)}
+            </Select>
+          </Field>
+          <Field label="Filter Kolektibilitas">
+            <Select value={arrearsQuality} onChange={(event) => setArrearsQuality(event.target.value)} className="min-w-52">
+              {qualityOptions.map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Kolektibilitas" : item}</option>)}
             </Select>
           </Field>
         </div>
