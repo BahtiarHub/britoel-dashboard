@@ -4975,7 +4975,6 @@ function QuickCountView({ month }: { month: MonthKey }) {
     const result = sheetResultByAccount.get(normalizeAccount(accountNumber));
     return Boolean(result && result.remaining <= 0);
   };
-  const hasPayment = (accountNumber: string) => (sheetResultByAccount.get(normalizeAccount(accountNumber))?.actToday ?? 0) > 0;
   const candidateRows = allRows.filter((item) =>
     selectedQualities.includes(item.quality) &&
     (mantriFilter === "Semua" || (item.mantri || "Belum Ada Mantri") === mantriFilter),
@@ -4992,8 +4991,14 @@ function QuickCountView({ month }: { month: MonthKey }) {
   const smlOs = smlRows.reduce((total, item) => total + item.outstanding, 0);
   const nplOs = nplRows.reduce((total, item) => total + item.outstanding, 0);
   const totalArrears = rows.reduce((total, item) => total + item.quickRemainingArrears, 0);
-  const paidRows = candidateRows.filter((item) => hasPayment(item.accountNumber));
+  const paidRows = candidateRows
+    .map((item) => {
+      const result = sheetResultByAccount.get(normalizeAccount(item.accountNumber));
+      return result && result.actToday > 0 ? { ...item, billing: result.billing, actToday: result.actToday, remaining: result.remaining } : undefined;
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
   const resolvedRows = candidateRows.filter((item) => isCleared(item.accountNumber));
+  const paidPagination = useTablePagination(paidRows, `${month}-${selectedQualities.join("-")}-${mantriFilter}-paid-${paidRows.length}-${paidRows.reduce((total, item) => total + item.actToday, 0)}`);
   const paidRiskReductionByMantri = allRows.filter((item) => isCleared(item.accountNumber)).reduce((map, item) => {
     const mantri = item.mantri || "Belum Ada Mantri";
     const current = map.get(mantri) ?? { sml: 0, npl: 0 };
@@ -5134,6 +5139,36 @@ function QuickCountView({ month }: { month: MonthKey }) {
           <tbody>{recapPagination.pagedRows.map((item) => <tr key={item.mantri}><Td className="font-bold text-[#00529c]">{item.mantri}</Td><Td><QuickRiskPositionCell position={item.yearEnd} /></Td><Td><QuickRiskPositionCell position={item.previous} /></Td><Td><QuickRiskPositionCell position={item.latest} />{item.paidReduction.sml || item.paidReduction.npl ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Setelah tunggakan bayar</p> : null}</Td><Td><QuickRiskDeltaCell delta={item.ytd} /></Td><Td><QuickRiskDeltaCell delta={item.mtd} /></Td></tr>)}</tbody>
         </TableShell>
         <PaginationControls page={recapPagination.page} pageSize={recapPagination.pageSize} totalItems={quickMantriRecap.length} onPageChange={recapPagination.setPage} onPageSizeChange={recapPagination.setPageSize} />
+      </section>
+
+      <section className="surface-panel overflow-hidden">
+        <div className="flex flex-col gap-2 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-black text-[#00529c]">Pembayaran Hari Ini</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{formatTodayLabel()}</p>
+          </div>
+          <Badge variant="success">{formatNumber(paidRows.length)} rekening membayar</Badge>
+        </div>
+        {paidRows.length ? (
+          <>
+            <TableShell minWidth="min-w-[1180px]">
+              <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Kolektibilitas</Th><Th>Billing</Th><Th>Bayar Hari Ini</Th><Th>Sisa Tagihan</Th><Th>Status</Th></tr></thead>
+              <tbody>{paidPagination.pagedRows.map((item) => (
+                <tr key={item.accountNumber}>
+                  <Td className="font-mono font-bold text-[#00529c]">{normalizeAccount(item.accountNumber)}</Td>
+                  <Td className="font-semibold">{item.debtorName}</Td>
+                  <Td>{item.mantri || "Belum Ada Mantri"}</Td>
+                  <Td><QualityBadge bucket={item.quality} /></Td>
+                  <Td>{formatCurrency(item.billing)}</Td>
+                  <Td className="font-black text-emerald-700">{formatCurrency(item.actToday)}</Td>
+                  <Td className={cn("font-black", item.remaining <= 0 ? "text-emerald-700" : "text-rose-700")}>{formatCurrency(item.remaining)}</Td>
+                  <Td><Badge variant={item.remaining <= 0 ? "success" : "warning"}>{item.remaining <= 0 ? "Lunas Tagihan" : "Bayar Sebagian"}</Badge></Td>
+                </tr>
+              ))}</tbody>
+            </TableShell>
+            <PaginationControls page={paidPagination.page} pageSize={paidPagination.pageSize} totalItems={paidRows.length} onPageChange={paidPagination.setPage} onPageSizeChange={paidPagination.setPageSize} />
+          </>
+        ) : <EmptyState title="Belum ada pembayaran hari ini" description="Data pembayaran akan tampil setelah hasil Cektung dimasukkan." icon={Banknote} />}
       </section>
 
       {rows.length ? (
