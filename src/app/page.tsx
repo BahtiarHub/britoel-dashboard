@@ -5164,7 +5164,7 @@ function CkpnView({
           onClick={() => exportRowsXls(
             `prognosa-ckpn-perubahan-${sourceMonth}.xls`,
             ["No Rekening", "Nama Debitur", "Mantri", "Outstanding Acuan", "Kolek Bulan Lalu", "Kolek Sistem Terbaru", "Status Validasi", "Prognosa Kolek", "CKPN Terbentuk", "Delta CKPN", "Arah Prognosa"],
-            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousQuality, item.systemQuality, item.isKts ? `KTS - estimasi ${item.expectedTargetQuality}` : "Sesuai", item.targetCollectibility, item.targetCollectibility === "Lunas" || item.targetCollectibility === "PH" ? item.formedCkpn : "", item.ckpnImpact, item.movement]),
+            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousQuality, item.systemQuality, item.isKts ? "KTS" : "Sesuai", item.targetCollectibility, item.targetCollectibility === "Lunas" || item.targetCollectibility === "PH" ? item.formedCkpn : "", item.ckpnImpact, item.movement]),
           )}
         >
           <FileSpreadsheet className="mr-2 h-4 w-4" />Export Excel ({changedRows.length})
@@ -5194,7 +5194,7 @@ function CkpnView({
               <Td><QualityBadge bucket={item.previousQuality} /></Td>
               <Td>
                 <QualityBadge bucket={item.systemQuality} />
-                {item.isKts ? <span className="mt-1.5 block w-fit rounded bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">KTS - estimasi {item.expectedTargetQuality}</span> : null}
+                {item.isKts ? <span className="mt-1.5 block w-fit rounded bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">KTS</span> : null}
               </Td>
               <Td>
                 <Select
