@@ -94,6 +94,10 @@ export const loanRecords = pgTable("loan_records", {
   uniqueIndex("loan_records_branch_period_account_unique").on(table.branchCode, table.period, table.accountNumber),
   index("loan_records_branch_period_idx").on(table.branchCode, table.period), index("loan_records_branch_mantri_idx").on(table.branchCode, table.mantri),
   index("loan_records_branch_cif_idx").on(table.branchCode, table.cif),
+  index("loan_records_branch_period_cif_idx").on(table.branchCode, table.period, table.cif),
+  index("loan_records_branch_period_mantri_idx").on(table.branchCode, table.period, table.mantri),
+  index("loan_records_branch_period_collectibility_idx").on(table.branchCode, table.period, table.collectibility),
+  index("loan_records_branch_period_npd_idx").on(table.branchCode, table.period, table.nextPaymentDate),
 ]);
 
 export const loanMantriAssignments = pgTable("loan_mantri_assignments", {
@@ -131,7 +135,32 @@ export const depositRecords = pgTable("deposit_records", {
   savingsAccount: text("savings_account").notNull().default(""), balance: money("balance").notNull().default(0), availableBalance: money("available_balance").notNull().default(0),
   blockedAtStart: money("blocked_at_start").notNull().default(0), currentBlocked: money("current_blocked").notNull().default(0),
   installmentFromBlocked: money("installment_from_blocked").notNull().default(0), mutationDate: text("mutation_date").notNull().default(""), status: text("status").notNull(), createdAt: dateTime("created_at").notNull(),
-}, (table) => [uniqueIndex("deposit_records_branch_period_savings_unique").on(table.branchCode, table.period, table.cif, table.savingsAccount), index("deposit_records_branch_period_idx").on(table.branchCode, table.period)]);
+}, (table) => [
+  uniqueIndex("deposit_records_branch_period_savings_unique").on(table.branchCode, table.period, table.cif, table.savingsAccount),
+  index("deposit_records_branch_period_idx").on(table.branchCode, table.period),
+  index("deposit_records_branch_period_cif_idx").on(table.branchCode, table.period, table.cif),
+]);
+
+export const quickCountResults = pgTable("quick_count_results", {
+  id: text("id").primaryKey(),
+  branchCode: text("branch_code").notNull(),
+  period: text("period").notNull(),
+  workDate: text("work_date").notNull(),
+  accountNumber: text("account_number").notNull(),
+  debtorName: text("debtor_name").notNull().default(""),
+  quality: text("quality").notNull().default(""),
+  billing: money("billing").notNull().default(0),
+  actToday: money("act_today").notNull().default(0),
+  remaining: money("remaining").notNull().default(0),
+  address: text("address").notNull().default(""),
+  forecastCollectibility: text("forecast_collectibility").notNull().default(""),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: dateTime("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("quick_count_branch_period_date_account_unique").on(table.branchCode, table.period, table.workDate, table.accountNumber),
+  index("quick_count_branch_date_idx").on(table.branchCode, table.workDate),
+  index("quick_count_branch_period_date_idx").on(table.branchCode, table.period, table.workDate),
+]);
 
 export const whatsappCampaigns = pgTable("whatsapp_campaigns", {
   id: text("id").primaryKey(), campaignType: text("campaign_type").notNull(), templateName: text("template_name").notNull(), mode: text("mode").notNull(), status: text("status").notNull(),
@@ -181,4 +210,4 @@ export const brimenFileLoanLogs = pgTable("brimen_file_loan_logs", {
   id: text("id").primaryKey(), loanId: text("loan_id").notNull().references(() => brimenFileLoans.id, { onDelete: "cascade" }), actor: text("actor").notNull(), message: text("message").notNull(), createdAt: dateTime("created_at").notNull(),
 }, (table) => [index("brimen_file_loan_logs_loan_idx").on(table.loanId)]);
 
-export const schema = { user, session, account, verification, whatsappContacts, uploadRecords, branchProfiles, loanRecords, loanMantriAssignments, nominativeCkpnRecords, missingLoanResolutions, ckpnForecasts, depositRecords, whatsappCampaigns, whatsappCampaignRecipients, warningLetters, covenanceRecords, auditLogs, brimenCustomers, brimenFileLoans, brimenFileLoanLogs };
+export const schema = { user, session, account, verification, whatsappContacts, uploadRecords, branchProfiles, loanRecords, loanMantriAssignments, nominativeCkpnRecords, missingLoanResolutions, ckpnForecasts, depositRecords, quickCountResults, whatsappCampaigns, whatsappCampaignRecipients, warningLetters, covenanceRecords, auditLogs, brimenCustomers, brimenFileLoans, brimenFileLoanLogs };

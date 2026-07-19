@@ -1,0 +1,19 @@
+services:
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - britoel_uploads:/app/data/uploads
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  britoel_uploads:

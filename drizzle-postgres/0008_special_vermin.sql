@@ -1,0 +1,2 @@
+CREATE INDEX "loan_records_branch_period_cif_idx" ON "loan_records" USING btree ("branch_code","period","cif");--> statement-breakpoint
+CREATE INDEX "loan_records_branch_period_mantri_idx" ON "loan_records" USING btree ("branch_code","period","mantri");

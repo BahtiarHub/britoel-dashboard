@@ -17,11 +17,18 @@
     "db:backfill-deposits": "tsx scripts/backfill-deposit-balances.ts",
     "db:backfill-branches": "tsx scripts/backfill-branch-profiles.ts",
     "db:backfill-quality": "tsx scripts/backfill-loan-quality.ts",
-    "db:setup": "drizzle-kit migrate && tsx scripts/seed.ts"
+    "db:setup": "drizzle-kit migrate && tsx scripts/seed.ts",
+    "db:migrate-postgres": "tsx scripts/migrate-postgres-to-supabase.ts",
+    "storage:migrate": "tsx scripts/migrate-files-to-supabase.ts",
+    "verify:production": "tsx scripts/verify-production.ts",
+    "smoke:local-auth": "tsx scripts/smoke-local-auth.ts",
+    "smoke:production": "tsx scripts/smoke-production.ts",
+    "load:test": "k6 run tests/load/britoel.js"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.23",
     "@radix-ui/react-slot": "^1.2.3",
+    "@supabase/supabase-js": "^2.110.7",
     "better-auth": "^1.6.23",
     "better-sqlite3": "^12.11.1",
     "class-variance-authority": "^0.7.1",

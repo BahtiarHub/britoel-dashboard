@@ -4911,6 +4911,23 @@ type QuickCountPage = "recap" | "unpaid" | "paid";
 const quickCountForecastOptions = ["Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet"] as const;
 type QuickCountForecast = (typeof quickCountForecastOptions)[number];
 
+function createQuickCountPersistencePayload(rows: QuickCountSheetRow[], forecasts: Record<string, QuickCountForecast>) {
+  const persistedRows = rows
+    .filter((row) => normalizeAccount(row.accountNumber))
+    .map((row) => ({
+      accountNumber: normalizeAccount(row.accountNumber),
+      name: row.name,
+      quality: row.quality,
+      billing: parseQuickCountAmount(row.billing),
+      actToday: parseQuickCountAmount(row.actToday),
+      remaining: parseQuickCountAmount(row.remaining),
+      address: row.address,
+    }));
+  const accountSet = new Set(persistedRows.map((row) => row.accountNumber));
+  const persistedForecasts = Object.fromEntries(Object.entries(forecasts).filter(([accountNumber, forecast]) => accountSet.has(accountNumber) && quickCountForecastOptions.includes(forecast)));
+  return { rows: persistedRows, forecasts: persistedForecasts };
+}
+
 function QuickCountView({ month }: { month: MonthKey }) {
   const [activePage, setActivePage] = useState<QuickCountPage>("recap");
   const [canExecuteQuickCount, setCanExecuteQuickCount] = useState(false);
@@ -4920,13 +4937,13 @@ function QuickCountView({ month }: { month: MonthKey }) {
   const [copyMessage, setCopyMessage] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetRows, setSheetRows] = useState<QuickCountSheetRow[]>([{ ...emptyQuickCountSheetRow }]);
-  const [loadedSheetKey, setLoadedSheetKey] = useState("");
   const [collectibilityForecasts, setCollectibilityForecasts] = useState<Record<string, QuickCountForecast>>({});
-  const [loadedForecastKey, setLoadedForecastKey] = useState("");
+  const [quickSyncState, setQuickSyncState] = useState<"loading" | "synced" | "saving" | "error">("loading");
+  const [loadedQuickCountKey, setLoadedQuickCountKey] = useState("");
   const [quickCountDate, setQuickCountDate] = useState(getLocalDateKey);
   const qualityDropdownRef = useRef<HTMLDivElement | null>(null);
-  const sheetStorageKey = `bri-tool-cektung-${month}-${quickCountDate}`;
-  const forecastStorageKey = `bri-tool-cektung-prognosa-${month}-${quickCountDate}`;
+  const lastSyncedQuickCountRef = useRef("");
+  const quickCountRemoteKey = `${month}:${quickCountDate}`;
 
   useEffect(() => {
     const desktopQuery = window.matchMedia("(min-width: 1280px) and (hover: hover) and (pointer: fine)");
@@ -4949,45 +4966,91 @@ function QuickCountView({ month }: { month: MonthKey }) {
   }, []);
 
   useEffect(() => {
-    try {
-      const storagePrefix = `bri-tool-cektung-${month}-`;
-      window.localStorage.removeItem(`bri-tool-cektung-${month}`);
-      Object.keys(window.localStorage)
-        .filter((key) => key.startsWith(storagePrefix) && key !== sheetStorageKey)
-        .forEach((key) => window.localStorage.removeItem(key));
-      const saved = window.localStorage.getItem(sheetStorageKey);
-      const parsed = saved ? JSON.parse(saved) : undefined;
-      setSheetRows(Array.isArray(parsed) && parsed.length ? parsed : [{ ...emptyQuickCountSheetRow }]);
-    } catch {
-      setSheetRows([{ ...emptyQuickCountSheetRow }]);
+    const controller = new AbortController();
+    let active = true;
+    async function loadQuickCount(initial: boolean) {
+      if (initial) {
+        setQuickSyncState("loading");
+        setLoadedQuickCountKey("");
+      }
+      try {
+        const response = await fetch(`/api/quick-count?period=${encodeURIComponent(month)}&date=${encodeURIComponent(quickCountDate)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Quick Count gagal dimuat.");
+        const remoteRows = Array.isArray(payload.data) ? payload.data : [];
+        const nextRows: QuickCountSheetRow[] = remoteRows.map((row: Record<string, unknown>) => ({
+          accountNumber: String(row.accountNumber ?? ""),
+          name: String(row.name ?? ""),
+          quality: String(row.quality ?? ""),
+          billing: String(row.billing ?? ""),
+          actToday: String(row.actToday ?? ""),
+          remaining: String(row.remaining ?? ""),
+          address: String(row.address ?? ""),
+        }));
+        const nextForecasts = Object.fromEntries(remoteRows
+          .map((row: Record<string, unknown>) => [normalizeAccount(String(row.accountNumber ?? "")), String(row.forecast ?? "")])
+          .filter((entry: string[]) => entry[0] && quickCountForecastOptions.includes(entry[1] as QuickCountForecast))) as Record<string, QuickCountForecast>;
+        const normalizedRows = nextRows.length ? nextRows : [{ ...emptyQuickCountSheetRow }];
+        const remoteHash = JSON.stringify(createQuickCountPersistencePayload(normalizedRows, nextForecasts));
+        if (!active || controller.signal.aborted) return;
+        if (initial || remoteHash !== lastSyncedQuickCountRef.current) {
+          lastSyncedQuickCountRef.current = remoteHash;
+          setSheetRows(normalizedRows);
+          setCollectibilityForecasts(nextForecasts);
+        }
+        setLoadedQuickCountKey(quickCountRemoteKey);
+        setQuickSyncState("synced");
+      } catch (error) {
+        if (!active || controller.signal.aborted) return;
+        setQuickSyncState("error");
+        if (initial) {
+          setSheetRows([{ ...emptyQuickCountSheetRow }]);
+          setCollectibilityForecasts({});
+        }
+      }
     }
-    setLoadedSheetKey(sheetStorageKey);
-  }, [sheetStorageKey]);
+    void loadQuickCount(true);
+    const poller = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadQuickCount(false);
+    }, 15_000);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(poller);
+    };
+  }, [month, quickCountDate, quickCountRemoteKey]);
 
   useEffect(() => {
-    if (loadedSheetKey !== sheetStorageKey) return;
-    window.localStorage.setItem(sheetStorageKey, JSON.stringify(sheetRows));
-  }, [loadedSheetKey, sheetRows, sheetStorageKey]);
-
-  useEffect(() => {
-    try {
-      const storagePrefix = `bri-tool-cektung-prognosa-${month}-`;
-      Object.keys(window.localStorage)
-        .filter((key) => key.startsWith(storagePrefix) && key !== forecastStorageKey)
-        .forEach((key) => window.localStorage.removeItem(key));
-      const saved = window.localStorage.getItem(forecastStorageKey);
-      const parsed = saved ? JSON.parse(saved) : undefined;
-      setCollectibilityForecasts(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
-    } catch {
-      setCollectibilityForecasts({});
-    }
-    setLoadedForecastKey(forecastStorageKey);
-  }, [forecastStorageKey, month]);
-
-  useEffect(() => {
-    if (loadedForecastKey !== forecastStorageKey) return;
-    window.localStorage.setItem(forecastStorageKey, JSON.stringify(collectibilityForecasts));
-  }, [collectibilityForecasts, forecastStorageKey, loadedForecastKey]);
+    if (loadedQuickCountKey !== quickCountRemoteKey) return;
+    const persisted = createQuickCountPersistencePayload(sheetRows, collectibilityForecasts);
+    const payloadHash = JSON.stringify(persisted);
+    if (payloadHash === lastSyncedQuickCountRef.current) return;
+    setQuickSyncState("saving");
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/quick-count", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ period: month, workDate: quickCountDate, ...persisted }),
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.message ?? "Quick Count gagal disimpan.");
+        lastSyncedQuickCountRef.current = payloadHash;
+        setQuickSyncState("synced");
+      } catch {
+        if (!controller.signal.aborted) setQuickSyncState("error");
+      }
+    }, 600);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [collectibilityForecasts, loadedQuickCountKey, month, quickCountDate, quickCountRemoteKey, sheetRows]);
 
   useEffect(() => {
     if (!qualityDropdownOpen) return;
@@ -5156,6 +5219,12 @@ function QuickCountView({ month }: { month: MonthKey }) {
       </nav>
 
       <section className="surface-panel space-y-3 p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-3 border-b border-[#e1ebf3] pb-3">
+          <span className="flex items-center gap-2 text-xs font-black uppercase text-[#00529c]"><Database className="h-4 w-4" />Quick Count Uker</span>
+          <Badge variant={quickSyncState === "error" ? "danger" : quickSyncState === "synced" ? "success" : "warning"}>
+            {quickSyncState === "loading" ? "Memuat" : quickSyncState === "saving" ? "Menyimpan" : quickSyncState === "error" ? "Sinkronisasi Gagal" : "Tersinkron"}
+          </Badge>
+        </div>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div ref={qualityDropdownRef} className="relative w-full sm:w-80">
             <p className="mb-1.5 text-xs font-black uppercase text-[#00529c]">Filter Kolektibilitas</p>

@@ -1,5 +1,4 @@
 import path from "path";
-import fs from "fs/promises";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
@@ -8,6 +7,7 @@ import { requireApiSession } from "@/lib/api-auth";
 import { upsertImportedBrimenCustomers } from "@/lib/brimen-db";
 import { extractBranchIdentity, inferPeriod, mapBrimenRows, mapDepositRows, mapLoanRows, mapNominativeCkpnRows, parseTabularFile } from "@/lib/import-data";
 import { hasLoanMantri } from "@/lib/loan-mantri";
+import { deleteStoredObjects, listStoredObjects, putStoredObject, storageKey } from "@/lib/object-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -100,12 +100,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "File gagal diproses." }, { status: 400 });
   }
 
-  const uploadRoot = path.join(process.cwd(), "data", "uploads", branchCode, sourceKey);
-  await fs.mkdir(uploadRoot, { recursive: true });
   const safeBaseName = path.basename(file.name).replace(/[^a-zA-Z0-9._-]/g, "_");
   const storedName = `${Date.now()}-${safeBaseName}`;
-  const temporaryPath = path.join(uploadRoot, `.pending-${storedName}`);
-  await fs.writeFile(temporaryPath, buffer);
+  const storagePrefix = storageKey(branchCode, sourceKey);
+  const storedObjectKey = storageKey(storagePrefix, storedName);
+  try {
+    await putStoredObject(storedObjectKey, buffer, file.type || "application/octet-stream");
+  } catch (error) {
+    return NextResponse.json({ ok: false, message: "File gagal disimpan ke object storage.", detail: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
 
   const now = new Date();
   const imported = loanImport ?? depositImport ?? brimenImport ?? nominativeCkpnImport ?? genericCsvImport;
@@ -223,13 +226,12 @@ export async function POST(request: Request) {
       });
     });
   } catch (error) {
-    await fs.unlink(temporaryPath).catch(() => undefined);
+    await deleteStoredObjects([storedObjectKey]).catch(() => undefined);
     return NextResponse.json({ ok: false, message: "Data gagal disimpan ke database.", detail: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 
-  const previousFiles = (await fs.readdir(uploadRoot)).filter((item) => item !== `.pending-${storedName}`);
-  await Promise.all(previousFiles.map((item) => fs.unlink(path.join(uploadRoot, item))));
-  await fs.rename(temporaryPath, path.join(uploadRoot, storedName));
+  const previousFiles = (await listStoredObjects(storagePrefix)).filter((item) => item.key !== storedObjectKey);
+  await deleteStoredObjects(previousFiles.map((item) => item.key));
   return NextResponse.json({
     ok: true,
     data: record,

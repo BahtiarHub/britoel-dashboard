@@ -1,11 +1,10 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { auditLogs, brimenCustomers, brimenFileLoanLogs, brimenFileLoans } from "@/db/schema";
 import { newId } from "@/lib/brimen-db";
 import { requireApiSession } from "@/lib/api-auth";
+import { putStoredObject, storageKey } from "@/lib/object-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,10 +26,8 @@ async function saveEvidencePhoto(file: File, branchCode: string, loanId: string,
   const extension = allowedImageTypes[file.type];
   if (!extension) throw new Error("Bukti photo harus berformat JPG, PNG, atau WEBP.");
   if (file.size <= 0 || file.size > 8 * 1024 * 1024) throw new Error("Ukuran bukti photo maksimal 8 MB.");
-  const directory = path.join(process.cwd(), "data", "uploads", branchCode, "brimen-loans", loanId);
-  await fs.mkdir(directory, { recursive: true });
   const fileName = `${kind}-${Date.now()}${extension}`;
-  await fs.writeFile(path.join(directory, fileName), Buffer.from(await file.arrayBuffer()));
+  await putStoredObject(storageKey(branchCode, "brimen-loans", loanId, fileName), Buffer.from(await file.arrayBuffer()), file.type);
   return fileName;
 }
 

@@ -1,10 +1,10 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { brimenCustomers, brimenFileLoans } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
+import { getStoredObject, storageKey } from "@/lib/object-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,9 +27,8 @@ export async function GET(request: Request, { params }: Params) {
 
   const fileName = kind === "return" ? row.returnPhoto : row.handoverPhoto;
   if (!fileName || path.basename(fileName) !== fileName) return NextResponse.json({ ok: false, message: "Bukti photo belum tersedia." }, { status: 404 });
-  const filePath = path.join(process.cwd(), "data", "uploads", row.branchCode, "brimen-loans", id, fileName);
   try {
-    const bytes = await fs.readFile(filePath);
+    const bytes = await getStoredObject(storageKey(row.branchCode, "brimen-loans", id, fileName));
     const extension = path.extname(fileName).toLowerCase();
     const contentType = extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : "image/jpeg";
     return new Response(bytes, { headers: { "Content-Type": contentType, "Cache-Control": "private, no-store", "Content-Disposition": `inline; filename="${fileName}"` } });

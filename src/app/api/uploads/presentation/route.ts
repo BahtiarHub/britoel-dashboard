@@ -1,8 +1,8 @@
-import fs from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-auth";
 import { parseTabularFile } from "@/lib/import-data";
+import { getStoredObject, listStoredObjects, storageKey } from "@/lib/object-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,31 +10,18 @@ export const dynamic = "force-dynamic";
 type StoredUpload = {
   fileName: string;
   originalFileName: string;
-  fullPath: string;
+  objectKey: string;
   updatedAt: string;
 };
 
 async function getLatestUpload(branchCode: string, sourceKey: "almafact" | "branch-pl"): Promise<StoredUpload | undefined> {
-  const directory = path.join(process.cwd(), "data", "uploads", branchCode, sourceKey);
-  const names = await fs.readdir(directory).catch(() => []);
-  const files = await Promise.all(names.filter((name) => !name.startsWith(".pending-")).map(async (fileName) => {
-    const fullPath = path.join(directory, fileName);
-    const stat = await fs.stat(fullPath).catch(() => undefined);
-    if (!stat?.isFile()) return undefined;
-    return {
-      fileName,
-      originalFileName: fileName.replace(/^\d+-/, ""),
-      fullPath,
-      updatedAt: stat.mtime.toISOString(),
-      modifiedAt: stat.mtimeMs,
-    };
-  }));
-  const latest = files.filter((item): item is NonNullable<typeof item> => Boolean(item)).sort((a, b) => b.modifiedAt - a.modifiedAt)[0];
+  const files = await listStoredObjects(storageKey(branchCode, sourceKey));
+  const latest = files.filter((item) => !item.name.startsWith(".pending-")).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   if (!latest) return undefined;
   return {
-    fileName: latest.fileName,
-    originalFileName: latest.originalFileName,
-    fullPath: latest.fullPath,
+    fileName: latest.name,
+    originalFileName: latest.name.replace(/^\d+-/, ""),
+    objectKey: latest.key,
     updatedAt: latest.updatedAt,
   };
 }
@@ -58,7 +45,7 @@ export async function GET(request: Request) {
     if (!almafact) return NextResponse.json({ ok: false, message: "File Almafact belum tersedia." }, { status: 404 });
     const extension = path.extname(almafact.originalFileName).toLowerCase();
     const contentType = extension === ".pdf" ? "application/pdf" : "image/png";
-    return new Response(await fs.readFile(almafact.fullPath), {
+    return new Response(await getStoredObject(almafact.objectKey), {
       headers: {
         "Content-Type": contentType,
         "Content-Disposition": `inline; filename="${almafact.originalFileName.replace(/"/g, "")}"`,
@@ -78,7 +65,7 @@ export async function GET(request: Request) {
   } | undefined;
 
   if (branchPl) {
-    const rawRows = parseTabularFile(branchPl.originalFileName, await fs.readFile(branchPl.fullPath));
+    const rawRows = parseTabularFile(branchPl.originalFileName, await getStoredObject(branchPl.objectKey));
     const headers = Object.keys(rawRows[0] ?? {}).slice(0, 10);
     branchPreview = {
       fileName: branchPl.originalFileName,
