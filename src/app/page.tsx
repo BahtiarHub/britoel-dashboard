@@ -10,6 +10,7 @@ import {
   BarChart3,
   Bell,
   BriefcaseBusiness,
+  Calculator,
   CalendarDays,
   Camera,
   Check,
@@ -19,6 +20,7 @@ import {
   Clock3,
   ClipboardList,
   Command,
+  Copy,
   Database,
   Download,
   Eye,
@@ -136,6 +138,7 @@ type MantriViewKey =
   | "ringkasan"
   | "nominatif"
   | "kualitas"
+  | "quick-count"
   | "rekap"
   | "realisasi"
   | "ckpn"
@@ -146,6 +149,7 @@ const mantriTabs: { key: MantriViewKey; label: string; icon: React.ElementType }
   { key: "ringkasan", label: "Risalah Kredit", icon: LayoutDashboard },
   { key: "nominatif", label: "Nominatif Nasabah", icon: ClipboardList },
   { key: "kualitas", label: "Nominatif Kualitas", icon: Layers3 },
+  { key: "quick-count", label: "Quick Count", icon: Calculator },
   { key: "rekap", label: "Rekap Mantri", icon: BarChart3 },
   { key: "realisasi", label: "Realisasi", icon: TrendingUp },
   { key: "ckpn", label: "Prognosa CKPN", icon: PieChartIcon },
@@ -157,6 +161,7 @@ const mantriTabTones: Record<MantriViewKey, string> = {
   ringkasan: "bg-[#00529c] text-white border-[#00529c]/20 shadow-[0_10px_18px_rgba(0,82,156,0.22)]",
   nominatif: "bg-[#f37021] text-white border-[#f37021]/20 shadow-[0_10px_18px_rgba(243,112,33,0.22)]",
   kualitas: "bg-emerald-600 text-white border-emerald-600/20 shadow-[0_10px_18px_rgba(5,150,105,0.20)]",
+  "quick-count": "bg-amber-500 text-white border-amber-500/20 shadow-[0_10px_18px_rgba(245,158,11,0.20)]",
   rekap: "bg-sky-600 text-white border-sky-600/20 shadow-[0_10px_18px_rgba(2,132,199,0.20)]",
   realisasi: "bg-teal-600 text-white border-teal-600/20 shadow-[0_10px_18px_rgba(13,148,136,0.20)]",
   ckpn: "bg-rose-600 text-white border-rose-600/20 shadow-[0_10px_18px_rgba(225,29,72,0.20)]",
@@ -1485,6 +1490,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     { id: "dashboard", label: "Buka Dashboard Utama", description: "Ringkasan pinjaman dan operasional", icon: LayoutDashboard, action: () => { openMenu("dashboard"); setActiveControlPanel("none"); } },
     { id: "nominatif", label: "Cari Nominatif Nasabah", description: "Buka tabel rekening pinjaman", icon: ClipboardList, action: () => openMantriTab("nominatif") },
     { id: "quality", label: "Lihat Perubahan Kualitas", description: "Upgrade, downgrade, dan tetap", icon: Layers3, action: () => openMantriTab("kualitas") },
+    { id: "quick-count", label: "Buka Quick Count", description: "Prediksi kualitas setelah pembayaran tunggakan", icon: Calculator, action: () => openMantriTab("quick-count") },
     { id: "ckpn", label: "Buka Prognosa CKPN", description: "Simulasi dampak perubahan kolektibilitas", icon: PieChartIcon, action: () => openMantriTab("ckpn") },
     { id: "di319", label: "Buka Monitoring Simpanan", description: "Blokiran simpanan dan setoran akhir periode", icon: Banknote, action: () => openMantriTab("di319") },
     { id: "wa-campaign", label: "Buka WA Blast", description: "Penawaran suplesi dan pengingat jatuh tempo", icon: MessageCircle, action: () => openMantriTab("wa") },
@@ -1534,6 +1540,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         depositRows={di319Rows}
       />
     ),
+    "quick-count": <QuickCountView month={selectedMonth} />,
     rekap: (
       <RekapView
         month={selectedMonth}
@@ -2780,6 +2787,7 @@ function DashboardMantriView({
     ringkasan: "Ikhtisar OS, SML, NPL, CKPN, dan pergerakan kredit.",
     nominatif: `${getSnapshots(month).length} rekening nasabah pada periode ${getMonthLabel(month)}.`,
     kualitas: "Perbandingan kolektibilitas bulan lalu dengan posisi terbaru.",
+    "quick-count": "Prediksi kualitas dari rekening menunggak yang melakukan pembayaran.",
     rekap: `${rekap.length} mantri dengan rincian OS dan delta pencapaian.`,
     realisasi: `${realisasi.reduce((total, item) => total + item.count, 0)} rekening realisasi bulan ini.`,
     ckpn: `${getPrognosaCkpnRows(month).filter((item) => item.targetCollectibility).length} rekening telah diisi kolektibilitas prognosanya.`,
@@ -2882,7 +2890,7 @@ function DashboardMantriView({
         <div className="mb-2 rounded-md border border-[#d7e3ef] bg-[#fffaf6] px-3 py-2 sm:hidden">
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama Pinjaman</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-8">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
         {mantriTabs.map((item) => {
           const Icon = item.icon;
           return (
@@ -4686,6 +4694,314 @@ function TunggakanView({
   );
 }
 
+const quickCountQualities: QualityBucket[] = ["Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet"];
+
+type QuickCountSheetRow = {
+  accountNumber: string;
+  name: string;
+  quality: string;
+  billing: string;
+  actToday: string;
+  remaining: string;
+  address: string;
+};
+
+const emptyQuickCountSheetRow: QuickCountSheetRow = {
+  accountNumber: "",
+  name: "",
+  quality: "",
+  billing: "",
+  actToday: "",
+  remaining: "",
+  address: "",
+};
+
+function parseQuickCountAmount(value: string) {
+  const negative = value.includes("-");
+  const compact = value.replace(/\D/g, "");
+  const amount = Number(compact) * (negative ? -1 : 1);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function createQuickCountSheetRow(values: string[]): QuickCountSheetRow {
+  const billing = values[3]?.trim() ?? "";
+  const actToday = values[4]?.trim() ?? "";
+  const remaining = billing || actToday ? String(parseQuickCountAmount(billing) - parseQuickCountAmount(actToday)) : "";
+  return {
+    accountNumber: values[0]?.trim() ?? "",
+    name: values[1]?.trim() ?? "",
+    quality: values[2]?.trim() ?? "",
+    billing,
+    actToday,
+    remaining,
+    address: values[6]?.trim() ?? "",
+  };
+}
+
+function QuickCountSheetDialog({
+  rows,
+  setRows,
+  onClose,
+}: {
+  rows: QuickCountSheetRow[];
+  setRows: (rows: QuickCountSheetRow[]) => void;
+  onClose: () => void;
+}) {
+  const fields: { key: keyof QuickCountSheetRow; label: string; readOnly?: boolean; align?: string }[] = [
+    { key: "accountNumber", label: "No rekening" },
+    { key: "name", label: "Nama" },
+    { key: "quality", label: "Kolektibilitas" },
+    { key: "billing", label: "Billing", align: "text-right" },
+    { key: "actToday", label: "Act today", align: "text-right" },
+    { key: "remaining", label: "Sisa tagihan", readOnly: true, align: "text-right" },
+    { key: "address", label: "Alamat" },
+  ];
+
+  function updateCell(index: number, key: keyof QuickCountSheetRow, value: string) {
+    const nextRows = rows.map((row, rowIndex) => {
+      if (rowIndex !== index) return row;
+      const updated = { ...row, [key]: value };
+      if (key === "billing" || key === "actToday") {
+        updated.remaining = updated.billing || updated.actToday
+          ? String(parseQuickCountAmount(updated.billing) - parseQuickCountAmount(updated.actToday))
+          : "";
+      }
+      return updated;
+    });
+    setRows(nextRows);
+  }
+
+  function handlePaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const pastedText = event.clipboardData.getData("text/plain");
+    if (!pastedText.includes("\t") && !pastedText.includes("\n") && !pastedText.includes("\r")) return;
+    event.preventDefault();
+    const pastedRows = pastedText
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((line) => line.split("\t"))
+      .filter((values) => values.some((value) => value.trim()))
+      .map(createQuickCountSheetRow);
+    setRows(pastedRows.length ? pastedRows : [{ ...emptyQuickCountSheetRow }]);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col bg-[#edf4fa]">
+      <header className="flex items-center justify-between border-b border-[#b8cee0] bg-[#00529c] px-3 py-3 text-white sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[#f37021]"><FileSpreadsheet className="h-5 w-5" /></span>
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-black">Hasil Cektung</h2>
+            <p className="text-xs font-semibold text-blue-100">{formatNumber(rows.filter((row) => row.accountNumber.trim()).length)} baris data</p>
+          </div>
+        </div>
+        <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Tutup Hasil Cektung" className="text-white hover:bg-white/15 hover:text-white"><X className="h-5 w-5" /></Button>
+      </header>
+
+      <div className="flex items-center justify-between gap-3 border-b border-[#d7e3ef] bg-white px-3 py-2 sm:px-5">
+        <Badge className="border-0 bg-[#eaf3fb] text-[#00529c]">7 kolom</Badge>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setRows([{ ...emptyQuickCountSheetRow }])}>Kosongkan</Button>
+          <Button type="button" size="sm" className="bg-[#00529c] text-white hover:bg-[#004077]" onClick={onClose}><Check className="h-4 w-4" />Simpan Hasil</Button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-2 sm:p-4" onPaste={handlePaste}>
+        <div className="min-w-[1210px] overflow-hidden border border-[#9eb7ca] bg-white shadow-sm">
+          {(rows.length ? rows : [{ ...emptyQuickCountSheetRow }]).map((row, rowIndex) => (
+            <div key={`${row.accountNumber}-${rowIndex}`} className="grid grid-cols-[180px_220px_120px_150px_150px_150px_240px] border-b border-[#cbd9e4] last:border-b-0">
+              {fields.map((field, columnIndex) => (
+                <input
+                  key={field.key}
+                  autoFocus={rowIndex === 0 && columnIndex === 0}
+                  aria-label={`${field.label} baris ${rowIndex + 1}`}
+                  value={row[field.key]}
+                  readOnly={field.readOnly}
+                  onChange={(event) => updateCell(rowIndex, field.key, event.target.value)}
+                  className={cn(
+                    "h-10 min-w-0 rounded-none border-0 border-r border-[#cbd9e4] bg-white px-2 text-xs outline-none last:border-r-0 focus:bg-[#fff7ed] focus:ring-2 focus:ring-inset focus:ring-[#f37021]",
+                    field.readOnly && "bg-[#eef5fb] font-bold text-[#00529c]",
+                    field.key === "accountNumber" && "font-mono font-bold text-[#00529c]",
+                    field.align,
+                  )}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickCountView({ month }: { month: MonthKey }) {
+  const [selectedQualities, setSelectedQualities] = useState<string[]>([...quickCountQualities]);
+  const [mantriFilter, setMantriFilter] = useState("Semua");
+  const [copyMessage, setCopyMessage] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetRows, setSheetRows] = useState<QuickCountSheetRow[]>([{ ...emptyQuickCountSheetRow }]);
+  const [loadedSheetKey, setLoadedSheetKey] = useState("");
+  const sheetStorageKey = `bri-tool-cektung-${month}`;
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(sheetStorageKey);
+      const parsed = saved ? JSON.parse(saved) : undefined;
+      setSheetRows(Array.isArray(parsed) && parsed.length ? parsed : [{ ...emptyQuickCountSheetRow }]);
+    } catch {
+      setSheetRows([{ ...emptyQuickCountSheetRow }]);
+    }
+    setLoadedSheetKey(sheetStorageKey);
+  }, [sheetStorageKey]);
+
+  useEffect(() => {
+    if (loadedSheetKey !== sheetStorageKey) return;
+    window.localStorage.setItem(sheetStorageKey, JSON.stringify(sheetRows));
+  }, [loadedSheetKey, sheetRows, sheetStorageKey]);
+
+  const allRows = getArrearsRows(month).map((item) => ({ ...item, quality: classifyQuality(item, month) }));
+  const mantriNames = [...new Set(allRows.map((item) => item.mantri || "Belum Ada Mantri"))].sort();
+  const rows = allRows.filter((item) =>
+    selectedQualities.includes(item.quality) &&
+    (mantriFilter === "Semua" || (item.mantri || "Belum Ada Mantri") === mantriFilter),
+  );
+  const pagination = useTablePagination(rows, `${month}-${selectedQualities.join("-")}-${mantriFilter}-${rows.length}`);
+  const sheetResultByAccount = new Map(sheetRows
+    .filter((item) => normalizeAccount(item.accountNumber))
+    .map((item) => [normalizeAccount(item.accountNumber), {
+      billing: parseQuickCountAmount(item.billing),
+      actToday: parseQuickCountAmount(item.actToday),
+      remaining: parseQuickCountAmount(item.remaining),
+    }]));
+  const isResolved = (accountNumber: string) => {
+    const result = sheetResultByAccount.get(normalizeAccount(accountNumber));
+    return Boolean(result && result.actToday > 0 && result.remaining <= 0);
+  };
+  const smlRows = rows.filter((item) => isSml(item.quality));
+  const nplRows = rows.filter((item) => isNpl(item.quality));
+  const smlOs = smlRows.reduce((total, item) => total + item.outstanding, 0);
+  const nplOs = nplRows.reduce((total, item) => total + item.outstanding, 0);
+  const totalArrears = rows.reduce((total, item) => total + item.totalArrears, 0);
+  const resolvedRows = rows.filter((item) => isResolved(item.accountNumber));
+  const mantriRecap = [...rows.reduce((map, item) => {
+    const mantri = item.mantri || "Belum Ada Mantri";
+    const current = map.get(mantri) ?? { mantri, debtors: new Set<string>(), smlOs: 0, nplOs: 0, arrears: 0, resolved: 0 };
+    current.debtors.add(item.cif?.trim() || item.debtorName.trim().toUpperCase() || item.accountNumber);
+    if (isSml(item.quality)) current.smlOs += item.outstanding;
+    if (isNpl(item.quality)) current.nplOs += item.outstanding;
+    current.arrears += item.totalArrears;
+    if (isResolved(item.accountNumber)) current.resolved += 1;
+    map.set(mantri, current);
+    return map;
+  }, new Map<string, { mantri: string; debtors: Set<string>; smlOs: number; nplOs: number; arrears: number; resolved: number }>()).values()]
+    .map((item) => ({ ...item, debtorCount: item.debtors.size }))
+    .sort((left, right) => right.arrears - left.arrears);
+
+  function toggleQuality(quality: string) {
+    setSelectedQualities((current) => current.includes(quality)
+      ? current.filter((item) => item !== quality)
+      : [...current, quality]);
+  }
+
+  async function copyFilteredAccounts() {
+    const accountNumbers = rows.map((item) => normalizeAccount(item.accountNumber)).filter(Boolean);
+    if (!accountNumbers.length) return;
+    try {
+      await navigator.clipboard.writeText(accountNumbers.join("\n"));
+      setCopyMessage(`${formatNumber(accountNumbers.length)} nomor rekening berhasil disalin.`);
+    } catch {
+      setCopyMessage("Nomor rekening belum dapat disalin dari browser ini.");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader
+        title="Quick Count"
+        description={`Prediksi kualitas rekening menunggak berdasarkan LW321 terbaru posisi ${getMonthLabel(month)}.`}
+        icon={Calculator}
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="SML Terfilter" value={formatCurrency(smlOs)} helper={`${formatNumber(smlRows.length)} rekening`} tone="warning" icon={AlertTriangle} />
+        <MetricCard label="NPL Terfilter" value={formatCurrency(nplOs)} helper={`${formatNumber(nplRows.length)} rekening`} tone="danger" icon={ArrowDownRight} />
+        <MetricCard label="Total Tunggakan" value={formatCurrency(totalArrears)} helper={`${formatNumber(rows.length)} rekening`} icon={Banknote} />
+        <MetricCard label="Potensi Tunggakan Hilang" value={`${formatNumber(resolvedRows.length)} rekening`} helper="Sisa tagihan hasil cektung nol" tone="success" icon={CheckCircle2} />
+      </div>
+
+      <section className="surface-panel space-y-3 p-3 sm:p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-xs font-black uppercase text-[#00529c]">Filter Kolektibilitas</p>
+              <button type="button" onClick={() => setSelectedQualities(selectedQualities.length === quickCountQualities.length ? [] : [...quickCountQualities])} className="text-xs font-bold text-[#f37021]">
+                {selectedQualities.length === quickCountQualities.length ? "Kosongkan" : "Pilih Semua"}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {quickCountQualities.map((quality) => {
+                const checked = selectedQualities.includes(quality);
+                const count = allRows.filter((item) => item.quality === quality).length;
+                return (
+                  <label key={quality} className={cn("flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-xs font-black transition", checked ? "border-[#00529c] bg-[#eaf3fb] text-[#00529c]" : "border-[#d7e3ef] bg-white text-muted-foreground")}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleQuality(quality)} className="h-4 w-4 accent-[#00529c]" />
+                    <span>{quality}</span>
+                    <span className={cn("rounded px-1.5 py-0.5 text-[10px]", checked ? "bg-white text-[#00529c]" : "bg-[#eef3f7]")}>{formatNumber(count)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <Field label="Mantri">
+              <Select value={mantriFilter} onChange={(event) => setMantriFilter(event.target.value)} className="min-w-52">
+                <option value="Semua">Semua Mantri</option>
+                {mantriNames.map((item) => <option key={item} value={item}>{item}</option>)}
+              </Select>
+            </Field>
+            <Button type="button" variant="outline" onClick={copyFilteredAccounts} disabled={!rows.length} className="border-[#00529c]/25 text-[#00529c]"><Copy className="h-4 w-4" />Salin No Rekening</Button>
+            <Button type="button" onClick={() => setSheetOpen(true)} className="bg-[#f37021] text-white hover:bg-[#d95d13]"><FileSpreadsheet className="h-4 w-4" />Hasil Cektung</Button>
+          </div>
+        </div>
+        {copyMessage ? <p className="rounded-md bg-[#eef7ff] px-3 py-2 text-xs font-bold text-[#00529c]">{copyMessage}</p> : null}
+      </section>
+
+      <section className="surface-panel overflow-hidden">
+        <div className="border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3">
+          <h3 className="font-black text-[#00529c]">Rekap Quick Count per Mantri</h3>
+        </div>
+        <TableShell minWidth="min-w-[900px]">
+          <thead><tr><Th>Mantri</Th><Th>Debitur</Th><Th>OS SML</Th><Th>OS NPL</Th><Th>Total Tunggakan</Th><Th>Potensi Hilang</Th></tr></thead>
+          <tbody>{mantriRecap.map((item) => <tr key={item.mantri}><Td className="font-bold text-[#00529c]">{item.mantri}</Td><Td>{formatNumber(item.debtorCount)}</Td><Td className="font-bold text-amber-700">{formatCurrency(item.smlOs)}</Td><Td className="font-bold text-rose-700">{formatCurrency(item.nplOs)}</Td><Td>{formatCurrency(item.arrears)}</Td><Td><Badge variant={item.resolved ? "success" : "outline"}>{formatNumber(item.resolved)} rekening</Badge></Td></tr>)}</tbody>
+        </TableShell>
+      </section>
+
+      {rows.length ? (
+        <>
+          <TableShell minWidth="min-w-[1250px]">
+            <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Kolektibilitas</Th><Th>Outstanding</Th><Th>Next Payment Date</Th><Th>Total Tunggakan</Th><Th>Hasil Cektung</Th></tr></thead>
+            <tbody>{pagination.pagedRows.map((item) => {
+              const result = sheetResultByAccount.get(normalizeAccount(item.accountNumber));
+              return <tr key={item.accountNumber}>
+                <Td className="font-mono font-bold text-[#00529c]">{normalizeAccount(item.accountNumber)}</Td>
+                <Td className="font-semibold">{item.debtorName}</Td>
+                <Td>{item.mantri || "Belum Ada Mantri"}</Td>
+                <Td><QualityBadge bucket={item.quality} /></Td>
+                <Td>{formatCurrency(item.outstanding)}</Td>
+                <Td>{dateLabel(item.nextPaymentDate)}</Td>
+                <Td className="font-black text-rose-700">{formatCurrency(item.totalArrears)}</Td>
+                <Td>{result ? <div className="min-w-44"><Badge variant={result.actToday > 0 && result.remaining <= 0 ? "success" : "warning"}>{result.actToday > 0 && result.remaining <= 0 ? "Tunggakan Hilang" : "Masih Tunggak"}</Badge><p className="mt-1 text-[10px] font-semibold text-muted-foreground">Bayar {formatCurrency(result.actToday)} | Sisa {formatCurrency(result.remaining)}</p></div> : <span className="text-xs font-semibold text-muted-foreground">Belum ada hasil</span>}</Td>
+              </tr>;
+            })}</tbody>
+          </TableShell>
+          <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+        </>
+      ) : <EmptyState title="Data Quick Count tidak ditemukan" description="Pilih sedikitnya satu kolektibilitas atau ubah filter Mantri." icon={Calculator} />}
+
+      {sheetOpen ? <QuickCountSheetDialog rows={sheetRows} setRows={setSheetRows} onClose={() => setSheetOpen(false)} /> : null}
+    </div>
+  );
+}
+
 type Di319Status = "Tidak Ada Blokiran" | "Setor dari Blokiran" | "Blokiran Aktif";
 
 type UploadedDi319Row = {
@@ -5129,7 +5445,7 @@ function CkpnView({
     <div className="space-y-4">
       <SectionHeader
         title="Prognosa CKPN"
-        description={`Isi Prognosa Kolek dari posisi ${getMonthLabel(comparisonMonth ?? sourceMonth)}. Downgrade dibatasi satu tingkat, kecuali rekening berstatus KTS. PUMK tidak masuk perhitungan.`}
+        description={`Isi Prognosa Kolek dari posisi ${getMonthLabel(comparisonMonth ?? sourceMonth)}. Opsi perubahan disesuaikan dengan kolektibilitas dan umur tunggakan. PUMK tidak masuk perhitungan.`}
         icon={PieChartIcon}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -5163,8 +5479,8 @@ function CkpnView({
           disabled={!changedRows.length}
           onClick={() => exportRowsXls(
             `prognosa-ckpn-perubahan-${sourceMonth}.xls`,
-            ["No Rekening", "Nama Debitur", "Mantri", "Outstanding Acuan", "Kolek Bulan Lalu", "Kolek Sistem Terbaru", "Status Validasi", "Prognosa Kolek", "CKPN Terbentuk", "Delta CKPN", "Arah Prognosa"],
-            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousQuality, item.systemQuality, item.isKts ? "KTS" : "Sesuai", item.targetCollectibility, item.targetCollectibility === "Lunas" || item.targetCollectibility === "PH" ? item.formedCkpn : "", item.ckpnImpact, item.movement]),
+            ["No Rekening", "Nama Debitur", "Mantri", "Outstanding Acuan", "Kolek Bulan Lalu", "Kolek Sistem Terbaru", "Prognosa Kolek", "CKPN Terbentuk", "Delta CKPN", "Arah Prognosa"],
+            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousQuality, item.systemQuality, item.targetCollectibility, item.targetCollectibility === "Lunas" || item.targetCollectibility === "PH" ? item.formedCkpn : "", item.ckpnImpact, item.movement]),
           )}
         >
           <FileSpreadsheet className="mr-2 h-4 w-4" />Export Excel ({changedRows.length})
@@ -5192,10 +5508,7 @@ function CkpnView({
               <Td>{item.mantri}</Td>
               <Td><span className="font-semibold">{formatCurrency(item.outstanding)}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">Posisi bulan lalu</span></Td>
               <Td><QualityBadge bucket={item.previousQuality} /></Td>
-              <Td>
-                <QualityBadge bucket={item.systemQuality} />
-                {item.isKts ? <span className="mt-1.5 block w-fit rounded bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">KTS</span> : null}
-              </Td>
+              <Td><QualityBadge bucket={item.systemQuality} /></Td>
               <Td>
                 <Select
                   value={item.targetCollectibility ?? ""}
@@ -5204,7 +5517,7 @@ function CkpnView({
                   className="h-9 min-w-40"
                 >
                   <option value="">Pilih prognosa kolek</option>
-                  {item.allowedTargets.map((option) => <option key={option} value={option}>{option}{item.isKts && option === item.expectedTargetQuality ? " (KTS)" : ""}</option>)}
+                  {item.allowedTargets.map((option) => <option key={option} value={option}>{option}</option>)}
                 </Select>
               </Td>
               <Td className={cn("font-medium", item.ckpnImpact > 0 ? "text-red-700" : item.ckpnImpact < 0 ? "text-emerald-700" : "text-slate-600")}>
