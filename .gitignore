@@ -1,9 +1,13 @@
 .next/
+.next-*/
 .next-build-check/
 .next-stale-*/
 node_modules/
 .env
 .env.local
+.env.production
+.env.*.local
+.env.supabase
 data/*.db
 data/*.db-shm
 data/*.db-wal

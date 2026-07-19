@@ -45,6 +45,10 @@ koneksi database yang dipakai berbeda:
 - `DATABASE_URL`: transaction/session pooler untuk aplikasi yang sedang berjalan.
 - `DIRECT_DATABASE_URL`: direct connection untuk migrasi Drizzle dan pekerjaan admin.
 
+Jika komputer migrasi hanya memiliki jaringan IPv4, gunakan Session Pooler port
+5432 sebagai pengganti sementara `DIRECT_DATABASE_URL` saat menjalankan migrasi.
+Direct connection tetap disimpan untuk server atau runner yang mendukung IPv6.
+
 Isi `.env.production` berdasarkan `.env.example`. Gunakan URL HTTPS publik untuk
 `BETTER_AUTH_URL`, rahasia acak minimal 32 karakter, dan service role key hanya di
 server. Jangan memasukkan `.env.production` ke Git.
@@ -99,7 +103,15 @@ k6 run -e BASE_URL=https://domain-produksi.example -e TARGET_VUS=25 \
   -e TEST_EMAIL=akun-uji@example.com -e TEST_PASSWORD=... tests/load/britoel.js
 ```
 
+Durasi tahap dapat dipersingkat untuk baseline dengan
+`RAMP_QUARTER_DURATION`, `RAMP_TARGET_DURATION`, `HOLD_DURATION`, dan
+`RAMP_DOWN_DURATION`. Nilai default tetap 2 menit, 3 menit, 5 menit, dan 2 menit.
+
 Target awal yang dipakai skrip: error di bawah 1% dan p95 respons di bawah 1,5
 detik. Jangan membuka seluruh uker bila salah satu ambang gagal. File Docker,
 Compose, health check, dan contoh reverse proxy tersedia di repository untuk
 deployment VPS. Backup database dan backup Storage harus dijadwalkan terpisah.
+
+Pada Windows di folder OneDrive, pembuatan symlink output standalone dapat
+ditolak sistem. Gunakan `NEXT_STANDALONE=false` untuk build lokal; build Docker
+atau Linux tetap memakai output standalone secara default.

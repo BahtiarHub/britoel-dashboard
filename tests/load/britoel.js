@@ -3,13 +3,17 @@ import { check, sleep } from "k6";
 
 const baseUrl = (__ENV.BASE_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const target = Number(__ENV.TARGET_VUS || 100);
+const rampQuarterDuration = __ENV.RAMP_QUARTER_DURATION || "2m";
+const rampTargetDuration = __ENV.RAMP_TARGET_DURATION || "3m";
+const holdDuration = __ENV.HOLD_DURATION || "5m";
+const rampDownDuration = __ENV.RAMP_DOWN_DURATION || "2m";
 
 export const options = {
   stages: [
-    { duration: "2m", target: Math.max(5, Math.round(target * 0.25)) },
-    { duration: "3m", target },
-    { duration: "5m", target },
-    { duration: "2m", target: 0 },
+    { duration: rampQuarterDuration, target: Math.max(5, Math.round(target * 0.25)) },
+    { duration: rampTargetDuration, target },
+    { duration: holdDuration, target },
+    { duration: rampDownDuration, target: 0 },
   ],
   thresholds: {
     http_req_failed: ["rate<0.01"],
