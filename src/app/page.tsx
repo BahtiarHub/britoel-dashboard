@@ -4764,6 +4764,7 @@ function QuickCountSheetDialog({
   onClose: () => void;
 }) {
   const [pasteMessage, setPasteMessage] = useState("");
+  const [draftRows, setDraftRows] = useState<QuickCountSheetRow[]>(rows.map((row) => ({ ...row })));
   const fields: { key: keyof QuickCountSheetRow; label: string; readOnly?: boolean; align?: string }[] = [
     { key: "accountNumber", label: "No rekening" },
     { key: "name", label: "Nama" },
@@ -4783,7 +4784,7 @@ function QuickCountSheetDialog({
   }, []);
 
   function updateCell(index: number, key: keyof QuickCountSheetRow, value: string) {
-    const nextRows = rows.map((row, rowIndex) => {
+    const nextRows = draftRows.map((row, rowIndex) => {
       if (rowIndex !== index) return row;
       const updated = { ...row, [key]: value };
       if (key === "billing" || key === "actToday") {
@@ -4793,7 +4794,7 @@ function QuickCountSheetDialog({
       }
       return updated;
     });
-    setRows(nextRows);
+    setDraftRows(nextRows);
   }
 
   function handlePaste(event: React.ClipboardEvent<HTMLDivElement>) {
@@ -4801,7 +4802,7 @@ function QuickCountSheetDialog({
     if (!pastedText.includes("\t") && !pastedText.includes("\n") && !pastedText.includes("\r")) return;
     event.preventDefault();
     const pastedRows = parseQuickCountClipboard(pastedText);
-    setRows(pastedRows.length ? pastedRows : [{ ...emptyQuickCountSheetRow }]);
+    setDraftRows(pastedRows.length ? pastedRows : [{ ...emptyQuickCountSheetRow }]);
     setPasteMessage(`${formatNumber(pastedRows.length)} baris berhasil ditempel.`);
   }
 
@@ -4811,11 +4812,16 @@ function QuickCountSheetDialog({
       const pastedText = await navigator.clipboard.readText();
       const pastedRows = parseQuickCountClipboard(pastedText);
       if (!pastedRows.length) throw new Error("Clipboard kosong");
-      setRows(pastedRows);
+      setDraftRows(pastedRows);
       setPasteMessage(`${formatNumber(pastedRows.length)} baris berhasil ditempel.`);
     } catch {
       setPasteMessage("Clipboard belum dapat dibaca. Klik sel pertama lalu gunakan Ctrl+V.");
     }
+  }
+
+  function saveAndClose() {
+    setRows(draftRows.length ? draftRows : [{ ...emptyQuickCountSheetRow }]);
+    onClose();
   }
 
   return (
@@ -4825,7 +4831,7 @@ function QuickCountSheetDialog({
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[#f37021]"><FileSpreadsheet className="h-5 w-5" /></span>
           <div className="min-w-0">
             <h2 className="truncate text-base font-black">Hasil Cektung</h2>
-            <p className="text-xs font-semibold text-blue-100">{formatNumber(rows.filter((row) => row.accountNumber.trim()).length)} baris - data kerja hari ini</p>
+            <p className="text-xs font-semibold text-blue-100">{formatNumber(draftRows.filter((row) => row.accountNumber.trim()).length)} baris - data kerja hari ini</p>
           </div>
         </div>
         <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Tutup Hasil Cektung" className="text-white hover:bg-white/15 hover:text-white"><X className="h-5 w-5" /></Button>
@@ -4838,8 +4844,9 @@ function QuickCountSheetDialog({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={pasteFromClipboard} className="border-[#00529c]/25 text-[#00529c]"><ClipboardPaste className="h-4 w-4" />Paste</Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => setRows([{ ...emptyQuickCountSheetRow }])}>Kosongkan</Button>
-          <Button type="button" size="sm" className="bg-[#00529c] text-white hover:bg-[#004077]" onClick={onClose}><Check className="h-4 w-4" />Simpan Hasil</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setDraftRows([{ ...emptyQuickCountSheetRow }])}>Kosongkan</Button>
+          <Button type="button" variant="outline" size="sm" onClick={onClose} className="border-slate-300 text-slate-700 hover:bg-slate-100"><X className="h-4 w-4" />Batal</Button>
+          <Button type="button" size="sm" className="bg-[#00529c] text-white hover:bg-[#004077]" onClick={saveAndClose}><Check className="h-4 w-4" />Simpan Hasil</Button>
         </div>
       </div>
 
@@ -4847,7 +4854,7 @@ function QuickCountSheetDialog({
 
       <div className="flex-1 overflow-auto p-4" onPaste={handlePaste}>
         <div className="mx-auto w-full min-w-[1060px] overflow-hidden rounded-md border border-[#9eb7ca] bg-white shadow-[0_12px_35px_rgba(0,55,105,0.10)]">
-          {(rows.length ? rows : [{ ...emptyQuickCountSheetRow }]).map((row, rowIndex) => (
+          {(draftRows.length ? draftRows : [{ ...emptyQuickCountSheetRow }]).map((row, rowIndex) => (
             <div key={`${row.accountNumber}-${rowIndex}`} className="grid grid-cols-[1.15fr_1.45fr_.8fr_1fr_1fr_1fr_1.65fr] border-b border-[#cbd9e4] last:border-b-0">
               {fields.map((field, columnIndex) => (
                 <input
