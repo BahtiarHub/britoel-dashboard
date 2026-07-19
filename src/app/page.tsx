@@ -3978,29 +3978,31 @@ function TunggakanView({
   });
   const depositPeriods = [...new Set(uploadedDeposits.map((item) => item.period))].sort();
   const depositPeriod = depositPeriods.filter((period) => period <= month).at(-1) ?? depositPeriods.at(-1);
-  const savingsByCif = new Map<string, { balance: number; accounts: Map<string, number> }>();
+  const savingsByCif = new Map<string, { accounts: Map<string, number> }>();
   uploadedDeposits.filter((item) => item.period === depositPeriod).forEach((item) => {
     const cif = String(item.cif ?? "").trim().toUpperCase();
     if (!cif) return;
-    const current = savingsByCif.get(cif) ?? { balance: 0, accounts: new Map<string, number>() };
+    const current = savingsByCif.get(cif) ?? { accounts: new Map<string, number>() };
     const accountBalance = Math.max(0, Number(item.balance) || 0);
-    current.balance += accountBalance;
     if (item.savingsAccount) current.accounts.set(item.savingsAccount, (current.accounts.get(item.savingsAccount) ?? 0) + accountBalance);
     savingsByCif.set(cif, current);
   });
   const allRows = getArrearsRows(month).map((item) => {
     const savings = savingsByCif.get(String(item.cif ?? "").trim().toUpperCase());
+    const tusimAccounts = savings
+      ? [...savings.accounts.entries()].filter(([, balance]) => balance >= TUSIM_MINIMUM_BALANCE)
+      : [];
     return {
       ...item,
-      savingsBalance: savings?.balance ?? 0,
-      savingsAccountCount: savings?.accounts.size ?? 0,
-      savingsAccounts: savings ? [...savings.accounts.entries()] : [],
+      savingsBalance: tusimAccounts.reduce((total, [, balance]) => total + balance, 0),
+      savingsAccountCount: tusimAccounts.length,
+      savingsAccounts: tusimAccounts,
     };
   });
   const matchesBand = (item: (typeof allRows)[number], band: ArrearsBand) =>
     band === "Semua" ||
     (band === "Tucil" && item.totalArrears < 100_000) ||
-    (band === "Tusim" && item.savingsBalance >= TUSIM_MINIMUM_BALANCE);
+    (band === "Tusim" && item.savingsAccountCount > 0);
   const segmentedRows = allRows.filter((item) => matchesBand(item, arrearsBand));
   const rows = segmentedRows.filter((item) => mantri === "Semua" || item.mantri === mantri);
   const mantriRecap = [...segmentedRows.reduce((map, item) => {
@@ -4024,7 +4026,7 @@ function TunggakanView({
     item.savingsAccounts.map(([accountNumber]) => accountNumber).join("; "),
     item.savingsAccounts.map(([accountNumber, balance]) => `${accountNumber}: ${formatCurrency(balance)}`).join(" | "),
     item.savingsBalance,
-    [item.totalArrears < 100_000 ? "Tucil" : "", item.savingsBalance >= TUSIM_MINIMUM_BALANCE ? "Tusim" : ""].filter(Boolean).join(", "),
+    [item.totalArrears < 100_000 ? "Tucil" : "", item.savingsAccountCount > 0 ? "Tusim" : ""].filter(Boolean).join(", "),
   ]);
   const warningHistoryByAccount = new Map<string, WarningLetterRecord[]>();
   warningLetters.forEach((item) => {
@@ -4410,7 +4412,7 @@ function TunggakanView({
                     <Td><QualityBadge bucket={classifyQuality(item, month)} /></Td>
                     <Td className="font-black text-rose-700">{formatCurrency(item.totalArrears)}</Td>
                     <Td><div className="min-w-36"><p className={cn("font-black", item.savingsBalance > 0 ? "text-emerald-700" : "text-muted-foreground")}>{item.savingsBalance > 0 ? formatCurrency(item.savingsBalance) : "-"}</p>{item.savingsAccountCount ? <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{formatNumber(item.savingsAccountCount)} rekening simpanan</p> : null}</div></Td>
-                    <Td><div className="flex min-w-max flex-wrap gap-1.5">{item.totalArrears < 100_000 ? <Badge className="border-0 bg-orange-100 text-[#b54b00]">Tucil</Badge> : null}{item.savingsBalance >= TUSIM_MINIMUM_BALANCE ? <Badge className="border-0 bg-emerald-100 text-emerald-700">Tusim</Badge> : null}{item.totalArrears >= 100_000 && item.savingsBalance < TUSIM_MINIMUM_BALANCE ? <span className="text-muted-foreground">-</span> : null}</div></Td>
+                    <Td><div className="flex min-w-max flex-wrap gap-1.5">{item.totalArrears < 100_000 ? <Badge className="border-0 bg-orange-100 text-[#b54b00]">Tucil</Badge> : null}{item.savingsAccountCount > 0 ? <Badge className="border-0 bg-emerald-100 text-emerald-700">Tusim</Badge> : null}{item.totalArrears >= 100_000 && !item.savingsAccountCount ? <span className="text-muted-foreground">-</span> : null}</div></Td>
                     <Td>
                       {warningHistory.length ? (
                         <div className="flex min-w-max flex-col gap-1.5">
