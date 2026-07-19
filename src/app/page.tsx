@@ -3978,18 +3978,24 @@ function TunggakanView({
   });
   const depositPeriods = [...new Set(uploadedDeposits.map((item) => item.period))].sort();
   const depositPeriod = depositPeriods.filter((period) => period <= month).at(-1) ?? depositPeriods.at(-1);
-  const savingsByCif = new Map<string, { balance: number; accounts: Set<string> }>();
+  const savingsByCif = new Map<string, { balance: number; accounts: Map<string, number> }>();
   uploadedDeposits.filter((item) => item.period === depositPeriod).forEach((item) => {
     const cif = String(item.cif ?? "").trim().toUpperCase();
     if (!cif) return;
-    const current = savingsByCif.get(cif) ?? { balance: 0, accounts: new Set<string>() };
-    current.balance += Math.max(0, Number(item.balance) || 0);
-    if (item.savingsAccount) current.accounts.add(item.savingsAccount);
+    const current = savingsByCif.get(cif) ?? { balance: 0, accounts: new Map<string, number>() };
+    const accountBalance = Math.max(0, Number(item.balance) || 0);
+    current.balance += accountBalance;
+    if (item.savingsAccount) current.accounts.set(item.savingsAccount, (current.accounts.get(item.savingsAccount) ?? 0) + accountBalance);
     savingsByCif.set(cif, current);
   });
   const allRows = getArrearsRows(month).map((item) => {
     const savings = savingsByCif.get(String(item.cif ?? "").trim().toUpperCase());
-    return { ...item, savingsBalance: savings?.balance ?? 0, savingsAccountCount: savings?.accounts.size ?? 0 };
+    return {
+      ...item,
+      savingsBalance: savings?.balance ?? 0,
+      savingsAccountCount: savings?.accounts.size ?? 0,
+      savingsAccounts: savings ? [...savings.accounts.entries()] : [],
+    };
   });
   const matchesBand = (item: (typeof allRows)[number], band: ArrearsBand) =>
     band === "Semua" ||
@@ -4007,7 +4013,7 @@ function TunggakanView({
     .map((item) => ({ ...item, debtorCount: item.debtors.size }))
     .sort((a, b) => b.outstanding - a.outstanding);
   const pagination = useTablePagination(rows, `${month}-${arrearsBand}-${mantri}-${rows.length}`);
-  const exportHeaders = ["No Rekening", "Nama Debitur", "Mantri", "Outstanding", "Kolektibilitas", "Total Tunggakan (Pokok + Bunga)", "Saldo Simpanan", "Kategori"];
+  const exportHeaders = ["No Rekening", "Nama Debitur", "Mantri", "Outstanding", "Kolektibilitas", "Total Tunggakan (Pokok + Bunga)", "No Rekening Simpanan", "Saldo per Rekening Simpanan", "Total Saldo Simpanan", "Kategori"];
   const exportData = rows.map((item) => [
     item.accountNumber,
     item.debtorName,
@@ -4015,6 +4021,8 @@ function TunggakanView({
     item.outstanding,
     classifyQuality(item, month),
     item.totalArrears,
+    item.savingsAccounts.map(([accountNumber]) => accountNumber).join("; "),
+    item.savingsAccounts.map(([accountNumber, balance]) => `${accountNumber}: ${formatCurrency(balance)}`).join(" | "),
     item.savingsBalance,
     [item.totalArrears < 100_000 ? "Tucil" : "", item.savingsBalance >= TUSIM_MINIMUM_BALANCE ? "Tusim" : ""].filter(Boolean).join(", "),
   ]);
