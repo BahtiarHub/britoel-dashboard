@@ -4774,6 +4774,14 @@ function QuickCountSheetDialog({
     { key: "address", label: "Alamat" },
   ];
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   function updateCell(index: number, key: keyof QuickCountSheetRow, value: string) {
     const nextRows = rows.map((row, rowIndex) => {
       if (rowIndex !== index) return row;
@@ -4811,20 +4819,23 @@ function QuickCountSheetDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-[#edf4fa]">
-      <header className="flex items-center justify-between border-b border-[#b8cee0] bg-[#00529c] px-3 py-3 text-white sm:px-5">
+    <div className="fixed inset-0 z-[200] hidden flex-col bg-[#edf4fa] xl:flex">
+      <header className="flex items-center justify-between border-b-4 border-[#f37021] bg-[#00529c] px-6 py-3 text-white shadow-sm">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[#f37021]"><FileSpreadsheet className="h-5 w-5" /></span>
           <div className="min-w-0">
             <h2 className="truncate text-base font-black">Hasil Cektung</h2>
-            <p className="text-xs font-semibold text-blue-100">{formatNumber(rows.filter((row) => row.accountNumber.trim()).length)} baris data</p>
+            <p className="text-xs font-semibold text-blue-100">{formatNumber(rows.filter((row) => row.accountNumber.trim()).length)} baris - data kerja hari ini</p>
           </div>
         </div>
         <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Tutup Hasil Cektung" className="text-white hover:bg-white/15 hover:text-white"><X className="h-5 w-5" /></Button>
       </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d7e3ef] bg-white px-3 py-2 sm:px-5">
-        <Badge className="border-0 bg-[#eaf3fb] text-[#00529c]">7 kolom</Badge>
+      <div className="flex items-center justify-between gap-3 border-b border-[#d7e3ef] bg-white px-6 py-2.5">
+        <div className="flex items-center gap-2">
+          <Badge className="border-0 bg-[#eaf3fb] text-[#00529c]">7 kolom</Badge>
+          <span className="text-xs font-semibold text-slate-500">Tempel data pada sel pertama</span>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={pasteFromClipboard} className="border-[#00529c]/25 text-[#00529c]"><ClipboardPaste className="h-4 w-4" />Paste</Button>
           <Button type="button" variant="outline" size="sm" onClick={() => setRows([{ ...emptyQuickCountSheetRow }])}>Kosongkan</Button>
@@ -4832,12 +4843,12 @@ function QuickCountSheetDialog({
         </div>
       </div>
 
-      {pasteMessage ? <div className="border-b border-[#d7e3ef] bg-[#f8fbfe] px-3 py-2 text-xs font-bold text-[#00529c] sm:px-5">{pasteMessage}</div> : null}
+      {pasteMessage ? <div className="border-b border-[#d7e3ef] bg-[#f8fbfe] px-6 py-2 text-xs font-bold text-[#00529c]">{pasteMessage}</div> : null}
 
-      <div className="flex-1 overflow-auto p-2 sm:p-4" onPaste={handlePaste}>
-        <div className="min-w-[1210px] overflow-hidden border border-[#9eb7ca] bg-white shadow-sm">
+      <div className="flex-1 overflow-auto p-4" onPaste={handlePaste}>
+        <div className="mx-auto w-full min-w-[1060px] overflow-hidden rounded-md border border-[#9eb7ca] bg-white shadow-[0_12px_35px_rgba(0,55,105,0.10)]">
           {(rows.length ? rows : [{ ...emptyQuickCountSheetRow }]).map((row, rowIndex) => (
-            <div key={`${row.accountNumber}-${rowIndex}`} className="grid grid-cols-[180px_220px_120px_150px_150px_150px_240px] border-b border-[#cbd9e4] last:border-b-0">
+            <div key={`${row.accountNumber}-${rowIndex}`} className="grid grid-cols-[1.15fr_1.45fr_.8fr_1fr_1fr_1fr_1.65fr] border-b border-[#cbd9e4] last:border-b-0">
               {fields.map((field, columnIndex) => (
                 <input
                   key={field.key}
@@ -4847,7 +4858,7 @@ function QuickCountSheetDialog({
                   readOnly={field.readOnly}
                   onChange={(event) => updateCell(rowIndex, field.key, event.target.value)}
                   className={cn(
-                    "h-10 min-w-0 rounded-none border-0 border-r border-[#cbd9e4] bg-white px-2 text-xs outline-none last:border-r-0 focus:bg-[#fff7ed] focus:ring-2 focus:ring-inset focus:ring-[#f37021]",
+                    "h-9 min-w-0 rounded-none border-0 border-r border-[#cbd9e4] bg-white px-2.5 text-[11px] outline-none last:border-r-0 focus:bg-[#fff7ed] focus:ring-2 focus:ring-inset focus:ring-[#f37021]",
                     field.readOnly && "bg-[#eef5fb] font-bold text-[#00529c]",
                     field.key === "accountNumber" && "font-mono font-bold text-[#00529c]",
                     field.align,
@@ -4872,47 +4883,26 @@ function getQuickRiskPosition(row?: ReturnType<typeof getMantriRecap>[number]): 
   };
 }
 
-function QuickRiskPositionCell({ position }: { position: QuickRiskPosition }) {
+function QuickRiskDeltaValue({ value }: { value: number }) {
   return (
-    <div className="min-w-[190px] space-y-1.5">
-      <div className="flex items-center justify-between gap-3 rounded-md bg-[#fff7ed] px-2.5 py-1.5">
-        <span className="text-[10px] font-black uppercase text-[#b54b00]">SML</span>
-        <span className="font-bold text-[#b54b00]">{formatCurrency(position.sml)}</span>
-      </div>
-      <div className="flex items-center justify-between gap-3 rounded-md bg-rose-50 px-2.5 py-1.5">
-        <span className="text-[10px] font-black uppercase text-rose-700">NPL</span>
-        <span className="font-bold text-rose-700">{formatCurrency(position.npl)}</span>
-      </div>
-    </div>
+    <span className={cn(
+      "inline-flex min-w-32 items-center justify-end gap-1 rounded-md px-2 py-1.5 font-black",
+      value < 0 && "bg-emerald-50 text-emerald-700",
+      value > 0 && "bg-rose-50 text-rose-700",
+      !value && "bg-slate-50 text-slate-600",
+    )}>
+      {value > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : null}
+      {value < 0 ? <ArrowDownRight className="h-3.5 w-3.5" /> : null}
+      {value > 0 ? "+" : ""}{formatCurrency(value)}
+    </span>
   );
 }
 
-function QuickRiskDeltaCell({ delta }: { delta: QuickRiskPosition }) {
-  return (
-    <div className="min-w-[190px] space-y-1.5">
-      {(["sml", "npl"] as const).map((key) => {
-        const value = delta[key];
-        return (
-          <div key={key} className={cn(
-            "flex items-center justify-between gap-3 rounded-md border px-2.5 py-1.5",
-            value < 0 && "border-emerald-200 bg-emerald-50 text-emerald-700",
-            value > 0 && "border-rose-200 bg-rose-50 text-rose-700",
-            !value && "border-slate-200 bg-slate-50 text-slate-600",
-          )}>
-            <span className="text-[10px] font-black uppercase">{key}</span>
-            <span className="flex items-center gap-1 font-bold">
-              {value > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : null}
-              {value < 0 ? <ArrowDownRight className="h-3.5 w-3.5" /> : null}
-              {value > 0 ? "+" : ""}{formatCurrency(value)}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+type QuickCountPage = "recap" | "unpaid" | "paid";
 
 function QuickCountView({ month }: { month: MonthKey }) {
+  const [activePage, setActivePage] = useState<QuickCountPage>("recap");
+  const [canExecuteQuickCount, setCanExecuteQuickCount] = useState(false);
   const [selectedQualities, setSelectedQualities] = useState<string[]>([...quickCountQualities]);
   const [qualityDropdownOpen, setQualityDropdownOpen] = useState(false);
   const [mantriFilter, setMantriFilter] = useState("Semua");
@@ -4923,6 +4913,18 @@ function QuickCountView({ month }: { month: MonthKey }) {
   const [quickCountDate, setQuickCountDate] = useState(getLocalDateKey);
   const qualityDropdownRef = useRef<HTMLDivElement | null>(null);
   const sheetStorageKey = `bri-tool-cektung-${month}-${quickCountDate}`;
+
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 1280px) and (hover: hover) and (pointer: fine)");
+    const syncDeviceAccess = () => setCanExecuteQuickCount(desktopQuery.matches);
+    syncDeviceAccess();
+    desktopQuery.addEventListener("change", syncDeviceAccess);
+    return () => desktopQuery.removeEventListener("change", syncDeviceAccess);
+  }, []);
+
+  useEffect(() => {
+    if (!canExecuteQuickCount && sheetOpen) setSheetOpen(false);
+  }, [canExecuteQuickCount, sheetOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -4986,18 +4988,12 @@ function QuickCountView({ month }: { month: MonthKey }) {
     })
     .filter((item) => item.quickRemainingArrears > 0);
   const pagination = useTablePagination(rows, `${month}-${selectedQualities.join("-")}-${mantriFilter}-${rows.length}-${rows.reduce((total, item) => total + item.quickRemainingArrears, 0)}`);
-  const smlRows = rows.filter((item) => isSml(item.quality));
-  const nplRows = rows.filter((item) => isNpl(item.quality));
-  const smlOs = smlRows.reduce((total, item) => total + item.outstanding, 0);
-  const nplOs = nplRows.reduce((total, item) => total + item.outstanding, 0);
-  const totalArrears = rows.reduce((total, item) => total + item.quickRemainingArrears, 0);
   const paidRows = candidateRows
     .map((item) => {
       const result = sheetResultByAccount.get(normalizeAccount(item.accountNumber));
       return result && result.actToday > 0 ? { ...item, billing: result.billing, actToday: result.actToday, remaining: result.remaining } : undefined;
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
-  const resolvedRows = candidateRows.filter((item) => isCleared(item.accountNumber));
   const paidPagination = useTablePagination(paidRows, `${month}-${selectedQualities.join("-")}-${mantriFilter}-paid-${paidRows.length}-${paidRows.reduce((total, item) => total + item.actToday, 0)}`);
   const paidRiskReductionByMantri = allRows.filter((item) => isCleared(item.accountNumber)).reduce((map, item) => {
     const mantri = item.mantri || "Belum Ada Mantri";
@@ -5068,12 +5064,36 @@ function QuickCountView({ month }: { month: MonthKey }) {
         icon={Calculator}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="SML Terfilter" value={formatCurrency(smlOs)} helper={`${formatNumber(smlRows.length)} rekening`} tone="warning" icon={AlertTriangle} />
-        <MetricCard label="NPL Terfilter" value={formatCurrency(nplOs)} helper={`${formatNumber(nplRows.length)} rekening`} tone="danger" icon={ArrowDownRight} />
-        <MetricCard label="Total Tunggakan" value={formatCurrency(totalArrears)} helper={`${formatNumber(rows.length)} rekening`} icon={Banknote} />
-        <MetricCard label="Tunggakan Bayar" value={`${formatNumber(paidRows.length)} rekening`} helper={`${formatNumber(resolvedRows.length)} tagihan menjadi nol`} tone="success" icon={CheckCircle2} />
-      </div>
+      <nav className="surface-panel grid grid-cols-3 gap-1.5 p-2" aria-label="Halaman Quick Count">
+        {([
+          { key: "recap" as const, label: "Rekap Realtime", shortLabel: "Rekap", icon: BarChart3, meta: `${formatNumber(quickMantriRecap.length)} Mantri` },
+          { key: "unpaid" as const, label: "Nasabah Belum Bayar", shortLabel: "Belum Bayar", icon: ListChecks, meta: `${formatNumber(rows.length)} rekening` },
+          { key: "paid" as const, label: "Nasabah Sudah Bayar", shortLabel: "Sudah Bayar", icon: CheckCircle2, meta: `${formatNumber(paidRows.length)} rekening` },
+        ]).map((page) => {
+          const Icon = page.icon;
+          const active = activePage === page.key;
+          return (
+            <button
+              key={page.key}
+              type="button"
+              onClick={() => setActivePage(page.key)}
+              className={cn(
+                "flex min-h-[68px] min-w-0 items-center justify-center gap-2 rounded-md border px-2 py-2 text-left transition sm:justify-start sm:px-3",
+                active
+                  ? "border-[#00529c] bg-[#00529c] text-white shadow-[0_8px_20px_rgba(0,82,156,0.18)]"
+                  : "border-transparent bg-[#f4f8fb] text-[#00529c] hover:border-[#b8cee0] hover:bg-white",
+              )}
+            >
+              <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-md", active ? "bg-white/15" : "bg-white shadow-sm")}><Icon className="h-[18px] w-[18px]" /></span>
+              <span className="min-w-0">
+                <span className="block text-[11px] font-black sm:hidden">{page.shortLabel}</span>
+                <span className="hidden truncate text-sm font-black sm:block">{page.label}</span>
+                <span className={cn("mt-0.5 hidden text-[10px] font-bold sm:block", active ? "text-blue-100" : "text-slate-500")}>{page.meta}</span>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
       <section className="surface-panel space-y-3 p-3 sm:p-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
@@ -5118,30 +5138,52 @@ function QuickCountView({ month }: { month: MonthKey }) {
                 {mantriNames.map((item) => <option key={item} value={item}>{item}</option>)}
               </Select>
             </Field>
-            <Button type="button" variant="outline" onClick={copyFilteredAccounts} disabled={!rows.length} className="border-[#00529c]/25 text-[#00529c]"><Copy className="h-4 w-4" />Salin No Rekening</Button>
-            <Button type="button" onClick={() => setSheetOpen(true)} className="bg-[#f37021] text-white hover:bg-[#d95d13]"><FileSpreadsheet className="h-4 w-4" />Hasil Cektung</Button>
+            {canExecuteQuickCount ? <div className="hidden items-center gap-2 xl:flex">
+              <Button type="button" variant="outline" onClick={copyFilteredAccounts} disabled={!rows.length} className="border-[#00529c]/25 text-[#00529c]"><Copy className="h-4 w-4" />Salin No Rekening</Button>
+              <Button type="button" onClick={() => setSheetOpen(true)} className="bg-[#f37021] text-white hover:bg-[#d95d13]"><FileSpreadsheet className="h-4 w-4" />Hasil Cektung</Button>
+            </div> : null}
           </div>
         </div>
-        {copyMessage ? <p className="rounded-md bg-[#eef7ff] px-3 py-2 text-xs font-bold text-[#00529c]">{copyMessage}</p> : null}
+        {copyMessage ? <p className="hidden rounded-md bg-[#eef7ff] px-3 py-2 text-xs font-bold text-[#00529c] xl:block">{copyMessage}</p> : null}
       </section>
 
-      <section className="surface-panel overflow-hidden">
-        <div className="flex flex-col gap-2 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="font-black text-[#00529c]">Rekap Quick Count per Mantri</h3>
-          <div className="flex flex-wrap gap-2 text-[10px] font-bold text-muted-foreground">
-            <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">Simulasi harian - khusus Quick Count</span>
-            <span>YTD: vs {getMonthLabel(yearEndComparisonMonth)}</span>
-            <span>MTD: vs {getMonthLabel(previousMonth ?? month)}</span>
+      {activePage === "recap" ? (
+        <section className="surface-panel overflow-hidden">
+          <div className="flex flex-col gap-2 border-b border-[#d7e3ef] bg-[linear-gradient(100deg,#eef7ff,#ffffff)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-black text-[#00529c]">Rekap Quick Count per Mantri</h3>
+              <p className="mt-1 text-xs text-slate-500">Prognosa kualitas setelah pembayaran hari ini</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[10px] font-bold text-muted-foreground">
+              <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">Realtime - {formatTodayLabel()}</span>
+              <span className="rounded bg-white px-2 py-1">YTD vs {getMonthLabel(yearEndComparisonMonth)}</span>
+              <span className="rounded bg-white px-2 py-1">MTD vs {getMonthLabel(previousMonth ?? month)}</span>
+            </div>
           </div>
-        </div>
-        <TableShell minWidth="min-w-[1250px]">
-          <thead><tr><Th>Mantri</Th><Th>Posisi Akhir Tahun</Th><Th>Posisi Bulan Lalu</Th><Th>Prediksi Terbaru</Th><Th>Delta YTD</Th><Th>Delta MTD</Th></tr></thead>
-          <tbody>{recapPagination.pagedRows.map((item) => <tr key={item.mantri}><Td className="font-bold text-[#00529c]">{item.mantri}</Td><Td><QuickRiskPositionCell position={item.yearEnd} /></Td><Td><QuickRiskPositionCell position={item.previous} /></Td><Td><QuickRiskPositionCell position={item.latest} />{item.paidReduction.sml || item.paidReduction.npl ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Setelah tunggakan bayar</p> : null}</Td><Td><QuickRiskDeltaCell delta={item.ytd} /></Td><Td><QuickRiskDeltaCell delta={item.mtd} /></Td></tr>)}</tbody>
-        </TableShell>
-        <PaginationControls page={recapPagination.page} pageSize={recapPagination.pageSize} totalItems={quickMantriRecap.length} onPageChange={recapPagination.setPage} onPageSizeChange={recapPagination.setPageSize} />
-      </section>
+          <TableShell minWidth="min-w-[1050px]">
+            <thead><tr><Th>Mantri</Th><Th>Kualitas</Th><Th>Akhir Tahun</Th><Th>Bulan Lalu</Th><Th>Prognosa</Th><Th>Delta YTD</Th><Th>Delta MTD</Th></tr></thead>
+            <tbody>{recapPagination.pagedRows.flatMap((item) => (["sml", "npl"] as const).map((risk, riskIndex) => (
+              <tr key={`${item.mantri}-${risk}`} className={cn(riskIndex === 0 ? "bg-[#fffaf5]" : "bg-white", riskIndex === 1 && "border-b-2 border-[#c9dbea]")}>
+                {riskIndex === 0 ? (
+                  <td rowSpan={2} className="min-w-48 border-b-2 border-r border-[#d7e3ef] border-[#c9dbea] bg-[#f4f9fd] px-3 py-3.5 align-middle">
+                    <p className="font-black text-[#00529c]">{item.mantri}</p>
+                    {item.paidReduction.sml || item.paidReduction.npl ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Prognosa sudah diperbarui</p> : null}
+                  </td>
+                ) : null}
+                <Td><Badge variant={risk === "sml" ? "warning" : "danger"}>{risk.toUpperCase()}</Badge></Td>
+                <Td className="text-right font-bold text-slate-700">{formatCurrency(item.yearEnd[risk])}</Td>
+                <Td className="text-right font-bold text-slate-700">{formatCurrency(item.previous[risk])}</Td>
+                <Td className={cn("text-right font-black", risk === "sml" ? "text-[#b54b00]" : "text-rose-700")}>{formatCurrency(item.latest[risk])}</Td>
+                <Td className="text-right"><QuickRiskDeltaValue value={item.ytd[risk]} /></Td>
+                <Td className="text-right"><QuickRiskDeltaValue value={item.mtd[risk]} /></Td>
+              </tr>
+            )))}</tbody>
+          </TableShell>
+          <PaginationControls page={recapPagination.page} pageSize={recapPagination.pageSize} totalItems={quickMantriRecap.length} onPageChange={recapPagination.setPage} onPageSizeChange={recapPagination.setPageSize} />
+        </section>
+      ) : null}
 
-      <section className="surface-panel overflow-hidden">
+      {activePage === "paid" ? <section className="surface-panel overflow-hidden">
         <div className="flex flex-col gap-2 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="font-black text-[#00529c]">Pembayaran Hari Ini</h3>
@@ -5169,29 +5211,40 @@ function QuickCountView({ month }: { month: MonthKey }) {
             <PaginationControls page={paidPagination.page} pageSize={paidPagination.pageSize} totalItems={paidRows.length} onPageChange={paidPagination.setPage} onPageSizeChange={paidPagination.setPageSize} />
           </>
         ) : <EmptyState title="Belum ada pembayaran hari ini" description="Data pembayaran akan tampil setelah hasil Cektung dimasukkan." icon={Banknote} />}
-      </section>
+      </section> : null}
 
-      {rows.length ? (
-        <>
-          <TableShell minWidth="min-w-[1080px]">
-            <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Kolektibilitas</Th><Th>Outstanding</Th><Th>Next Payment Date</Th><Th>Total Tunggakan</Th></tr></thead>
-            <tbody>{pagination.pagedRows.map((item) => (
-              <tr key={item.accountNumber}>
-                <Td className="font-mono font-bold text-[#00529c]">{normalizeAccount(item.accountNumber)}</Td>
-                <Td className="font-semibold">{item.debtorName}</Td>
-                <Td>{item.mantri || "Belum Ada Mantri"}</Td>
-                <Td><QualityBadge bucket={item.quality} /></Td>
-                <Td>{formatCurrency(item.outstanding)}</Td>
-                <Td>{dateLabel(item.nextPaymentDate)}</Td>
-                <Td><div className="min-w-40"><p className="font-black text-rose-700">{formatCurrency(item.quickRemainingArrears)}</p>{item.actToday > 0 ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Setelah bayar {formatCurrency(item.actToday)}</p> : null}</div></Td>
-              </tr>
-            ))}</tbody>
-          </TableShell>
-          <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
-        </>
-      ) : <EmptyState title={candidateRows.length ? "Semua tunggakan sudah terbayar" : "Data Quick Count tidak ditemukan"} description={candidateRows.length ? "Tidak ada lagi sisa tunggakan pada hasil filter hari ini." : "Pilih sedikitnya satu kolektibilitas atau ubah filter Mantri."} icon={candidateRows.length ? CheckCircle2 : Calculator} />}
+      {activePage === "unpaid" ? (
+        <section className="surface-panel overflow-hidden">
+          <div className="flex flex-col gap-2 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-black text-[#00529c]">Nasabah Belum Bayar</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Sisa tunggakan setelah hasil Cektung hari ini</p>
+            </div>
+            <Badge variant="warning">{formatNumber(rows.length)} rekening</Badge>
+          </div>
+          {rows.length ? (
+            <>
+              <TableShell minWidth="min-w-[1080px]">
+                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Kolektibilitas</Th><Th>Outstanding</Th><Th>Next Payment Date</Th><Th>Total Tunggakan</Th></tr></thead>
+                <tbody>{pagination.pagedRows.map((item) => (
+                  <tr key={item.accountNumber}>
+                    <Td className="font-mono font-bold text-[#00529c]">{normalizeAccount(item.accountNumber)}</Td>
+                    <Td className="font-semibold">{item.debtorName}</Td>
+                    <Td>{item.mantri || "Belum Ada Mantri"}</Td>
+                    <Td><QualityBadge bucket={item.quality} /></Td>
+                    <Td>{formatCurrency(item.outstanding)}</Td>
+                    <Td>{dateLabel(item.nextPaymentDate)}</Td>
+                    <Td><div className="min-w-40"><p className="font-black text-rose-700">{formatCurrency(item.quickRemainingArrears)}</p>{item.actToday > 0 ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Setelah bayar {formatCurrency(item.actToday)}</p> : null}</div></Td>
+                  </tr>
+                ))}</tbody>
+              </TableShell>
+              <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+            </>
+          ) : <EmptyState title={candidateRows.length ? "Semua tunggakan sudah terbayar" : "Data Quick Count tidak ditemukan"} description={candidateRows.length ? "Tidak ada lagi sisa tunggakan pada hasil filter hari ini." : "Pilih sedikitnya satu kolektibilitas atau ubah filter Mantri."} icon={candidateRows.length ? CheckCircle2 : Calculator} />}
+        </section>
+      ) : null}
 
-      {sheetOpen ? <QuickCountSheetDialog rows={sheetRows} setRows={setSheetRows} onClose={() => setSheetOpen(false)} /> : null}
+      {sheetOpen && canExecuteQuickCount ? <QuickCountSheetDialog rows={sheetRows} setRows={setSheetRows} onClose={() => setSheetOpen(false)} /> : null}
     </div>
   );
 }
