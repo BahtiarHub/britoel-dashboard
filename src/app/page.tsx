@@ -5163,15 +5163,15 @@ function CkpnView({
           disabled={!changedRows.length}
           onClick={() => exportRowsXls(
             `prognosa-ckpn-perubahan-${sourceMonth}.xls`,
-            ["No Rekening", "Nama Debitur", "Mantri", "Outstanding Acuan", "Kolek Bulan Lalu", "Status Validasi", "Prognosa Kolek", "CKPN Terbentuk", "Delta CKPN", "Arah Prognosa"],
-            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousQuality, item.isKts ? `KTS - estimasi ${item.expectedTargetQuality}` : "Sesuai", item.targetCollectibility, item.targetCollectibility === "Lunas" || item.targetCollectibility === "PH" ? item.formedCkpn : "", item.ckpnImpact, item.movement]),
+            ["No Rekening", "Nama Debitur", "Mantri", "Outstanding Acuan", "Kolek Bulan Lalu", "Kolek Sistem Terbaru", "Status Validasi", "Prognosa Kolek", "CKPN Terbentuk", "Delta CKPN", "Arah Prognosa"],
+            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousQuality, item.systemQuality, item.isKts ? `KTS - estimasi ${item.expectedTargetQuality}` : "Sesuai", item.targetCollectibility, item.targetCollectibility === "Lunas" || item.targetCollectibility === "PH" ? item.formedCkpn : "", item.ckpnImpact, item.movement]),
           )}
         >
           <FileSpreadsheet className="mr-2 h-4 w-4" />Export Excel ({changedRows.length})
         </Button>
       </div>
       {forecastMessage ? <p className="rounded-md border border-[#b8d8f2] bg-[#eef7ff] px-3 py-2 text-sm font-semibold text-[#00529c]">{forecastMessage}</p> : null}
-      <TableShell>
+      <TableShell minWidth="min-w-[1280px]">
         <thead>
           <tr>
             <Th>No Rekening</Th>
@@ -5179,6 +5179,7 @@ function CkpnView({
             <Th>Mantri</Th>
             <Th>Outstanding Acuan</Th>
             <Th>Kolek Bulan Lalu</Th>
+            <Th>Kolek Sistem Terbaru</Th>
             <Th>Prognosa Kolek</Th>
             <Th>Delta CKPN</Th>
           </tr>
@@ -5190,9 +5191,10 @@ function CkpnView({
               <Td>{item.debtorName}</Td>
               <Td>{item.mantri}</Td>
               <Td><span className="font-semibold">{formatCurrency(item.outstanding)}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">Posisi bulan lalu</span></Td>
+              <Td><QualityBadge bucket={item.previousQuality} /></Td>
               <Td>
-                <QualityBadge bucket={item.previousQuality} />
-                {item.isKts ? <span className="mt-1.5 block w-fit rounded bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">KTS · estimasi {item.expectedTargetQuality}</span> : null}
+                <QualityBadge bucket={item.systemQuality} />
+                {item.isKts ? <span className="mt-1.5 block w-fit rounded bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">KTS - estimasi {item.expectedTargetQuality}</span> : null}
               </Td>
               <Td>
                 <Select

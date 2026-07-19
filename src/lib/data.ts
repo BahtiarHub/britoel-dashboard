@@ -738,7 +738,10 @@ export function getExpectedQualityByNpd(nextPaymentDate: string, month: MonthKey
   const dueTime = Date.UTC(dueYear, dueMonth - 1, Number(dateMatch[3]));
   const asOfYear = Number(monthMatch[1]);
   const asOfMonth = Number(monthMatch[2]);
-  const asOfTime = Date.UTC(asOfYear, asOfMonth, 0);
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === asOfYear && today.getMonth() + 1 === asOfMonth;
+  const asOfDay = isCurrentMonth ? today.getDate() : new Date(asOfYear, asOfMonth, 0).getDate();
+  const asOfTime = Date.UTC(asOfYear, asOfMonth - 1, asOfDay);
   if (!Number.isFinite(dueTime) || !Number.isFinite(asOfTime)) return undefined;
   if (dueTime > asOfTime) return "Lancar";
 
