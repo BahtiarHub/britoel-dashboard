@@ -1,12 +1,13 @@
 import path from "path";
 import fs from "fs/promises";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { auditLogs, branchProfiles, brimenCustomers, depositRecords, loanRecords, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
+import { auditLogs, branchProfiles, brimenCustomers, depositRecords, loanMantriAssignments, loanRecords, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
 import { upsertImportedBrimenCustomers } from "@/lib/brimen-db";
 import { extractBranchIdentity, inferPeriod, mapBrimenRows, mapDepositRows, mapLoanRows, mapNominativeCkpnRows, parseTabularFile } from "@/lib/import-data";
+import { hasLoanMantri } from "@/lib/loan-mantri";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -164,6 +165,17 @@ export async function POST(request: Request) {
             description: row.description, realizedDate: row.realizedDate, realizedAmount: row.realizedAmount,
             principalArrears: row.principalArrears, interestArrears: row.interestArrears, createdAt: now,
           })));
+        }
+        if (sourceKey === "lw321-terbaru") {
+          const accountsWithUploadedMantri = loanImport.rows.filter((row) => hasLoanMantri(row.mantri)).map((row) => row.accountNumber.replace(/\D/g, ""));
+          for (let index = 0; index < accountsWithUploadedMantri.length; index += 200) {
+            const accountBatch = accountsWithUploadedMantri.slice(index, index + 200);
+            if (!accountBatch.length) continue;
+            await tx.delete(loanMantriAssignments).where(and(
+              eq(loanMantriAssignments.branchCode, branchCode),
+              inArray(loanMantriAssignments.accountNumber, accountBatch),
+            ));
+          }
         }
         if (sourceKey === "lw321-terbaru") {
           for (let index = 0; index < synchronizedBrimenRows.length; index += 200) {

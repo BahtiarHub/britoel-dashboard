@@ -1,8 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { branchProfiles, ckpnForecasts, depositRecords, loanRecords, missingLoanResolutions, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
+import { branchProfiles, ckpnForecasts, depositRecords, loanMantriAssignments, loanRecords, missingLoanResolutions, nominativeCkpnRecords, uploadRecords } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
+import { hasLoanMantri } from "@/lib/loan-mantri";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export async function GET(request: Request) {
   const branchCode = guard.session.user.role === "SuperAdmin" && /^\d{4}$/.test(requestedBranch) ? requestedBranch : ownBranch;
 
   const rows = await db.select().from(loanRecords).where(eq(loanRecords.branchCode, branchCode)).orderBy(loanRecords.period, loanRecords.accountNumber);
+  const mantriAssignments = await db.select().from(loanMantriAssignments).where(eq(loanMantriAssignments.branchCode, branchCode));
   const deposits = await db.select().from(depositRecords).where(eq(depositRecords.branchCode, branchCode)).orderBy(depositRecords.period, depositRecords.loanAccountNumber);
   const nominativeCkpn = await db.select().from(nominativeCkpnRecords).where(eq(nominativeCkpnRecords.branchCode, branchCode)).orderBy(nominativeCkpnRecords.period, nominativeCkpnRecords.accountNumber);
   const loanResolutions = await db.select().from(missingLoanResolutions).where(eq(missingLoanResolutions.branchCode, branchCode)).orderBy(missingLoanResolutions.period, missingLoanResolutions.accountNumber);
@@ -31,6 +33,7 @@ export async function GET(request: Request) {
   }).from(uploadRecords).where(and(eq(uploadRecords.branchCode, branchCode), eq(uploadRecords.status, "Berhasil"))).orderBy(desc(uploadRecords.createdAt)).limit(20);
 
   const periods = [...new Set(rows.map((item) => item.period))].sort();
+  const mantriAssignmentByAccount = new Map(mantriAssignments.map((item) => [item.accountNumber.replace(/\D/g, ""), item]));
   return NextResponse.json({
     ok: true,
     source: rows.length ? "upload" : "mock",
@@ -38,7 +41,11 @@ export async function GET(request: Request) {
     branchName: branchProfile?.branchName ?? "",
     periods,
     latestPeriod: periods.at(-1) ?? null,
-    data: rows.map((item) => ({
+    data: rows.map((item) => {
+      const uploadedMantri = hasLoanMantri(item.mantri) ? item.mantri.trim() : "";
+      const manualAssignment = uploadedMantri ? undefined : mantriAssignmentByAccount.get(item.accountNumber.replace(/\D/g, ""));
+      const effectiveMantri = uploadedMantri || manualAssignment?.mantri || "";
+      return {
       month: item.period,
       cif: item.cif,
       loanType: item.loanType,
@@ -49,14 +56,17 @@ export async function GET(request: Request) {
       plafond: item.plafond,
       rawCollectibility: item.collectibility,
       flagRestruk: item.restructureFlag,
-      mantri: item.mantri,
-      pnPengelolaSinglePn: item.pnPengelola,
+      mantri: effectiveMantri,
+      pnPengelolaSinglePn: uploadedMantri || manualAssignment?.mantri || "",
+      uploadedMantriMissing: !uploadedMantri,
+      mantriAssignedManually: Boolean(manualAssignment),
       description: item.description,
       realizedDate: item.realizedDate,
       realizedAmount: item.realizedAmount,
       principalArrears: item.principalArrears,
       interestArrears: item.interestArrears,
-    })),
+    };
+    }),
     di319: deposits.map((item) => ({
       period: item.period,
       cif: item.cif,

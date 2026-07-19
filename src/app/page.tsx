@@ -116,6 +116,7 @@ import {
 } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
+import { hasLoanMantri } from "@/lib/loan-mantri";
 
 const sidebarItems: {
   key: MenuKey;
@@ -1293,7 +1294,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   const latestLoanRows = useMemo(() => getSnapshots(latestLoanPeriod), [latestLoanPeriod, loanDataVersion]);
   const summary = useMemo(() => getSummary(selectedMonth), [selectedMonth, loanDataVersion]);
   const mantriNames = useMemo(
-    () => [...new Set(loanSnapshots.map((item) => item.mantri))].sort(),
+    () => [...new Set(loanSnapshots.map((item) => item.mantri).filter(hasLoanMantri))].sort(),
     [loanDataVersion],
   );
   const brimenMap = useMemo(() => {
@@ -1493,6 +1494,13 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         search={search}
         setSearch={setSearch}
         brimenMap={brimenMap}
+        mantriNames={mantriNames}
+        canAssignMantri={session.user.role !== "SuperAdmin"}
+        onMantriUpdated={async () => {
+          const activePeriod = selectedMonth;
+          await loadDashboardData();
+          setSelectedMonth(activePeriod);
+        }}
       />
     ),
     kualitas: (
@@ -3093,19 +3101,30 @@ function NominatifView({
   search,
   setSearch,
   brimenMap,
+  mantriNames,
+  canAssignMantri,
+  onMantriUpdated,
 }: {
   rows: ReturnType<typeof getSnapshots>;
   month: MonthKey;
   search: string;
   setSearch: (value: string) => void;
   brimenMap: Map<string, BrimenCustomer>;
+  mantriNames: string[];
+  canAssignMantri: boolean;
+  onMantriUpdated: () => Promise<void>;
 }) {
   const [selectedCustomer, setSelectedCustomer] = useState<(typeof rows)[number] | undefined>();
+  const [pnFilter, setPnFilter] = useState<"Semua" | "Tanpa PN">("Semua");
+  const [savingMantri, setSavingMantri] = useState("");
+  const [mantriMessage, setMantriMessage] = useState("");
   const { visibleColumns, toggleColumn } = usePersistentColumns("britoel-columns-nominatif-v2", nominatifColumnOptions);
-  const pagination = useTablePagination(rows, `${month}-${search}-${rows.length}`);
+  const withoutPnCount = rows.filter((item) => item.uploadedMantriMissing ?? !hasLoanMantri(item.mantri)).length;
+  const displayedRows = pnFilter === "Tanpa PN" ? rows.filter((item) => item.uploadedMantriMissing ?? !hasLoanMantri(item.mantri)) : rows;
+  const pagination = useTablePagination(displayedRows, `${month}-${search}-${pnFilter}-${displayedRows.length}`);
   const visible = (key: string) => visibleColumns.includes(key);
   const exportHeaders = nominatifColumnOptions.filter((column) => visible(column.key)).map((column) => column.label);
-  const exportData = rows.map((item) => {
+  const exportData = displayedRows.map((item) => {
     const values: Record<string, string | number> = {
       account: item.accountNumber,
       name: item.debtorName,
@@ -3119,6 +3138,26 @@ function NominatifView({
     return visibleColumns.map((key) => values[key]);
   });
 
+  async function saveManualMantri(accountNumber: string, mantri: string) {
+    setSavingMantri(accountNumber);
+    setMantriMessage("");
+    try {
+      const response = await fetch("/api/loan-mantri", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountNumber, mantri }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Penugasan Mantri belum dapat disimpan.");
+      await onMantriUpdated();
+      setMantriMessage(mantri ? `Mantri rekening ${accountNumber} berhasil disimpan.` : `Penugasan Mantri rekening ${accountNumber} dikosongkan.`);
+    } catch (error) {
+      setMantriMessage(error instanceof Error ? error.message : "Penugasan Mantri belum dapat disimpan.");
+    } finally {
+      setSavingMantri("");
+    }
+  }
+
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -3126,10 +3165,20 @@ function NominatifView({
         description="Daftar rekening nasabah dengan OS, kolektibilitas terbaru, mantri, dan tanggal realisasi."
         icon={ClipboardList}
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari rekening, debitur, mantri, atau produk" className="pl-9" />
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+        <div className="grid gap-2 sm:grid-cols-[minmax(280px,1fr)_220px]">
+          <Field label="Cari Nominatif">
+            <div className="relative w-full">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari rekening, debitur, mantri, atau produk" className="pl-9" />
+            </div>
+          </Field>
+          <Field label="Filter Pengelola">
+            <Select value={pnFilter} onChange={(event) => setPnFilter(event.target.value as "Semua" | "Tanpa PN")}>
+              <option value="Semua">Semua Pinjaman</option>
+              <option value="Tanpa PN">Pinjaman Tanpa PN ({formatNumber(withoutPnCount)})</option>
+            </Select>
+          </Field>
         </div>
         <TableTools
           columns={nominatifColumnOptions}
@@ -3139,6 +3188,7 @@ function NominatifView({
           onExportXls={() => exportRowsXls(`nominatif-${month}.xls`, exportHeaders, exportData)}
         />
       </div>
+      {mantriMessage ? <p className={cn("rounded-md border px-3 py-2 text-sm font-semibold", mantriMessage.includes("berhasil") || mantriMessage.includes("dikosongkan") ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700")}>{mantriMessage}</p> : null}
       <TableShell>
         <thead>
           <tr>
@@ -3170,14 +3220,33 @@ function NominatifView({
                 {visible("outstanding") ? <Td>{formatCurrency(item.outstanding)}</Td> : null}
                 {visible("quality") ? <Td><QualityBadge bucket={bucket} /></Td> : null}
                 {visible("product") ? <Td>{getProductType(item.description, item.loanType)}</Td> : null}
-                {visible("mantri") ? <Td>{item.mantri}</Td> : null}
+                {visible("mantri") ? (
+                  <Td>
+                    {(item.uploadedMantriMissing ?? !hasLoanMantri(item.mantri)) ? (
+                      <div className="flex min-w-56 items-center gap-2">
+                        {canAssignMantri ? (
+                          <Select
+                            value={item.mantri}
+                            disabled={savingMantri === item.accountNumber}
+                            onChange={(event) => saveManualMantri(item.accountNumber, event.target.value)}
+                            className="h-9 min-w-44"
+                          >
+                            <option value="">Pilih Mantri</option>
+                            {mantriNames.map((mantri) => <option key={mantri} value={mantri}>{mantri}</option>)}
+                          </Select>
+                        ) : <span className="font-semibold">{item.mantri || "Belum ditentukan"}</span>}
+                        <Badge className={cn("shrink-0 border-0", item.mantriAssignedManually ? "bg-sky-100 text-[#00529c]" : "bg-amber-100 text-amber-800")}>{item.mantriAssignedManually ? "Manual" : "Tanpa PN"}</Badge>
+                      </div>
+                    ) : <span className="font-semibold">{item.mantri}</span>}
+                  </Td>
+                ) : null}
                 {visible("realization") ? <Td>{dateLabel(item.realizedDate)}</Td> : null}
               </tr>
             );
           })}
         </tbody>
       </TableShell>
-      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+      <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={displayedRows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
       {selectedCustomer ? (
         <CustomerQuickPanel
           customer={selectedCustomer}

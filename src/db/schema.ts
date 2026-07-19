@@ -96,6 +96,18 @@ export const loanRecords = pgTable("loan_records", {
   index("loan_records_branch_cif_idx").on(table.branchCode, table.cif),
 ]);
 
+export const loanMantriAssignments = pgTable("loan_mantri_assignments", {
+  id: text("id").primaryKey(),
+  branchCode: text("branch_code").notNull(),
+  accountNumber: text("account_number").notNull(),
+  mantri: text("mantri").notNull(),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: dateTime("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("loan_mantri_assignments_branch_account_unique").on(table.branchCode, table.accountNumber),
+  index("loan_mantri_assignments_branch_idx").on(table.branchCode),
+]);
+
 export const nominativeCkpnRecords = pgTable("nominative_ckpn_records", {
   id: text("id").primaryKey(), uploadId: text("upload_id").notNull().references(() => uploadRecords.id, { onDelete: "cascade" }), branchCode: text("branch_code").notNull(),
   period: text("period").notNull(), accountNumber: text("account_number").notNull(), debtorName: text("debtor_name").notNull().default(""),
@@ -169,4 +181,4 @@ export const brimenFileLoanLogs = pgTable("brimen_file_loan_logs", {
   id: text("id").primaryKey(), loanId: text("loan_id").notNull().references(() => brimenFileLoans.id, { onDelete: "cascade" }), actor: text("actor").notNull(), message: text("message").notNull(), createdAt: dateTime("created_at").notNull(),
 }, (table) => [index("brimen_file_loan_logs_loan_idx").on(table.loanId)]);
 
-export const schema = { user, session, account, verification, whatsappContacts, uploadRecords, branchProfiles, loanRecords, nominativeCkpnRecords, missingLoanResolutions, ckpnForecasts, depositRecords, whatsappCampaigns, whatsappCampaignRecipients, warningLetters, covenanceRecords, auditLogs, brimenCustomers, brimenFileLoans, brimenFileLoanLogs };
+export const schema = { user, session, account, verification, whatsappContacts, uploadRecords, branchProfiles, loanRecords, loanMantriAssignments, nominativeCkpnRecords, missingLoanResolutions, ckpnForecasts, depositRecords, whatsappCampaigns, whatsappCampaignRecipients, warningLetters, covenanceRecords, auditLogs, brimenCustomers, brimenFileLoans, brimenFileLoanLogs };

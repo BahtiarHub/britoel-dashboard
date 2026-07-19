@@ -1,5 +1,6 @@
 import { parse } from "csv-parse/sync";
 import * as XLSX from "xlsx";
+import { hasLoanMantri } from "./loan-mantri";
 
 export type ImportedLoanRow = {
   cif: string;
@@ -400,10 +401,11 @@ export function mapLoanRows(rawRows: RawRow[], period: string) {
     const collectibility = hasQualityAmountColumns
       ? derivedCollectibility ?? parseCollectibility(collectibilityHeader ? row[collectibilityHeader] : "")
       : parseCollectibility(collectibilityHeader ? row[collectibilityHeader] : "");
-    const mantri = String(row[mantriHeader!]).trim();
-    if (!accountNumber || !debtorName || !collectibility || !mantri) {
+    const rawMantri = String(row[mantriHeader!]).trim();
+    const mantri = hasLoanMantri(rawMantri) ? rawMantri : "";
+    if (!accountNumber || !debtorName || !collectibility) {
       rejected += 1;
-      if (issues.length < 5) issues.push(`Baris ${index + 2}: rekening, nama, kolektibilitas, atau mantri tidak valid.`);
+      if (issues.length < 5) issues.push(`Baris ${index + 2}: rekening, nama, atau kolektibilitas tidak valid.`);
       return;
     }
     const plafond = parseMoney(pick(row, aliases.plafond));

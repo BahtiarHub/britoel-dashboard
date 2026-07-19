@@ -60,6 +60,8 @@ export interface LoanSnapshot {
   realizedAmount: number;
   principalArrears?: number;
   interestArrears?: number;
+  uploadedMantriMissing?: boolean;
+  mantriAssignedManually?: boolean;
 }
 
 export interface UploadHistory {
