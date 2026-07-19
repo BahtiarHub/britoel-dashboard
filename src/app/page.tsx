@@ -4755,16 +4755,14 @@ function parseQuickCountClipboard(pastedText: string) {
 }
 
 function QuickCountSheetDialog({
-  rows,
   setRows,
   onClose,
 }: {
-  rows: QuickCountSheetRow[];
   setRows: (rows: QuickCountSheetRow[]) => void;
   onClose: () => void;
 }) {
   const [pasteMessage, setPasteMessage] = useState("");
-  const [draftRows, setDraftRows] = useState<QuickCountSheetRow[]>(rows.map((row) => ({ ...row })));
+  const [draftRows, setDraftRows] = useState<QuickCountSheetRow[]>([{ ...emptyQuickCountSheetRow }]);
   const fields: { key: keyof QuickCountSheetRow; label: string; readOnly?: boolean; align?: string }[] = [
     { key: "accountNumber", label: "No rekening" },
     { key: "name", label: "Nama" },
@@ -4826,36 +4824,40 @@ function QuickCountSheetDialog({
 
   return (
     <div className="fixed inset-0 z-[200] hidden flex-col bg-[#edf4fa] xl:flex">
-      <header className="flex items-center justify-between border-b-4 border-[#f37021] bg-[#00529c] px-6 py-3 text-white shadow-sm">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[#f37021]"><FileSpreadsheet className="h-5 w-5" /></span>
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-black">Hasil Cektung</h2>
-            <p className="text-xs font-semibold text-blue-100">{formatNumber(draftRows.filter((row) => row.accountNumber.trim()).length)} baris - data kerja hari ini</p>
+      <header className="border-b-4 border-[#f37021] bg-[#00529c] px-6 py-3 text-white shadow-sm">
+        <div className="mx-auto flex w-full max-w-[1120px] items-center justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[#f37021]"><FileSpreadsheet className="h-5 w-5" /></span>
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-black">Hasil Cektung</h2>
+              <p className="text-xs font-semibold text-blue-100">{formatNumber(draftRows.filter((row) => row.accountNumber.trim()).length)} baris - data kerja hari ini</p>
+            </div>
           </div>
+          <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Tutup Hasil Cektung" className="text-white hover:bg-white/15 hover:text-white"><X className="h-5 w-5" /></Button>
         </div>
-        <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Tutup Hasil Cektung" className="text-white hover:bg-white/15 hover:text-white"><X className="h-5 w-5" /></Button>
       </header>
 
-      <div className="flex items-center justify-between gap-3 border-b border-[#d7e3ef] bg-white px-6 py-2.5">
-        <div className="flex items-center gap-2">
-          <Badge className="border-0 bg-[#eaf3fb] text-[#00529c]">7 kolom</Badge>
-          <span className="text-xs font-semibold text-slate-500">Tempel data pada sel pertama</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={pasteFromClipboard} className="border-[#00529c]/25 text-[#00529c]"><ClipboardPaste className="h-4 w-4" />Paste</Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => setDraftRows([{ ...emptyQuickCountSheetRow }])}>Kosongkan</Button>
-          <Button type="button" variant="outline" size="sm" onClick={onClose} className="border-slate-300 text-slate-700 hover:bg-slate-100"><X className="h-4 w-4" />Batal</Button>
-          <Button type="button" size="sm" className="bg-[#00529c] text-white hover:bg-[#004077]" onClick={saveAndClose}><Check className="h-4 w-4" />Simpan Hasil</Button>
+      <div className="border-b border-[#d7e3ef] bg-white px-6 py-2.5">
+        <div className="mx-auto flex w-full max-w-[1120px] items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Badge className="border-0 bg-[#eaf3fb] text-[#00529c]">7 kolom</Badge>
+            <span className="text-xs font-semibold text-slate-500">Tempel data pada sel pertama</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={pasteFromClipboard} className="border-[#00529c]/25 text-[#00529c]"><ClipboardPaste className="h-4 w-4" />Paste</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setDraftRows([{ ...emptyQuickCountSheetRow }])}>Kosongkan</Button>
+            <Button type="button" variant="outline" size="sm" onClick={onClose} className="border-slate-300 text-slate-700 hover:bg-slate-100"><X className="h-4 w-4" />Batal</Button>
+            <Button type="button" size="sm" className="bg-[#00529c] text-white hover:bg-[#004077]" onClick={saveAndClose}><Check className="h-4 w-4" />Simpan Hasil</Button>
+          </div>
         </div>
       </div>
 
-      {pasteMessage ? <div className="border-b border-[#d7e3ef] bg-[#f8fbfe] px-6 py-2 text-xs font-bold text-[#00529c]">{pasteMessage}</div> : null}
+      {pasteMessage ? <div className="border-b border-[#d7e3ef] bg-[#f8fbfe] px-6 py-2 text-xs font-bold text-[#00529c]"><p className="mx-auto max-w-[1120px]">{pasteMessage}</p></div> : null}
 
       <div className="flex-1 overflow-auto p-4" onPaste={handlePaste}>
-        <div className="mx-auto w-full min-w-[1060px] overflow-hidden rounded-md border border-[#9eb7ca] bg-white shadow-[0_12px_35px_rgba(0,55,105,0.10)]">
+        <div className="mx-auto w-full min-w-[970px] max-w-[1120px] overflow-hidden rounded-md border border-[#9eb7ca] bg-white shadow-[0_12px_35px_rgba(0,55,105,0.10)]">
           {(draftRows.length ? draftRows : [{ ...emptyQuickCountSheetRow }]).map((row, rowIndex) => (
-            <div key={`${row.accountNumber}-${rowIndex}`} className="grid grid-cols-[1.15fr_1.45fr_.8fr_1fr_1fr_1fr_1.65fr] border-b border-[#cbd9e4] last:border-b-0">
+            <div key={`${row.accountNumber}-${rowIndex}`} className={cn("grid grid-cols-[145px_170px_100px_125px_125px_125px_minmax(180px,1fr)] border-b border-[#cbd9e4] last:border-b-0", rowIndex % 2 === 1 && "bg-[#f8fbfe]")}>
               {fields.map((field, columnIndex) => (
                 <input
                   key={field.key}
@@ -4865,7 +4867,7 @@ function QuickCountSheetDialog({
                   readOnly={field.readOnly}
                   onChange={(event) => updateCell(rowIndex, field.key, event.target.value)}
                   className={cn(
-                    "h-9 min-w-0 rounded-none border-0 border-r border-[#cbd9e4] bg-white px-2.5 text-[11px] outline-none last:border-r-0 focus:bg-[#fff7ed] focus:ring-2 focus:ring-inset focus:ring-[#f37021]",
+                    "h-10 min-w-0 rounded-none border-0 border-r border-[#cbd9e4] bg-transparent px-2.5 text-[11px] outline-none last:border-r-0 focus:bg-[#fff7ed] focus:ring-2 focus:ring-inset focus:ring-[#f37021]",
                     field.readOnly && "bg-[#eef5fb] font-bold text-[#00529c]",
                     field.key === "accountNumber" && "font-mono font-bold text-[#00529c]",
                     field.align,
@@ -5319,7 +5321,7 @@ function QuickCountView({ month }: { month: MonthKey }) {
         </section>
       ) : null}
 
-      {sheetOpen && canExecuteQuickCount ? <QuickCountSheetDialog rows={sheetRows} setRows={setSheetRows} onClose={() => setSheetOpen(false)} /> : null}
+      {sheetOpen && canExecuteQuickCount ? <QuickCountSheetDialog setRows={setSheetRows} onClose={() => setSheetOpen(false)} /> : null}
     </div>
   );
 }
