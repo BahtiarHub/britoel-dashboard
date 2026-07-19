@@ -4964,31 +4964,37 @@ function QuickCountView({ month }: { month: MonthKey }) {
 
   const allRows = getArrearsRows(month).map((item) => ({ ...item, quality: classifyQuality(item, month) }));
   const mantriNames = [...new Set(allRows.map((item) => item.mantri || "Belum Ada Mantri"))].sort();
-  const rows = allRows.filter((item) =>
-    selectedQualities.includes(item.quality) &&
-    (mantriFilter === "Semua" || (item.mantri || "Belum Ada Mantri") === mantriFilter),
-  );
-  const pagination = useTablePagination(rows, `${month}-${selectedQualities.join("-")}-${mantriFilter}-${rows.length}`);
   const sheetResultByAccount = new Map(sheetRows
-    .filter((item) => normalizeAccount(item.accountNumber))
+    .filter((item) => normalizeAccount(item.accountNumber) && (item.billing.trim() || item.actToday.trim() || item.remaining.trim()))
     .map((item) => [normalizeAccount(item.accountNumber), {
       billing: parseQuickCountAmount(item.billing),
       actToday: parseQuickCountAmount(item.actToday),
       remaining: parseQuickCountAmount(item.remaining),
     }]));
-  const isResolved = (accountNumber: string) => {
+  const isCleared = (accountNumber: string) => {
     const result = sheetResultByAccount.get(normalizeAccount(accountNumber));
-    return Boolean(result && result.actToday > 0 && result.remaining <= 0);
+    return Boolean(result && result.remaining <= 0);
   };
   const hasPayment = (accountNumber: string) => (sheetResultByAccount.get(normalizeAccount(accountNumber))?.actToday ?? 0) > 0;
+  const candidateRows = allRows.filter((item) =>
+    selectedQualities.includes(item.quality) &&
+    (mantriFilter === "Semua" || (item.mantri || "Belum Ada Mantri") === mantriFilter),
+  );
+  const rows = candidateRows
+    .map((item) => {
+      const result = sheetResultByAccount.get(normalizeAccount(item.accountNumber));
+      return { ...item, quickRemainingArrears: result ? result.remaining : item.totalArrears, actToday: result?.actToday ?? 0 };
+    })
+    .filter((item) => item.quickRemainingArrears > 0);
+  const pagination = useTablePagination(rows, `${month}-${selectedQualities.join("-")}-${mantriFilter}-${rows.length}-${rows.reduce((total, item) => total + item.quickRemainingArrears, 0)}`);
   const smlRows = rows.filter((item) => isSml(item.quality));
   const nplRows = rows.filter((item) => isNpl(item.quality));
   const smlOs = smlRows.reduce((total, item) => total + item.outstanding, 0);
   const nplOs = nplRows.reduce((total, item) => total + item.outstanding, 0);
-  const totalArrears = rows.reduce((total, item) => total + item.totalArrears, 0);
-  const paidRows = rows.filter((item) => hasPayment(item.accountNumber));
-  const resolvedRows = rows.filter((item) => isResolved(item.accountNumber));
-  const paidRiskReductionByMantri = allRows.filter((item) => isResolved(item.accountNumber)).reduce((map, item) => {
+  const totalArrears = rows.reduce((total, item) => total + item.quickRemainingArrears, 0);
+  const paidRows = candidateRows.filter((item) => hasPayment(item.accountNumber));
+  const resolvedRows = candidateRows.filter((item) => isCleared(item.accountNumber));
+  const paidRiskReductionByMantri = allRows.filter((item) => isCleared(item.accountNumber)).reduce((map, item) => {
     const mantri = item.mantri || "Belum Ada Mantri";
     const current = map.get(mantri) ?? { sml: 0, npl: 0 };
     if (isSml(item.quality)) current.sml += item.outstanding;
@@ -5132,25 +5138,23 @@ function QuickCountView({ month }: { month: MonthKey }) {
 
       {rows.length ? (
         <>
-          <TableShell minWidth="min-w-[1250px]">
-            <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Kolektibilitas</Th><Th>Outstanding</Th><Th>Next Payment Date</Th><Th>Total Tunggakan</Th><Th>Hasil Cektung</Th></tr></thead>
-            <tbody>{pagination.pagedRows.map((item) => {
-              const result = sheetResultByAccount.get(normalizeAccount(item.accountNumber));
-              return <tr key={item.accountNumber}>
+          <TableShell minWidth="min-w-[1080px]">
+            <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Kolektibilitas</Th><Th>Outstanding</Th><Th>Next Payment Date</Th><Th>Total Tunggakan</Th></tr></thead>
+            <tbody>{pagination.pagedRows.map((item) => (
+              <tr key={item.accountNumber}>
                 <Td className="font-mono font-bold text-[#00529c]">{normalizeAccount(item.accountNumber)}</Td>
                 <Td className="font-semibold">{item.debtorName}</Td>
                 <Td>{item.mantri || "Belum Ada Mantri"}</Td>
                 <Td><QualityBadge bucket={item.quality} /></Td>
                 <Td>{formatCurrency(item.outstanding)}</Td>
                 <Td>{dateLabel(item.nextPaymentDate)}</Td>
-                <Td className="font-black text-rose-700">{formatCurrency(item.totalArrears)}</Td>
-                <Td>{result ? <div className="min-w-44"><Badge variant={result.actToday > 0 && result.remaining <= 0 ? "success" : "warning"}>{result.actToday > 0 && result.remaining <= 0 ? "Tunggakan Hilang" : "Masih Tunggak"}</Badge><p className="mt-1 text-[10px] font-semibold text-muted-foreground">Bayar {formatCurrency(result.actToday)} | Sisa {formatCurrency(result.remaining)}</p></div> : <span className="text-xs font-semibold text-muted-foreground">Belum ada hasil</span>}</Td>
-              </tr>;
-            })}</tbody>
+                <Td><div className="min-w-40"><p className="font-black text-rose-700">{formatCurrency(item.quickRemainingArrears)}</p>{item.actToday > 0 ? <p className="mt-1 text-[10px] font-bold text-emerald-700">Setelah bayar {formatCurrency(item.actToday)}</p> : null}</div></Td>
+              </tr>
+            ))}</tbody>
           </TableShell>
           <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
         </>
-      ) : <EmptyState title="Data Quick Count tidak ditemukan" description="Pilih sedikitnya satu kolektibilitas atau ubah filter Mantri." icon={Calculator} />}
+      ) : <EmptyState title={candidateRows.length ? "Semua tunggakan sudah terbayar" : "Data Quick Count tidak ditemukan"} description={candidateRows.length ? "Tidak ada lagi sisa tunggakan pada hasil filter hari ini." : "Pilih sedikitnya satu kolektibilitas atau ubah filter Mantri."} icon={candidateRows.length ? CheckCircle2 : Calculator} />}
 
       {sheetOpen ? <QuickCountSheetDialog rows={sheetRows} setRows={setSheetRows} onClose={() => setSheetOpen(false)} /> : null}
     </div>
