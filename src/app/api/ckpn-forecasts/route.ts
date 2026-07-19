@@ -1,13 +1,13 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { auditLogs, ckpnForecasts } from "@/db/schema";
+import { auditLogs, ckpnForecasts, loanRecords } from "@/db/schema";
 import { requireApiSession } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const allowedTargets = new Set(["Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet", "Lunas", "PH"]);
+const allowedTargets = new Set(["Lancar", "LR", "SML1", "SML2", "SML3", "KL", "Diragukan", "KL/D", "Macet", "Lunas", "PH"]);
 
 export async function PATCH(request: Request) {
   const authResult = await requireApiSession(request);
@@ -22,6 +22,20 @@ export async function PATCH(request: Request) {
   }
 
   const branchCode = authResult.session.user.branchCode ?? "8014";
+  if (targetCollectibility === "PH") {
+    const previousLoan = await db.select({ collectibility: loanRecords.collectibility })
+      .from(loanRecords)
+      .where(and(
+        eq(loanRecords.branchCode, branchCode),
+        eq(loanRecords.accountNumber, accountNumber),
+        lt(loanRecords.period, period),
+      ))
+      .orderBy(desc(loanRecords.period))
+      .limit(1);
+    if (previousLoan[0]?.collectibility.trim().toLowerCase() !== "macet") {
+      return NextResponse.json({ ok: false, message: "Pilihan PH hanya tersedia untuk kolektibilitas Macet." }, { status: 400 });
+    }
+  }
   const now = new Date();
   const existing = await db.select({ id: ckpnForecasts.id })
     .from(ckpnForecasts)

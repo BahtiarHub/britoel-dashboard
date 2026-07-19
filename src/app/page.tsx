@@ -5094,7 +5094,7 @@ function CkpnView({
     const mantriMatch = mantri === "Semua" || item.mantri === mantri;
     const productMatch = product === "Semua" || item.productType === product;
     const movementMatch = movement === "Semua" || item.movement === movement;
-    const qualityMatch = quality === "Semua" || item.previousBucket === quality;
+    const qualityMatch = quality === "Semua" || item.previousQuality === quality;
     return mantriMatch && productMatch && movementMatch && qualityMatch;
   });
   const filledRows = rows.filter((item) => item.targetCollectibility);
@@ -5103,7 +5103,6 @@ function CkpnView({
   const pemulihan = filledRows.filter((item) => item.ckpnImpact < 0).reduce((sum, item) => sum + item.ckpnImpact, 0);
   const net = filledRows.reduce((sum, item) => sum + item.ckpnImpact, 0);
   const pagination = useTablePagination(rows, `${sourceMonth}-${mantri}-${product}-${movement}-${quality}-${rows.length}-${forecastVersion}`);
-  const targetOptions: PrognosaCollectibility[] = ["Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet", "Lunas", "PH"];
 
   async function saveForecast(accountNumber: string, targetCollectibility: PrognosaCollectibility) {
     setSavingForecast(accountNumber);
@@ -5130,7 +5129,7 @@ function CkpnView({
     <div className="space-y-4">
       <SectionHeader
         title="Prognosa CKPN"
-        description={`Isi Prognosa Kolek secara manual untuk memproyeksikan Delta CKPN dari posisi ${getMonthLabel(comparisonMonth ?? sourceMonth)}. PUMK tidak masuk perhitungan.`}
+        description={`Isi Prognosa Kolek dari posisi ${getMonthLabel(comparisonMonth ?? sourceMonth)}. Downgrade dibatasi satu tingkat, kecuali rekening berstatus KTS. PUMK tidak masuk perhitungan.`}
         icon={PieChartIcon}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -5150,7 +5149,7 @@ function CkpnView({
           {["Semua", "Belum Diisi", "Memburuk", "Membaik", "Tetap"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
         <Field label={`Kolektibilitas Bulan Lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)}`}><Select value={quality} onChange={(event) => setQuality(event.target.value)}>
-          {["Semua", "Lancar", "LR", "SML1", "SML2", "SML3", "KL/D", "Macet"].map((item) => <option key={item} value={item}>{item}</option>)}
+          {["Semua", "Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
       </div>
       <div className="flex flex-col gap-3 rounded-lg border border-[#d7e3ef] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -5164,8 +5163,8 @@ function CkpnView({
           disabled={!changedRows.length}
           onClick={() => exportRowsXls(
             `prognosa-ckpn-perubahan-${sourceMonth}.xls`,
-            ["No Rekening", "Nama Debitur", "Mantri", "Outstanding Acuan", "Kolek Bulan Lalu", "Prognosa Kolek", "CKPN Terbentuk", "Delta CKPN", "Arah Prognosa"],
-            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousBucket, item.targetCollectibility, item.formedCkpn, item.ckpnImpact, item.movement]),
+            ["No Rekening", "Nama Debitur", "Mantri", "Outstanding Acuan", "Kolek Bulan Lalu", "Status Validasi", "Prognosa Kolek", "CKPN Terbentuk", "Delta CKPN", "Arah Prognosa"],
+            changedRows.map((item) => [item.accountNumber, item.debtorName, item.mantri, item.outstanding, item.previousQuality, item.isKts ? `KTS - estimasi ${item.expectedTargetQuality}` : "Sesuai", item.targetCollectibility, item.targetCollectibility === "Lunas" || item.targetCollectibility === "PH" ? item.formedCkpn : "", item.ckpnImpact, item.movement]),
           )}
         >
           <FileSpreadsheet className="mr-2 h-4 w-4" />Export Excel ({changedRows.length})
@@ -5191,7 +5190,10 @@ function CkpnView({
               <Td>{item.debtorName}</Td>
               <Td>{item.mantri}</Td>
               <Td><span className="font-semibold">{formatCurrency(item.outstanding)}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">Posisi bulan lalu</span></Td>
-              <Td><QualityBadge bucket={item.previousBucket} /></Td>
+              <Td>
+                <QualityBadge bucket={item.previousQuality} />
+                {item.isKts ? <span className="mt-1.5 block w-fit rounded bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">KTS · estimasi {item.expectedTargetQuality}</span> : null}
+              </Td>
               <Td>
                 <Select
                   value={item.targetCollectibility ?? ""}
@@ -5200,7 +5202,7 @@ function CkpnView({
                   className="h-9 min-w-40"
                 >
                   <option value="">Pilih prognosa kolek</option>
-                  {targetOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  {item.allowedTargets.map((option) => <option key={option} value={option}>{option}{item.isKts && option === item.expectedTargetQuality ? " (KTS)" : ""}</option>)}
                 </Select>
               </Td>
               <Td className={cn("font-medium", item.ckpnImpact > 0 ? "text-red-700" : item.ckpnImpact < 0 ? "text-emerald-700" : "text-slate-600")}>

@@ -13,7 +13,7 @@ export type QualityBucket =
 export type ProductType = "PUMK" | "Kupedes" | "Kupedes Rakyat" | "KUR Mikro" | "KUR KPP" | "Lainnya";
 export type MissingLoanStatus = "PH" | "Lunas";
 export type MissingLoanDisplayStatus = MissingLoanStatus | "Perlu Konfirmasi";
-export type PrognosaCollectibility = "Lancar" | "LR" | "SML1" | "SML2" | "SML3" | "KL/D" | "Macet" | "Lunas" | "PH";
+export type PrognosaCollectibility = "Lancar" | "LR" | "SML1" | "SML2" | "SML3" | "KL" | "Diragukan" | "KL/D" | "Macet" | "Lunas" | "PH";
 
 export interface NominativeCkpnRecord {
   period: MonthKey;
@@ -726,6 +726,27 @@ export function getMonthDate(month: MonthKey) {
   return new Date(year, monthNumber, 0);
 }
 
+type ExpectedQuality = Exclude<QualityBucket, "LR">;
+
+export function getExpectedQualityByNpd(nextPaymentDate: string, month: MonthKey): ExpectedQuality | undefined {
+  const dateMatch = nextPaymentDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const monthMatch = month.match(/^(\d{4})-(\d{2})$/);
+  if (!dateMatch || !monthMatch) return undefined;
+
+  const dueTime = Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]));
+  const asOfTime = Date.UTC(Number(monthMatch[1]), Number(monthMatch[2]), 0);
+  if (!Number.isFinite(dueTime) || !Number.isFinite(asOfTime)) return undefined;
+  if (dueTime > asOfTime) return "Lancar";
+
+  const daysPastDue = Math.floor((asOfTime - dueTime) / 86_400_000) + 1;
+  if (daysPastDue <= 30) return "SML1";
+  if (daysPastDue <= 60) return "SML2";
+  if (daysPastDue <= 90) return "SML3";
+  if (daysPastDue <= 120) return "KL";
+  if (daysPastDue <= 180) return "Diragukan";
+  return "Macet";
+}
+
 export function getSnapshots(month: MonthKey) {
   return snapshotsByMonth.get(month) ?? [];
 }
@@ -975,20 +996,50 @@ export function getPrognosaCkpnRows(month: MonthKey) {
       if (!group) return undefined;
 
       const previousBucket = getCkpnBucket(item, previousMonth);
+      const previousQuality = classifyQuality(item, previousMonth);
       const previousRate = getLossRate(item, previousMonth);
       if (previousRate === undefined) return undefined;
 
-      const targetCollectibility = ckpnForecastByPeriodAndAccount.get(month)?.get(normalizeAccountKey(item.accountNumber));
+      const expectedCurrentQuality = getExpectedQualityByNpd(item.nextPaymentDate, previousMonth);
+      const expectedTargetQuality = getExpectedQualityByNpd(item.nextPaymentDate, month);
+      const isKts = Boolean(expectedCurrentQuality && expectedCurrentQuality !== previousQuality);
+      const qualityOrder: ExpectedQuality[] = ["Lancar", "SML1", "SML2", "SML3", "KL", "Diragukan", "Macet"];
+      const previousIndex = qualityOrder.indexOf(previousQuality === "LR" ? "Lancar" : previousQuality);
+      const normalTargets = previousIndex >= 0 ? qualityOrder.slice(0, Math.min(previousIndex + 2, qualityOrder.length)) : [];
+      const adjustedTargets: PrognosaCollectibility[] = previousBucket === "LR"
+        ? ["LR", ...normalTargets.filter((quality) => quality !== "Lancar")]
+        : [...normalTargets];
+      if (isKts && expectedTargetQuality && !adjustedTargets.includes(expectedTargetQuality)) adjustedTargets.push(expectedTargetQuality);
+      adjustedTargets.push("Lunas");
+      if (previousQuality === "Macet") adjustedTargets.push("PH");
+      const allowedTargets = [...new Set(adjustedTargets)];
+
+      const savedTarget = ckpnForecastByPeriodAndAccount.get(month)?.get(normalizeAccountKey(item.accountNumber));
+      const normalizedSavedTarget = savedTarget === "KL/D"
+        ? previousQuality === "Diragukan" || expectedTargetQuality === "Diragukan" ? "Diragukan" : "KL"
+        : savedTarget;
+      const targetCollectibility = normalizedSavedTarget && allowedTargets.includes(normalizedSavedTarget)
+        ? normalizedSavedTarget
+        : undefined;
       const nominative = nominativeCkpnByPeriodAndAccount.get(previousMonth)?.get(normalizeAccountKey(item.accountNumber));
       const formedCkpn = nominative?.formedCkpn ?? item.outstanding * previousRate;
+      const targetLossRateKey = targetCollectibility === "KL" || targetCollectibility === "Diragukan"
+        ? "KL/D"
+        : targetCollectibility;
       const latestRate = targetCollectibility === "PH"
         ? 1
         : targetCollectibility === "Lunas"
           ? 0
-          : targetCollectibility
-            ? ckpnLossRates[group][targetCollectibility as keyof (typeof ckpnLossRates)[typeof group]]
+          : targetLossRateKey
+            ? ckpnLossRates[group][targetLossRateKey as keyof (typeof ckpnLossRates)[typeof group]]
             : undefined;
-      const ckpnImpact = latestRate === undefined ? 0 : item.outstanding * latestRate - formedCkpn;
+      const ckpnImpact = !targetCollectibility || latestRate === undefined
+        ? 0
+        : targetCollectibility === "PH"
+          ? item.outstanding - formedCkpn
+          : targetCollectibility === "Lunas"
+            ? -formedCkpn
+            : item.outstanding * (latestRate - previousRate);
       const movement = !targetCollectibility
         ? "Belum Diisi" as const
         : targetCollectibility === "PH"
@@ -1006,13 +1057,20 @@ export function getPrognosaCkpnRows(month: MonthKey) {
         month,
         productType,
         previousBucket,
+        previousQuality,
+        expectedCurrentQuality,
+        expectedTargetQuality,
+        isKts,
+        allowedTargets,
         targetCollectibility,
         previousRate,
         latestRate,
         formedCkpn,
         ckpnImpact,
         movement,
-        ckpnBasisSource: nominative ? "Nominatif Per Rekening" as const : "Estimasi loss rate internal" as const,
+        ckpnBasisSource: targetCollectibility === "Lunas" || targetCollectibility === "PH"
+          ? nominative ? "Nominatif Per Rekening" as const : "Estimasi loss rate internal" as const
+          : "Loss rate internal" as const,
       };
     })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
