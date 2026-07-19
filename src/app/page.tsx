@@ -4537,7 +4537,8 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
     detail: `${item.productType} | OS ${formatCurrency(item.outstanding)}`,
     optIn: true,
   }));
-  const today = new Date("2026-07-12T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const reminderPreviousMonth = getPreviousMonth(month);
   const reminderRecipients: WhatsappRecipient[] = getSnapshots(month)
     .map((item) => {
@@ -4545,7 +4546,8 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       const daysUntilDue = Math.ceil((due.getTime() - today.getTime()) / 86400000);
       return { item, daysUntilDue };
     })
-    .filter(({ daysUntilDue }) => daysUntilDue >= 0 && daysUntilDue <= 14)
+    .filter(({ daysUntilDue }) => daysUntilDue >= 0 && daysUntilDue < 5)
+    .sort((a, b) => a.daysUntilDue - b.daysUntilDue || a.item.nextPaymentDate.localeCompare(b.item.nextPaymentDate))
     .map(({ item, daysUntilDue }) => {
       const previous = reminderPreviousMonth ? getCompareSnapshot(reminderPreviousMonth, item.accountNumber) : undefined;
       return {
@@ -4556,7 +4558,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       mantri: item.mantri,
       dueDate: item.nextPaymentDate,
       previousQuality: previous && reminderPreviousMonth ? classifyQuality(previous, reminderPreviousMonth) : "-" as const,
-      detail: `${daysUntilDue} hari lagi | ${dateLabel(item.nextPaymentDate)}`,
+      detail: `${daysUntilDue === 0 ? "Hari ini" : `${daysUntilDue} hari lagi`} | ${dateLabel(item.nextPaymentDate)}`,
       optIn: true,
     };
     });
@@ -4569,10 +4571,6 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
   const pagination = useTablePagination(recipients, `${month}-${campaignType}-${waMantriFilter}-${waPreviousQualityFilter}-${recipients.length}`);
   const selectedRows = recipients.filter((item) => selectedRecipients.has(item.id));
   const templateName = campaignType === "pipeline" ? "penawaran_suplesi" : "pengingat_setoran";
-  const previewRecipient = recipients[0];
-  const previewMessage = campaignType === "pipeline"
-    ? `Yth. Bapak/Ibu ${previewRecipient?.name ?? "Nama Nasabah"}, BRI Unit Greenvilage memiliki penawaran suplesi ${previewRecipient?.product ?? "pinjaman"}. Silakan hubungi Mantri ${previewRecipient?.mantri ?? "pengelola"} untuk informasi lebih lanjut.`
-    : `Yth. Bapak/Ibu ${previewRecipient?.name ?? "Nama Nasabah"}, kami mengingatkan jadwal setoran pinjaman pada ${previewRecipient?.dueDate ? dateLabel(previewRecipient.dueDate) : "tanggal jatuh tempo"}. Silakan memastikan dana setoran tersedia atau hubungi Mantri ${previewRecipient?.mantri ?? "pengelola"}.`;
 
   useEffect(() => {
     if (!contactsLoaded) return;
@@ -4669,7 +4667,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
     <div className="space-y-4">
       <SectionHeader title="WA Blast" description="Kirim penawaran pipeline suplesi dan pengingat setoran menjelang Next Payment Date." icon={MessageCircle} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Penerima Tersedia" value={`${recipients.length} nasabah`} helper={campaignType === "pipeline" ? "Pipeline memenuhi syarat" : "Jatuh tempo 14 hari"} icon={UsersRound} />
+        <MetricCard label="Penerima Tersedia" value={`${recipients.length} nasabah`} helper={campaignType === "pipeline" ? "Pipeline memenuhi syarat" : "Jatuh tempo kurang dari 5 hari"} icon={UsersRound} />
         <MetricCard label="Penerima Dipilih" value={`${selectedRows.length} nasabah`} helper="Memiliki persetujuan komunikasi" tone="success" icon={CheckCircle2} />
         <MetricCard label="Template Meta" value={templateName} helper="Template harus disetujui Meta" tone="warning" icon={FileText} />
         <div className={cn("bri-card rounded-lg border p-4", sendMode === "live" ? "border-emerald-200 bg-emerald-50" : "border-sky-200 bg-sky-50")}><p className="text-xs font-black uppercase text-muted-foreground">Mode Pengiriman</p><p className={cn("mt-2 text-xl font-black", sendMode === "live" ? "text-emerald-700" : "text-sky-700")}>{sendMode === "live" ? "Cloud API Aktif" : "Simulasi Aman"}</p><p className="mt-1 text-xs text-muted-foreground">{sendMode === "live" ? "Pesan dikirim melalui Meta" : "Tidak mengirim pesan nyata"}</p></div>
@@ -4678,7 +4676,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
         <p className="text-xs font-black uppercase text-[#f37021]">Jenis Campaign</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <button type="button" onClick={() => setCampaignType("pipeline")} className={cn("flex min-h-16 items-center gap-3 rounded-lg border p-3 text-left", campaignType === "pipeline" ? "border-emerald-500 bg-emerald-50" : "border-[#d7e3ef] bg-white")}><span className="grid h-10 w-10 place-items-center rounded-md bg-emerald-600 text-white"><Gauge className="h-5 w-5" /></span><span><strong className="block text-[#004077]">Penawaran Pipeline Suplesi</strong><span className="text-xs text-muted-foreground">Nasabah lancar yang memenuhi kriteria suplesi</span></span></button>
-          <button type="button" onClick={() => setCampaignType("reminder")} className={cn("flex min-h-16 items-center gap-3 rounded-lg border p-3 text-left", campaignType === "reminder" ? "border-[#f37021] bg-[#fff7ed]" : "border-[#d7e3ef] bg-white")}><span className="grid h-10 w-10 place-items-center rounded-md bg-[#f37021] text-white"><CalendarDays className="h-5 w-5" /></span><span><strong className="block text-[#004077]">Pengingat Setoran</strong><span className="text-xs text-muted-foreground">Next Payment Date dalam 14 hari</span></span></button>
+          <button type="button" onClick={() => setCampaignType("reminder")} className={cn("flex min-h-16 items-center gap-3 rounded-lg border p-3 text-left", campaignType === "reminder" ? "border-[#f37021] bg-[#fff7ed]" : "border-[#d7e3ef] bg-white")}><span className="grid h-10 w-10 place-items-center rounded-md bg-[#f37021] text-white"><CalendarDays className="h-5 w-5" /></span><span><strong className="block text-[#004077]">Pengingat Setoran</strong><span className="text-xs text-muted-foreground">Next Payment Date kurang dari 5 hari</span></span></button>
         </div>
       </div>
       <div className="grid gap-3 rounded-lg border border-[#d7e3ef] bg-[#f8fbfe] p-4 sm:grid-cols-2">
@@ -4697,12 +4695,12 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
           <div className="flex items-end"><p className="w-full rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-700">Filter mantri berlaku untuk daftar penawaran pipeline suplesi.</p></div>
         )}
       </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-3">
+      <div className="min-w-0 space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="text-xs font-black uppercase text-[#f37021]">Daftar Penerima</p><p className="text-sm text-muted-foreground">Nomor HP dapat diisi langsung dan tersimpan otomatis untuk periode berikutnya.</p></div>
-            <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set())}>Kosongkan</Button><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set(recipients.filter((item) => item.optIn && item.phone).map((item) => item.id)))}>Pilih Semua</Button></div>
+            <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set())}>Kosongkan</Button><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set(recipients.filter((item) => item.optIn && item.phone).map((item) => item.id)))}>Pilih Semua</Button><Button type="button" size="sm" className="bg-[#00529c] hover:bg-[#003f78]" disabled={!selectedRows.length} onClick={() => setShowConfirmation(true)}><MessageCircle className="h-4 w-4" />Tinjau Pengiriman ({selectedRows.length})</Button></div>
           </div>
+          {resultMessage ? <p className="rounded-md border border-sky-200 bg-[#eaf3fb] px-3 py-2 text-xs font-semibold text-[#00529c]">{resultMessage}</p> : null}
           {recipients.length ? (
             <>
             <TableShell minWidth="min-w-[1180px]">
@@ -4738,8 +4736,6 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
             <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={recipients.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
             </>
           ) : <EmptyState title="Tidak ada penerima" description="Tidak ada nasabah yang memenuhi kriteria campaign pada periode ini." icon={MessageCircle} />}
-        </div>
-        <div className="h-fit rounded-lg border border-[#d7e3ef] bg-white p-4 shadow-[0_10px_24px_rgba(0,55,105,0.07)]"><p className="text-xs font-black uppercase text-[#f37021]">Pratinjau Template</p><div className="mt-3 rounded-lg bg-[#e7f7ef] p-4 text-sm leading-6 text-[#173b2d] shadow-inner">{previewMessage}<p className="mt-3 text-right text-[10px] text-emerald-700">BRI Unit Greenvilage</p></div><p className="mt-3 text-xs leading-5 text-muted-foreground">Template pengiriman nyata mengikuti template <strong>{templateName}</strong> yang disetujui Meta.</p><Button type="button" className="mt-4 w-full bg-[#00529c] hover:bg-[#003f78]" disabled={!selectedRows.length} onClick={() => setShowConfirmation(true)}><MessageCircle className="mr-2 h-4 w-4" />Tinjau Pengiriman ({selectedRows.length})</Button>{resultMessage ? <p className="mt-3 rounded-md bg-[#eaf3fb] p-3 text-xs font-semibold text-[#00529c]">{resultMessage}</p> : null}</div>
       </div>
       {showConfirmation ? <div className="fixed inset-0 z-[90] grid place-items-center bg-[#001b33]/55 p-4"><div className="w-full max-w-lg rounded-lg bg-white shadow-2xl"><div className="border-b border-[#d7e3ef] p-5"><p className="text-xs font-black uppercase text-[#f37021]">Konfirmasi Campaign</p><h2 className="mt-1 text-xl font-black text-[#00529c]">Kirim ke {selectedRows.length} nasabah?</h2></div><div className="space-y-3 p-5"><p className="text-sm leading-6 text-muted-foreground">Campaign menggunakan template <strong>{templateName}</strong>. Hanya nasabah yang telah memberikan persetujuan komunikasi yang diproses.</p><div className={cn("rounded-md border p-3 text-sm font-bold", sendMode === "live" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-sky-200 bg-sky-50 text-sky-700")}>{sendMode === "live" ? "Cloud API aktif: tindakan ini akan mengirim pesan WhatsApp nyata." : "Mode simulasi: tidak ada pesan WhatsApp nyata yang dikirim."}</div></div><div className="flex justify-end gap-2 border-t border-[#d7e3ef] p-4"><Button type="button" variant="outline" onClick={() => setShowConfirmation(false)}>Batal</Button><Button type="button" className="bg-emerald-600 hover:bg-emerald-700" disabled={sending} onClick={submitCampaign}>{sending ? "Memproses..." : "Kirim Sekarang"}</Button></div></div></div> : null}
     </div>
