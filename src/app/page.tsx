@@ -7907,7 +7907,13 @@ function BrimenProcessForm({
   const [suplesiSearchStatus, setSuplesiSearchStatus] = useState<"idle" | "found" | "not-found">("idle");
   const [suplesiNewAccountStatus, setSuplesiNewAccountStatus] = useState<"idle" | "found" | "not-found">("idle");
   const [selectedCustomer, setSelectedCustomer] = useState(customer);
+  const suplesiNewAccountRef = useRef<HTMLInputElement>(null);
   const currentCustomer = selectedCustomer;
+  useEffect(() => {
+    if (suplesiSearchStatus !== "found") return;
+    const frame = window.requestAnimationFrame(() => suplesiNewAccountRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [suplesiSearchStatus]);
   const updateProcess = (key: keyof BrimenProcessFormState, value: string) => {
     setProcessForm({ ...processForm, [key]: value });
   };
@@ -7925,11 +7931,11 @@ function BrimenProcessForm({
       setSelectedCustomer(matched);
       setCustomerForm({
         ...customerToForm(matched),
-        accountNumber,
-        name: matchedLoan.debtorName,
-        plafond: formatRupiahInput(matchedLoan.plafond),
-        realizationDate: matchedLoan.realizedDate,
-        mantri: matchedLoan.mantri,
+        accountNumber: "",
+        name: "",
+        plafond: "",
+        realizationDate: "",
+        mantri: "",
       });
       setProcessForm({
         ...processForm,
@@ -7940,7 +7946,7 @@ function BrimenProcessForm({
           : processForm.guaranteeAction === "tambah"
             ? "tambah"
             : "ambil",
-        newPlafond: formatRupiahInput(matchedLoan.plafond),
+        newPlafond: "",
         newBrimenBerkas: matched.brimenBerkas,
         newBrimenJaminan: matched.brimenJaminan,
         newGuarantee: matched.guarantee,
@@ -8249,6 +8255,7 @@ function BrimenProcessForm({
                     ) : (
                       <div className="space-y-2">
                         <Input
+                          ref={processForm.operationType === "Suplesi" ? suplesiNewAccountRef : undefined}
                           value={formatAccountNumber(customerForm.accountNumber)}
                           onChange={(event) => processForm.operationType === "Suplesi" ? handleSuplesiNewAccount(event.target.value) : updateCustomer("accountNumber", formatAccountNumber(event.target.value))}
                           inputMode="numeric"
