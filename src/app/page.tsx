@@ -6174,10 +6174,8 @@ function BrimenView({
     record.skuNibNumber,
     record.slikOjk,
   ].every((value) => value.trim()));
-  const previousCovenancePeriod = getPreviousMonth(latestLoanPeriod);
-  const visibleCovenancePeriods = new Set([latestLoanPeriod, previousCovenancePeriod].filter((value): value is MonthKey => Boolean(value)));
   const covenantRows = latestLoanRows
-    .filter((item) => visibleCovenancePeriods.has(item.realizedDate.slice(0, 7) as MonthKey))
+    .filter((item) => item.realizedDate.slice(0, 7) === latestLoanPeriod)
     .map((item) => {
       const record = covenanceRecordMap.get(`${normalizeAccount(item.accountNumber)}|${item.realizedDate}`);
       return { ...item, record, dataStatus: isCovenanceComplete(record) ? "Lengkap" as const : "Belum Lengkap" as const };
@@ -6967,6 +6965,7 @@ function BrimenView({
           setForm={setForm}
           loanLookupRows={latestLoanRows}
           loanLookupLabel={`LW321 terbaru posisi ${getMonthLabel(latestLoanPeriod)}`}
+          covenancePeriod={latestLoanPeriod}
           onCancel={() => {
             setFormMode("none");
             setForm(emptyBrimenForm);
@@ -7068,7 +7067,7 @@ function BrimenView({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-[#00529c]"><CalendarDays className="h-5 w-5 text-[#f37021]" />Covenance Day</CardTitle>
-                  <CardDescription className="mt-1">Kelengkapan dokumen untuk realisasi {previousCovenancePeriod ? getMonthLabel(previousCovenancePeriod) : "bulan lalu"} dan {getMonthLabel(latestLoanPeriod)}. Status tersimpan tetap dipertahankan saat LW321 diperbarui.</CardDescription>
+                  <CardDescription className="mt-1">Kelengkapan dokumen untuk realisasi bulan berjalan, {getMonthLabel(latestLoanPeriod)}. Status tersimpan tetap dipertahankan saat LW321 diperbarui.</CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge variant="success">{covenantRows.filter((item) => item.dataStatus === "Lengkap").length} lengkap</Badge>
@@ -7543,6 +7542,7 @@ function BrimenCustomerForm({
   setForm,
   loanLookupRows = [],
   loanLookupLabel = "LW321 terbaru",
+  covenancePeriod,
   onCancel,
   onSubmit,
 }: {
@@ -7551,6 +7551,7 @@ function BrimenCustomerForm({
   setForm: (value: BrimenFormState) => void;
   loanLookupRows?: LoanSnapshot[];
   loanLookupLabel?: string;
+  covenancePeriod?: MonthKey;
   onCancel: () => void;
   onSubmit: () => void;
 }) {
@@ -7582,11 +7583,13 @@ function BrimenCustomerForm({
       plafond: formatRupiahInput(matched.plafond),
       realizationDate: matched.realizedDate,
       mantri: matched.mantri,
+      ...(matched.realizedDate.slice(0, 7) === covenancePeriod ? {} : emptyCovenanceForm),
     });
     setAccountSearchStatus("found");
   };
   const isArchiveMode = mode === "archive";
   const isEditMode = mode === "edit";
+  const showCovenanceFields = mode === "add" && Boolean(covenancePeriod) && form.realizationDate.slice(0, 7) === covenancePeriod;
   const title = mode === "add" ? "Tambah Data BRIMEN" : isArchiveMode ? "Arsipkan Berkas Aktif" : "Edit Data BRIMEN";
   const description = isArchiveMode
     ? "Lengkapi data arsip yang belum terisi. Data pokok nasabah dibuat terkunci."
@@ -7698,7 +7701,7 @@ function BrimenCustomerForm({
           </div>
           </section>
 
-          {mode === "add" ? (
+          {showCovenanceFields ? (
             <section className="rounded-lg border border-[#bdd5e8] bg-white p-4 shadow-[0_6px_16px_rgba(0,55,105,0.04)]">
               <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#e3edf6] pb-3">
                 <div className="flex items-center gap-2">
@@ -7971,6 +7974,7 @@ function BrimenProcessForm({
         plafond: formatRupiahInput(matchedLoan.plafond),
         realizationDate: matchedLoan.realizedDate,
         mantri: matchedLoan.mantri,
+        ...(matchedLoan.realizedDate.slice(0, 7) === latestLoanPeriod ? {} : emptyCovenanceForm),
       });
       setProcessForm({ ...processForm, newPlafond: formatRupiahInput(matchedLoan.plafond) });
       setSuplesiNewAccountStatus("found");
@@ -8002,16 +8006,18 @@ function BrimenProcessForm({
   const showEditData = processForm.operationType === "Edit Data";
   const needsPhoto = showPickupForm && !processForm.collateralPickupPhotoName;
   const needsSupportFile = showPickupForm && processForm.pickupRelationship !== "Pemilik Jaminan" && !processForm.pickupSupportFileName;
+  const requiresSuplesiCovenance = customerForm.realizationDate.slice(0, 7) === latestLoanPeriod;
   const missingSuplesiCovenance =
     processForm.operationType === "Suplesi" &&
     (suplesiNewAccountStatus !== "found" ||
       !customerForm.realizationDate ||
-      !customerForm.sphNumber.trim() ||
-      !customerForm.creditApplicationNumber.trim() ||
-      !customerForm.ktpNumber.trim() ||
-      !customerForm.kkNumber.trim() ||
-      !customerForm.skuNibNumber.trim() ||
-      !customerForm.slikOjk.trim());
+      (requiresSuplesiCovenance &&
+        (!customerForm.sphNumber.trim() ||
+          !customerForm.creditApplicationNumber.trim() ||
+          !customerForm.ktpNumber.trim() ||
+          !customerForm.kkNumber.trim() ||
+          !customerForm.skuNibNumber.trim() ||
+          !customerForm.slikOjk.trim())));
   const missingRequiredProcessFields =
     (processForm.operationType === "Suplesi" || showEditData) &&
     (!formatAccountNumber(customerForm.accountNumber) ||
@@ -8412,7 +8418,7 @@ function BrimenProcessForm({
               </div>
             ) : null}
 
-            {processForm.operationType === "Suplesi" ? (
+            {processForm.operationType === "Suplesi" && requiresSuplesiCovenance ? (
               <section className="mt-4 rounded-lg border border-[#bdd5e8] bg-[#f8fbfe] p-4 shadow-[0_6px_16px_rgba(0,55,105,0.04)]">
                 <div className="mb-4 flex flex-col gap-2 border-b border-[#d7e3ef] pb-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
