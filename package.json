@@ -22,6 +22,7 @@
     "storage:migrate": "tsx scripts/migrate-files-to-supabase.ts",
     "verify:production": "tsx scripts/verify-production.ts",
     "smoke:local-auth": "tsx scripts/smoke-local-auth.ts",
+    "smoke:brimen-suplesi": "tsx scripts/smoke-brimen-suplesi.ts",
     "smoke:production": "tsx scripts/smoke-production.ts",
     "load:test": "k6 run tests/load/britoel.js"
   },

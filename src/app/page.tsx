@@ -6510,6 +6510,11 @@ function BrimenView({
       setActionMessage(payload.message ?? "Gagal memproses data.");
       return;
     }
+    if (payload.covenanceSaved) {
+      const covenanceResponse = await fetch("/api/covenance", { cache: "no-store" });
+      const covenancePayload = await covenanceResponse.json();
+      if (covenanceResponse.ok && covenancePayload.ok) setCovenanceRecords(covenancePayload.data ?? []);
+    }
     setFormMode("none");
     setLoanCustomer(undefined);
     setForm(emptyBrimenForm);
@@ -8015,11 +8020,21 @@ function BrimenProcessForm({
   const showEditData = processForm.operationType === "Edit Data";
   const needsPhoto = showPickupForm && !processForm.collateralPickupPhotoName;
   const needsSupportFile = showPickupForm && processForm.pickupRelationship !== "Pemilik Jaminan" && !processForm.pickupSupportFileName;
+  const missingSuplesiCovenance =
+    processForm.operationType === "Suplesi" &&
+    (!customerForm.realizationDate ||
+      !customerForm.sphNumber.trim() ||
+      !customerForm.creditApplicationNumber.trim() ||
+      !customerForm.ktpNumber.trim() ||
+      !customerForm.kkNumber.trim() ||
+      !customerForm.skuNibNumber.trim() ||
+      !customerForm.slikOjk.trim());
   const missingRequiredProcessFields =
     (processForm.operationType === "Suplesi" || showEditData) &&
     (!formatAccountNumber(customerForm.accountNumber) ||
       !customerForm.name.trim() ||
-      !(showEditData ? customerForm.plafond : processForm.newPlafond).trim());
+      !(showEditData ? customerForm.plafond : processForm.newPlafond).trim() ||
+      missingSuplesiCovenance);
   const activeStep = activeProcess ? 2 : 1;
   const guaranteeLabel =
     processForm.guaranteeAction === "none"
@@ -8230,7 +8245,7 @@ function BrimenProcessForm({
                 <>
                   <div className="space-y-1.5">
                     <p className="text-xs font-black uppercase tracking-[0.1em] text-muted-foreground">No Rekening</p>
-                    {processForm.operationType === "Suplesi" ? (
+                    {processForm.operationType === "Suplesi" && suplesiSearchStatus !== "found" ? (
                       <>
                         <div className="relative">
                           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -8252,15 +8267,26 @@ function BrimenProcessForm({
                         />
                       </>
                     ) : (
-                      <Input
-                        value={formatAccountNumber(customerForm.accountNumber)}
-                        onChange={(event) => updateCustomer("accountNumber", formatAccountNumber(event.target.value))}
-                        inputMode="numeric"
-                        maxLength={15}
-                        required
-                        placeholder="15 digit no rekening"
-                        className="border-[#d7e3ef] bg-white font-mono text-[#0f2942]"
-                      />
+                      <div className="space-y-2">
+                        <Input
+                          value={formatAccountNumber(customerForm.accountNumber)}
+                          onChange={(event) => updateCustomer("accountNumber", formatAccountNumber(event.target.value))}
+                          inputMode="numeric"
+                          maxLength={15}
+                          required
+                          placeholder="15 digit no rekening"
+                          className={cn(
+                            "border-[#d7e3ef] bg-white font-mono text-[#0f2942]",
+                            processForm.operationType === "Suplesi" && "border-emerald-300 ring-2 ring-emerald-100",
+                          )}
+                        />
+                        {processForm.operationType === "Suplesi" ? (
+                          <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                            Data lama sudah dimuat. No rekening kini dapat diubah untuk pinjaman hasil suplesi.
+                          </div>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                   <DarkField label="Nama Nasabah">
@@ -8370,6 +8396,43 @@ function BrimenProcessForm({
                   </Button>
                 ) : null}
               </div>
+            ) : null}
+
+            {processForm.operationType === "Suplesi" ? (
+              <section className="mt-4 rounded-lg border border-[#bdd5e8] bg-[#f8fbfe] p-4 shadow-[0_6px_16px_rgba(0,55,105,0.04)]">
+                <div className="mb-4 flex flex-col gap-2 border-b border-[#d7e3ef] pb-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-emerald-50 text-emerald-700">
+                      <ClipboardList className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-black uppercase text-[#00529c]">Dokumen Covenance Day</p>
+                      <p className="text-[11px] text-muted-foreground">Dokumen pinjaman baru disimpan bersama proses suplesi</p>
+                    </div>
+                  </div>
+                  <Badge variant="success">6 dokumen wajib</Badge>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <DarkField label="No SPH">
+                    <Input value={customerForm.sphNumber} onChange={(event) => updateCustomer("sphNumber", event.target.value)} placeholder="Masukkan nomor SPH" required className="border-[#b9cfe2] bg-white text-[#0f2942]" />
+                  </DarkField>
+                  <DarkField label="No Surat Permohonan Kredit">
+                    <Input value={customerForm.creditApplicationNumber} onChange={(event) => updateCustomer("creditApplicationNumber", event.target.value)} placeholder="Masukkan nomor surat permohonan" required className="border-[#b9cfe2] bg-white text-[#0f2942]" />
+                  </DarkField>
+                  <DarkField label="No KTP">
+                    <Input value={customerForm.ktpNumber} onChange={(event) => updateCustomer("ktpNumber", event.target.value.replace(/\D/g, ""))} placeholder="Nomor KTP debitur" inputMode="numeric" required className="border-[#b9cfe2] bg-white text-[#0f2942]" />
+                  </DarkField>
+                  <DarkField label="No KK">
+                    <Input value={customerForm.kkNumber} onChange={(event) => updateCustomer("kkNumber", event.target.value.replace(/\D/g, ""))} placeholder="Nomor kartu keluarga" inputMode="numeric" required className="border-[#b9cfe2] bg-white text-[#0f2942]" />
+                  </DarkField>
+                  <DarkField label="No SKU/NIB">
+                    <Input value={customerForm.skuNibNumber} onChange={(event) => updateCustomer("skuNibNumber", event.target.value)} placeholder="Nomor SKU atau NIB" required className="border-[#b9cfe2] bg-white text-[#0f2942]" />
+                  </DarkField>
+                  <DarkField label="No NPWP">
+                    <Input value={customerForm.slikOjk} onChange={(event) => updateCustomer("slikOjk", event.target.value.replace(/\D/g, ""))} placeholder="Nomor NPWP" inputMode="numeric" required className="border-[#b9cfe2] bg-white text-[#0f2942]" />
+                  </DarkField>
+                </div>
+              </section>
             ) : null}
 
             {processForm.operationType === "Suplesi" || showEditData ? (

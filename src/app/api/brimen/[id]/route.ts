@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { brimenCustomers } from "@/db/schema";
+import { auditLogs, brimenCustomers, covenanceRecords } from "@/db/schema";
 import { type BrimenCustomerStatus, normalizeCustomer, parsePlafond } from "@/lib/brimen-db";
 import { requireApiSession } from "@/lib/api-auth";
 
@@ -42,10 +42,64 @@ export async function PATCH(request: Request, { params }: Params) {
       status: (body.status ?? existing.status) as BrimenCustomerStatus,
       updatedAt: new Date(),
     };
-    const updated = (await db.update(brimenCustomers).set(next).where(eq(brimenCustomers.id, id)).returning())[0];
-    return NextResponse.json({ ok: true, data: normalizeCustomer(updated) });
+    const covenantFields = {
+      sphNumber: String(body.sphNumber ?? "").trim(),
+      creditApplicationNumber: String(body.creditApplicationNumber ?? "").trim(),
+      ktpNumber: String(body.ktpNumber ?? "").replace(/\s/g, ""),
+      kkNumber: String(body.kkNumber ?? "").replace(/\s/g, ""),
+      skuNibNumber: String(body.skuNibNumber ?? "").trim(),
+      slikOjk: String(body.slikOjk ?? "").replace(/\s/g, ""),
+    };
+    const hasCovenanceData = Object.values(covenantFields).some(Boolean);
+    if (hasCovenanceData && !/^\d{4}-\d{2}-\d{2}$/.test(next.realizationDate)) {
+      return NextResponse.json({ ok: false, message: "Tanggal realisasi wajib diisi untuk menyimpan dokumen Covenance Day." }, { status: 400 });
+    }
+
+    const updated = await db.transaction(async (tx) => {
+      const updatedCustomer = (await tx.update(brimenCustomers).set(next).where(eq(brimenCustomers.id, id)).returning())[0];
+      if (hasCovenanceData) {
+        const branchCode = existing.branchCode;
+        await tx.insert(covenanceRecords).values({
+          id: crypto.randomUUID(),
+          branchCode,
+          period: next.realizationDate.slice(0, 7),
+          accountNumber: next.accountNumber,
+          debtorName: next.name,
+          realizedDate: next.realizationDate,
+          ...covenantFields,
+          updatedBy: guard.session.user.id,
+          updatedAt: next.updatedAt,
+        }).onConflictDoUpdate({
+          target: [covenanceRecords.branchCode, covenanceRecords.accountNumber, covenanceRecords.realizedDate],
+          set: {
+            period: next.realizationDate.slice(0, 7),
+            debtorName: next.name,
+            ...covenantFields,
+            updatedBy: guard.session.user.id,
+            updatedAt: next.updatedAt,
+          },
+        });
+        await tx.insert(auditLogs).values({
+          id: crypto.randomUUID(),
+          actorId: guard.session.user.id,
+          action: "ISI_COVENANCE_DARI_SUPLESI",
+          entity: "covenance_record",
+          entityId: `${branchCode}:${next.accountNumber}:${next.realizationDate}`,
+          detail: `${next.accountNumber} | ${next.realizationDate}`,
+          branchCode,
+          createdAt: next.updatedAt,
+        });
+      }
+      return updatedCustomer;
+    });
+    return NextResponse.json({ ok: true, data: normalizeCustomer(updated), covenanceSaved: hasCovenanceData });
   } catch (error) {
-    return NextResponse.json({ ok: false, message: "Gagal memperbarui data BRIMEN.", detail: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    const detail = error instanceof Error ? error.message : String(error);
+    const duplicateAccount = detail.includes("brimen_customers_branch_account_unique");
+    return NextResponse.json(
+      { ok: false, message: duplicateAccount ? "No rekening sudah digunakan oleh data BRIMEN lain pada uker ini." : "Gagal memperbarui data BRIMEN.", detail },
+      { status: duplicateAccount ? 409 : 500 },
+    );
   }
 }
 
