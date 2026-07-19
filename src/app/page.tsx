@@ -5689,7 +5689,15 @@ type WhatsappRecipient = {
   product?: string;
   dueDate?: string;
   previousQuality: QualityBucket | "-";
-  optIn: boolean;
+};
+
+type WhatsappCampaignConfig = {
+  ready: boolean;
+  requestedMode: "simulation" | "live";
+  missing: string[];
+  graphVersion: string;
+  templateLanguage: string;
+  templates: { pipeline: string; reminder: string };
 };
 
 function WhatsappCampaignView({ month }: { month: MonthKey }) {
@@ -5698,8 +5706,17 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendMode, setSendMode] = useState<"simulation" | "live">("simulation");
+  const [campaignConfig, setCampaignConfig] = useState<WhatsappCampaignConfig>({
+    ready: true,
+    requestedMode: "simulation",
+    missing: [],
+    graphVersion: "v23.0",
+    templateLanguage: "id",
+    templates: { pipeline: "penawaran_suplesi", reminder: "pengingat_setoran" },
+  });
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
-  const [sendResults, setSendResults] = useState<Record<string, "Terkirim" | "Simulasi Berhasil" | "Gagal">>({});
+  const [sendResults, setSendResults] = useState<Record<string, "Diterima Meta" | "Simulasi Berhasil" | "Gagal">>({});
   const [contactPhones, setContactPhones] = useState<Record<string, string>>({});
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
   const [phoneSaveStatus, setPhoneSaveStatus] = useState<Record<string, "Menyimpan" | "Tersimpan" | "Gagal">>({});
@@ -5715,7 +5732,6 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
     product: item.productType,
     previousQuality: classifyQuality(item, item.sourceMonth),
     detail: `${item.productType} | OS ${formatCurrency(item.outstanding)}`,
-    optIn: true,
   }));
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -5739,7 +5755,6 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       dueDate: item.nextPaymentDate,
       previousQuality: previous && reminderPreviousMonth ? classifyQuality(previous, reminderPreviousMonth) : "-" as const,
       detail: dateLabel(item.nextPaymentDate),
-      optIn: true,
     };
     });
   const allRecipients = campaignType === "pipeline" ? pipelineRecipients : reminderRecipients;
@@ -5750,19 +5765,33 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
   const waMantriNames = [...new Set(allRecipients.map((item) => item.mantri))].sort();
   const pagination = useTablePagination(recipients, `${month}-${campaignType}-${waMantriFilter}-${waPreviousQualityFilter}-${recipients.length}`);
   const selectedRows = recipients.filter((item) => selectedRecipients.has(item.id));
-  const templateName = campaignType === "pipeline" ? "penawaran_suplesi" : "pengingat_setoran";
+  const templateName = campaignType === "pipeline" ? campaignConfig.templates.pipeline : campaignConfig.templates.reminder;
 
   useEffect(() => {
     if (!contactsLoaded) return;
-    setSelectedRecipients(new Set(recipients.filter((item) => item.optIn && item.phone).map((item) => item.id)));
+    setSelectedRecipients(new Set(recipients.filter((item) => item.phone).map((item) => item.id)));
     setSendResults({});
     setResultMessage("");
+    setConsentConfirmed(false);
   }, [campaignType, month, contactsLoaded, waMantriFilter, waPreviousQualityFilter]);
 
   useEffect(() => {
     fetch("/api/whatsapp/campaign", { cache: "no-store" })
       .then((response) => response.json())
-      .then((payload) => setSendMode(payload.mode === "live" ? "live" : "simulation"))
+      .then((payload) => {
+        setSendMode(payload.mode === "live" ? "live" : "simulation");
+        setCampaignConfig({
+          ready: payload.ready !== false,
+          requestedMode: payload.requestedMode === "live" ? "live" : "simulation",
+          missing: Array.isArray(payload.missing) ? payload.missing : [],
+          graphVersion: String(payload.graphVersion ?? "v23.0"),
+          templateLanguage: String(payload.templateLanguage ?? "id"),
+          templates: {
+            pipeline: String(payload.templates?.pipeline ?? "penawaran_suplesi"),
+            reminder: String(payload.templates?.reminder ?? "pengingat_setoran"),
+          },
+        });
+      })
       .catch(() => setSendMode("simulation"));
   }, []);
 
@@ -5808,7 +5837,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       setPhoneSaveStatus((current) => ({ ...current, [accountKey]: "Tersimpan" }));
       setSelectedRecipients((current) => {
         const next = new Set(current);
-        if (savedPhone && item.optIn) next.add(item.id); else next.delete(item.id);
+        if (savedPhone) next.add(item.id); else next.delete(item.id);
         return next;
       });
     } catch {
@@ -5830,14 +5859,15 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
         }),
       });
       const payload = await response.json();
-      const nextResults: Record<string, "Terkirim" | "Simulasi Berhasil" | "Gagal"> = {};
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? "Campaign belum dapat diproses.");
+      const nextResults: Record<string, "Diterima Meta" | "Simulasi Berhasil" | "Gagal"> = {};
       for (const item of payload.results ?? []) nextResults[item.id] = item.status;
       setSendResults(nextResults);
       setSendMode(payload.mode === "live" ? "live" : "simulation");
       setResultMessage(payload.message ?? "Proses kampanye selesai.");
       setShowConfirmation(false);
-    } catch {
-      setResultMessage("Kampanye belum dapat diproses. Periksa koneksi dan konfigurasi WhatsApp.");
+    } catch (error) {
+      setResultMessage(error instanceof Error ? error.message : "Kampanye belum dapat diproses. Periksa koneksi dan konfigurasi WhatsApp.");
     } finally {
       setSending(false);
     }
@@ -5848,9 +5878,9 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       <SectionHeader title="WA Blast" description="Kirim penawaran pipeline suplesi dan pengingat setoran menjelang Next Payment Date." icon={MessageCircle} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Penerima Tersedia" value={`${recipients.length} nasabah`} helper={campaignType === "pipeline" ? "Pipeline memenuhi syarat" : "Jatuh tempo kurang dari 5 hari"} icon={UsersRound} />
-        <MetricCard label="Penerima Dipilih" value={`${selectedRows.length} nasabah`} helper="Memiliki persetujuan komunikasi" tone="success" icon={CheckCircle2} />
+        <MetricCard label="Penerima Dipilih" value={`${selectedRows.length} nasabah`} helper="Nomor WhatsApp valid" tone="success" icon={CheckCircle2} />
         <MetricCard label="Template Meta" value={templateName} helper="Template harus disetujui Meta" tone="warning" icon={FileText} />
-        <div className={cn("bri-card rounded-lg border p-4", sendMode === "live" ? "border-emerald-200 bg-emerald-50" : "border-sky-200 bg-sky-50")}><p className="text-xs font-black uppercase text-muted-foreground">Mode Pengiriman</p><p className={cn("mt-2 text-xl font-black", sendMode === "live" ? "text-emerald-700" : "text-sky-700")}>{sendMode === "live" ? "Cloud API Aktif" : "Simulasi Aman"}</p><p className="mt-1 text-xs text-muted-foreground">{sendMode === "live" ? "Pesan dikirim melalui Meta" : "Tidak mengirim pesan nyata"}</p></div>
+        <div className={cn("bri-card rounded-lg border p-4", sendMode === "live" ? "border-emerald-200 bg-emerald-50" : campaignConfig.requestedMode === "live" && !campaignConfig.ready ? "border-rose-200 bg-rose-50" : "border-sky-200 bg-sky-50")}><p className="text-xs font-black uppercase text-muted-foreground">Mode Pengiriman</p><p className={cn("mt-2 text-xl font-black", sendMode === "live" ? "text-emerald-700" : campaignConfig.requestedMode === "live" && !campaignConfig.ready ? "text-rose-700" : "text-sky-700")}>{sendMode === "live" ? "Cloud API Aktif" : campaignConfig.requestedMode === "live" && !campaignConfig.ready ? "Konfigurasi Belum Lengkap" : "Simulasi Aman"}</p><p className="mt-1 text-xs text-muted-foreground">{sendMode === "live" ? `Meta Graph API ${campaignConfig.graphVersion}` : campaignConfig.missing.length ? `Belum ada: ${campaignConfig.missing.join(", ")}` : "Tidak mengirim pesan nyata"}</p></div>
       </div>
       <div className="bri-card rounded-lg border border-[#d7e3ef] bg-white p-4">
         <p className="text-xs font-black uppercase text-[#f37021]">Jenis Campaign</p>
@@ -5878,19 +5908,19 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       <div className="min-w-0 space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="text-xs font-black uppercase text-[#f37021]">Daftar Penerima</p><p className="text-sm text-muted-foreground">Nomor HP dapat diisi langsung dan tersimpan otomatis untuk periode berikutnya.</p></div>
-            <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set())}>Kosongkan</Button><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set(recipients.filter((item) => item.optIn && item.phone).map((item) => item.id)))}>Pilih Semua</Button><Button type="button" size="sm" className="bg-[#00529c] hover:bg-[#003f78]" disabled={!selectedRows.length} onClick={() => setShowConfirmation(true)}><MessageCircle className="h-4 w-4" />Tinjau Pengiriman ({selectedRows.length})</Button></div>
+            <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set())}>Kosongkan</Button><Button type="button" variant="outline" size="sm" onClick={() => setSelectedRecipients(new Set(recipients.filter((item) => item.phone).map((item) => item.id)))}>Pilih Semua</Button><Button type="button" size="sm" className="bg-[#00529c] hover:bg-[#003f78]" disabled={!selectedRows.length} onClick={() => { setConsentConfirmed(false); setShowConfirmation(true); }}><MessageCircle className="h-4 w-4" />Tinjau Pengiriman ({selectedRows.length})</Button></div>
           </div>
           {resultMessage ? <p className="rounded-md border border-sky-200 bg-[#eaf3fb] px-3 py-2 text-xs font-semibold text-[#00529c]">{resultMessage}</p> : null}
           {recipients.length ? (
             <>
             <TableShell minWidth="min-w-[1180px]">
-              <thead><tr><Th>Pilih</Th><Th>No Rekening</Th><Th>Nama Nasabah</Th><Th>No HP / WhatsApp</Th><Th>Mantri</Th><Th>Keterangan</Th><Th>Persetujuan</Th><Th>Status</Th></tr></thead>
+              <thead><tr><Th>Pilih</Th><Th>No Rekening</Th><Th>Nama Nasabah</Th><Th>No HP / WhatsApp</Th><Th>Mantri</Th><Th>Keterangan</Th><Th>Kesiapan</Th><Th>Status</Th></tr></thead>
               <tbody>{pagination.pagedRows.map((item) => {
                 const accountKey = normalizeAccount(item.accountNumber);
                 const saveStatus = phoneSaveStatus[accountKey];
                 return (
                   <tr key={item.id}>
-                    <Td><input type="checkbox" aria-label={`Pilih ${item.name}`} checked={selectedRecipients.has(item.id)} disabled={!item.optIn || !item.phone} onChange={() => toggleRecipient(item.id)} className="h-4 w-4 accent-[#00529c]" /></Td>
+                    <Td><input type="checkbox" aria-label={`Pilih ${item.name}`} checked={selectedRecipients.has(item.id)} disabled={!item.phone} onChange={() => toggleRecipient(item.id)} className="h-4 w-4 accent-[#00529c]" /></Td>
                     <Td className="font-medium text-[#00529c]">{item.accountNumber}</Td>
                     <Td className="font-semibold">{item.name}</Td>
                     <Td>
@@ -5908,7 +5938,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
                         <p className={cn("mt-1 text-[10px] font-semibold", saveStatus === "Gagal" ? "text-rose-700" : saveStatus === "Menyimpan" ? "text-sky-700" : "text-emerald-700")}>{saveStatus ?? (item.phone ? "Tersimpan di master kontak" : "Wajib diisi sebelum dipilih")}</p>
                       </div>
                     </Td>
-                    <Td>{item.mantri}</Td><Td>{item.detail}</Td><Td><Badge variant={item.optIn ? "success" : "warning"}>{item.optIn ? "Setuju" : "Belum Setuju"}</Badge></Td><Td><Badge variant={sendResults[item.id] === "Gagal" ? "danger" : sendResults[item.id] ? "success" : item.phone ? "outline" : "warning"}>{sendResults[item.id] ?? (item.phone ? "Siap" : "Lengkapi No HP")}</Badge></Td>
+                    <Td>{item.mantri}</Td><Td>{item.detail}</Td><Td><Badge variant={item.phone ? "success" : "warning"}>{item.phone ? "Nomor valid" : "Belum siap"}</Badge></Td><Td><Badge variant={sendResults[item.id] === "Gagal" ? "danger" : sendResults[item.id] ? "success" : item.phone ? "outline" : "warning"}>{sendResults[item.id] ?? (item.phone ? "Siap" : "Lengkapi No HP")}</Badge></Td>
                   </tr>
                 );
               })}</tbody>
@@ -5917,7 +5947,30 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
             </>
           ) : <EmptyState title="Tidak ada penerima" description="Tidak ada nasabah yang memenuhi kriteria campaign pada periode ini." icon={MessageCircle} />}
       </div>
-      {showConfirmation ? <div className="fixed inset-0 z-[90] grid place-items-center bg-[#001b33]/55 p-4"><div className="w-full max-w-lg rounded-lg bg-white shadow-2xl"><div className="border-b border-[#d7e3ef] p-5"><p className="text-xs font-black uppercase text-[#f37021]">Konfirmasi Campaign</p><h2 className="mt-1 text-xl font-black text-[#00529c]">Kirim ke {selectedRows.length} nasabah?</h2></div><div className="space-y-3 p-5"><p className="text-sm leading-6 text-muted-foreground">Campaign menggunakan template <strong>{templateName}</strong>. Hanya nasabah yang telah memberikan persetujuan komunikasi yang diproses.</p><div className={cn("rounded-md border p-3 text-sm font-bold", sendMode === "live" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-sky-200 bg-sky-50 text-sky-700")}>{sendMode === "live" ? "Cloud API aktif: tindakan ini akan mengirim pesan WhatsApp nyata." : "Mode simulasi: tidak ada pesan WhatsApp nyata yang dikirim."}</div></div><div className="flex justify-end gap-2 border-t border-[#d7e3ef] p-4"><Button type="button" variant="outline" onClick={() => setShowConfirmation(false)}>Batal</Button><Button type="button" className="bg-emerald-600 hover:bg-emerald-700" disabled={sending} onClick={submitCampaign}>{sending ? "Memproses..." : "Kirim Sekarang"}</Button></div></div></div> : null}
+      {showConfirmation ? (
+        <div className="fixed inset-0 z-[90] grid place-items-center bg-[#001b33]/55 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-white shadow-2xl">
+            <div className="border-b border-[#d7e3ef] p-5">
+              <p className="text-xs font-black uppercase text-[#f37021]">Konfirmasi Campaign</p>
+              <h2 className="mt-1 text-xl font-black text-[#00529c]">Kirim ke {selectedRows.length} nasabah?</h2>
+            </div>
+            <div className="space-y-3 p-5">
+              <p className="text-sm leading-6 text-muted-foreground">Campaign menggunakan template <strong>{templateName}</strong> dengan bahasa <strong>{campaignConfig.templateLanguage}</strong>.</p>
+              <div className={cn("rounded-md border p-3 text-sm font-bold", sendMode === "live" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-sky-200 bg-sky-50 text-sky-700")}>{sendMode === "live" ? "Cloud API aktif: tindakan ini akan mengirim pesan WhatsApp nyata." : "Mode simulasi: tidak ada pesan WhatsApp nyata yang dikirim."}</div>
+              {sendMode === "live" ? (
+                <label className="flex cursor-pointer items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                  <input type="checkbox" checked={consentConfirmed} onChange={(event) => setConsentConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#00529c]" />
+                  <span>Saya memastikan seluruh penerima telah memberikan persetujuan menerima pesan WhatsApp dan dapat berhenti menerima pesan.</span>
+                </label>
+              ) : null}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[#d7e3ef] p-4">
+              <Button type="button" variant="outline" onClick={() => setShowConfirmation(false)}>Batal</Button>
+              <Button type="button" className="bg-emerald-600 hover:bg-emerald-700" disabled={sending || (sendMode === "live" && !consentConfirmed)} onClick={submitCampaign}>{sending ? "Memproses..." : sendMode === "live" ? "Kirim Sekarang" : "Jalankan Simulasi"}</Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

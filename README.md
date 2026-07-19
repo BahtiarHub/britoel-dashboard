@@ -115,3 +115,25 @@ deployment VPS. Backup database dan backup Storage harus dijadwalkan terpisah.
 Pada Windows di folder OneDrive, pembuatan symlink output standalone dapat
 ditolak sistem. Gunakan `NEXT_STANDALONE=false` untuk build lokal; build Docker
 atau Linux tetap memakai output standalone secara default.
+
+## Mengaktifkan WA Blast
+
+WA Blast menggunakan WhatsApp Cloud API resmi dan secara default berjalan dalam
+mode simulasi. Buat dan setujui template `penawaran_suplesi` serta
+`pengingat_setoran` di WhatsApp Manager, lalu isi environment server:
+
+```env
+WHATSAPP_SEND_MODE=live
+WHATSAPP_ACCESS_TOKEN=token-system-user-meta
+WHATSAPP_PHONE_NUMBER_ID=id-nomor-whatsapp-business
+WHATSAPP_GRAPH_VERSION=v23.0
+WHATSAPP_TEMPLATE_PIPELINE=penawaran_suplesi
+WHATSAPP_TEMPLATE_REMINDER=pengingat_setoran
+WHATSAPP_TEMPLATE_LANGUAGE=id
+```
+
+Nama, bahasa, urutan, dan jumlah parameter template di Meta harus sama dengan
+payload aplikasi. Template penawaran menggunakan urutan `nama`, `produk`,
+`mantri`; template pengingat menggunakan `nama`, `tanggal jatuh tempo`,
+`mantri`. Restart aplikasi setelah environment diubah. Uji dahulu ke nomor staf
+yang sudah memberi persetujuan sebelum mengirim ke nasabah.
