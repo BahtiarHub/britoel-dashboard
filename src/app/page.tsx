@@ -3978,6 +3978,9 @@ function TunggakanView({
   });
   const depositPeriods = [...new Set(uploadedDeposits.map((item) => item.period))].sort();
   const depositPeriod = depositPeriods.filter((period) => period <= month).at(-1) ?? depositPeriods.at(-1);
+  const depositPeriodDate = depositPeriod
+    ? new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(Number(depositPeriod.slice(0, 4)), Number(depositPeriod.slice(5, 7)), 0))
+    : undefined;
   const savingsByCif = new Map<string, { accounts: Map<string, number> }>();
   uploadedDeposits.filter((item) => item.period === depositPeriod).forEach((item) => {
     const cif = String(item.cif ?? "").trim().toUpperCase();
@@ -3989,21 +3992,28 @@ function TunggakanView({
   });
   const allRows = getArrearsRows(month).map((item) => {
     const savings = savingsByCif.get(String(item.cif ?? "").trim().toUpperCase());
-    const tusimAccounts = savings
-      ? [...savings.accounts.entries()].filter(([, balance]) => balance >= TUSIM_MINIMUM_BALANCE)
-      : [];
+    const savingsAccounts = savings ? [...savings.accounts.entries()].filter(([, balance]) => balance > 0) : [];
+    const tusimAccounts = savingsAccounts.filter(([, balance]) => balance >= TUSIM_MINIMUM_BALANCE);
     return {
       ...item,
-      savingsBalance: tusimAccounts.reduce((total, [, balance]) => total + balance, 0),
-      savingsAccountCount: tusimAccounts.length,
-      savingsAccounts: tusimAccounts,
+      allSavingsAccounts: savingsAccounts,
+      tusimSavingsAccounts: tusimAccounts,
+      tusimAccountCount: tusimAccounts.length,
     };
   });
   const matchesBand = (item: (typeof allRows)[number], band: ArrearsBand) =>
     band === "Semua" ||
     (band === "Tucil" && item.totalArrears < 100_000) ||
-    (band === "Tusim" && item.savingsAccountCount > 0);
-  const segmentedRows = allRows.filter((item) => matchesBand(item, arrearsBand));
+    (band === "Tusim" && item.tusimAccountCount > 0);
+  const segmentedRows = allRows.filter((item) => matchesBand(item, arrearsBand)).map((item) => {
+    const savingsAccounts = arrearsBand === "Tusim" ? item.tusimSavingsAccounts : item.allSavingsAccounts;
+    return {
+      ...item,
+      savingsAccounts,
+      savingsAccountCount: savingsAccounts.length,
+      savingsBalance: savingsAccounts.reduce((total, [, balance]) => total + balance, 0),
+    };
+  });
   const rows = segmentedRows.filter((item) => mantri === "Semua" || item.mantri === mantri);
   const mantriRecap = [...segmentedRows.reduce((map, item) => {
     const current = map.get(item.mantri) ?? { mantri: item.mantri, debtors: new Set<string>(), outstanding: 0 };
@@ -4026,7 +4036,7 @@ function TunggakanView({
     item.savingsAccounts.map(([accountNumber]) => accountNumber).join("; "),
     item.savingsAccounts.map(([accountNumber, balance]) => `${accountNumber}: ${formatCurrency(balance)}`).join(" | "),
     item.savingsBalance,
-    [item.totalArrears < 100_000 ? "Tucil" : "", item.savingsAccountCount > 0 ? "Tusim" : ""].filter(Boolean).join(", "),
+    [item.totalArrears < 100_000 ? "Tucil" : "", item.tusimAccountCount > 0 ? "Tusim" : ""].filter(Boolean).join(", "),
   ]);
   const warningHistoryByAccount = new Map<string, WarningLetterRecord[]>();
   warningLetters.forEach((item) => {
@@ -4383,6 +4393,12 @@ function TunggakanView({
           </Button>
         </div>
       </div>
+      {arrearsBand === "Tusim" ? (
+        <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+          <CalendarDays className="h-4 w-4 shrink-0" />
+          <span>Tanggal periode data DI319 terakhir: {depositPeriodDate ?? "Belum ada file DI319"}</span>
+        </div>
+      ) : null}
       {rows.length ? (
         <>
           <TableShell minWidth="min-w-[1480px]">
@@ -4412,7 +4428,7 @@ function TunggakanView({
                     <Td><QualityBadge bucket={classifyQuality(item, month)} /></Td>
                     <Td className="font-black text-rose-700">{formatCurrency(item.totalArrears)}</Td>
                     <Td><div className="min-w-36"><p className={cn("font-black", item.savingsBalance > 0 ? "text-emerald-700" : "text-muted-foreground")}>{item.savingsBalance > 0 ? formatCurrency(item.savingsBalance) : "-"}</p>{item.savingsAccountCount ? <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{formatNumber(item.savingsAccountCount)} rekening simpanan</p> : null}</div></Td>
-                    <Td><div className="flex min-w-max flex-wrap gap-1.5">{item.totalArrears < 100_000 ? <Badge className="border-0 bg-orange-100 text-[#b54b00]">Tucil</Badge> : null}{item.savingsAccountCount > 0 ? <Badge className="border-0 bg-emerald-100 text-emerald-700">Tusim</Badge> : null}{item.totalArrears >= 100_000 && !item.savingsAccountCount ? <span className="text-muted-foreground">-</span> : null}</div></Td>
+                    <Td><div className="flex min-w-max flex-wrap gap-1.5">{item.totalArrears < 100_000 ? <Badge className="border-0 bg-orange-100 text-[#b54b00]">Tucil</Badge> : null}{item.tusimAccountCount > 0 ? <Badge className="border-0 bg-emerald-100 text-emerald-700">Tusim</Badge> : null}{item.totalArrears >= 100_000 && !item.tusimAccountCount ? <span className="text-muted-foreground">-</span> : null}</div></Td>
                     <Td>
                       {warningHistory.length ? (
                         <div className="flex min-w-max flex-col gap-1.5">
