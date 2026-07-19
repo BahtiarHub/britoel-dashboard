@@ -10,7 +10,7 @@ export type QualityBucket =
   | "KL"
   | "Diragukan"
   | "Macet";
-export type ProductType = "PUMK" | "Kupedes" | "Kupedes Rakyat" | "KUR Mikro" | "Lainnya";
+export type ProductType = "PUMK" | "Kupedes" | "Kupedes Rakyat" | "KUR Mikro" | "KUR KPP" | "Lainnya";
 export type MissingLoanStatus = "PH" | "Lunas";
 export type MissingLoanDisplayStatus = MissingLoanStatus | "Perlu Konfirmasi";
 export type PrognosaCollectibility = "Lancar" | "LR" | "SML1" | "SML2" | "SML3" | "KL/D" | "Macet" | "Lunas" | "PH";
@@ -739,6 +739,7 @@ export function getCreditSnapshots(month: MonthKey) {
 export function getProductType(description: string, loanType?: string): ProductType {
   if (loanType?.trim().toUpperCase() === "5G") return "PUMK";
   const value = description.toLowerCase();
+  if (value.includes("kur kpp")) return "KUR KPP";
   if (value.includes("kur mikro")) return "KUR Mikro";
   if (value.includes("kupedes rakyat")) return "Kupedes Rakyat";
   if (value.includes("kupedes")) return "Kupedes";
@@ -851,7 +852,7 @@ export const ckpnLossRates = {
 
 export function getCkpnGroup(productType: ProductType): keyof typeof ckpnLossRates | undefined {
   if (productType === "Kupedes" || productType === "Kupedes Rakyat") return "Kupedes";
-  if (productType === "KUR Mikro") return "KUR Mikro";
+  if (productType === "KUR Mikro" || productType === "KUR KPP") return "KUR Mikro";
   return undefined;
 }
 

@@ -1859,7 +1859,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   {qualityOptions.map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Kualitas" : item}</option>)}
                 </Select>
                 <Select value={globalProduct} onChange={(event) => setGlobalProduct(event.target.value)} className="h-10 min-w-[150px] bg-white">
-                  {['Semua', 'PUMK', 'Kupedes', 'Kupedes Rakyat', 'KUR Mikro'].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Produk" : item}</option>)}
+                  {['Semua', 'PUMK', 'Kupedes', 'Kupedes Rakyat', 'KUR Mikro', 'KUR KPP'].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Produk" : item}</option>)}
                 </Select>
                 <Button
                   type="button"
@@ -1906,7 +1906,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
                   {qualityOptions.map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Kualitas" : item}</option>)}
                 </Select>
                 <Select value={globalProduct} onChange={(event) => setGlobalProduct(event.target.value)} className="h-10 bg-white">
-                  {['Semua', 'PUMK', 'Kupedes', 'Kupedes Rakyat', 'KUR Mikro'].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Produk" : item}</option>)}
+                  {['Semua', 'PUMK', 'Kupedes', 'Kupedes Rakyat', 'KUR Mikro', 'KUR KPP'].map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Produk" : item}</option>)}
                 </Select>
                 <div className="col-span-2 flex h-10 items-center justify-between rounded-md border border-[#cbddeb] bg-white px-3 text-sm font-semibold text-[#00529c]">
                   <span className="truncate">{session.user.name}</span><span>{selectedRole}</span>
@@ -4968,7 +4968,7 @@ function CkpnView({
           {["Semua", ...mantriNames].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
         <Field label="Tipe Pinjaman"><Select value={product} onChange={(event) => setProduct(event.target.value)}>
-          {["Semua", "Kupedes", "Kupedes Rakyat", "KUR Mikro"].map((item) => <option key={item} value={item}>{item}</option>)}
+          {["Semua", "Kupedes", "Kupedes Rakyat", "KUR Mikro", "KUR KPP"].map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></Field>
         <Field label="Arah Prognosa"><Select value={movement} onChange={(event) => setMovement(event.target.value)}>
           {["Semua", "Belum Diisi", "Memburuk", "Membaik", "Tetap"].map((item) => <option key={item} value={item}>{item}</option>)}
