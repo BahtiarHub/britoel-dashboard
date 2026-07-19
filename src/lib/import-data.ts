@@ -26,6 +26,8 @@ export type ImportedDepositRow = {
   debtorName: string;
   mantri: string;
   savingsAccount: string;
+  balance: number;
+  availableBalance: number;
   blockedAtStart: number;
   currentBlocked: number;
   installmentFromBlocked: number;
@@ -475,6 +477,8 @@ export function mapDepositRows(rawRows: RawRow[], period: string) {
       debtorName: String(pick(row, depositAliases.debtorName)).trim(),
       mantri: String(pick(row, depositAliases.mantri)).trim(),
       savingsAccount,
+      balance,
+      availableBalance,
       blockedAtStart,
       currentBlocked,
       installmentFromBlocked,

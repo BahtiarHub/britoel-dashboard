@@ -29,6 +29,13 @@
       "when": 1784345809528,
       "tag": "0003_backfill_brimen_borrower_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784435426851,
+      "tag": "0004_condemned_maggott",
+      "breakpoints": true
     }
   ]
 }

@@ -188,7 +188,8 @@ export async function POST(request: Request) {
           await tx.insert(depositRecords).values(depositImport.rows.slice(index, index + 40).map((row) => ({
             id: crypto.randomUUID(), uploadId: record.id, branchCode, sourceKey, period,
             cif: row.cif, loanAccountNumber: row.loanAccountNumber, debtorName: row.debtorName, mantri: row.mantri,
-            savingsAccount: row.savingsAccount, blockedAtStart: row.blockedAtStart, currentBlocked: row.currentBlocked,
+            savingsAccount: row.savingsAccount, balance: row.balance, availableBalance: row.availableBalance,
+            blockedAtStart: row.blockedAtStart, currentBlocked: row.currentBlocked,
             installmentFromBlocked: row.installmentFromBlocked, mutationDate: row.mutationDate, status: row.status, createdAt: now,
           })));
         }

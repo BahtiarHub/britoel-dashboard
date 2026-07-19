@@ -1507,6 +1507,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         mantriNames={mantriNames}
         branchCode={activeBranchCode}
         branchName={activeBranchName}
+        depositRows={di319Rows}
       />
     ),
     rekap: (
@@ -3291,6 +3292,7 @@ function KualitasView({
   mantriNames,
   branchCode,
   branchName,
+  depositRows,
 }: {
   month: MonthKey;
   qualityFilter: string;
@@ -3302,6 +3304,7 @@ function KualitasView({
   mantriNames: string[];
   branchCode: string;
   branchName: string;
+  depositRows: UploadedDi319Row[];
 }) {
   const [activeTab, setActiveTab] = useState<QualityHubTab>("kualitas");
   const summary = getSummary(month);
@@ -3351,7 +3354,7 @@ function KualitasView({
       ) : activeTab === "new-npl" ? (
         <NewQualityView month={month} quality="NPL" />
       ) : (
-        <TunggakanView month={month} mantri={arrearsMantri} setMantri={setArrearsMantri} mantriNames={mantriNames} branchCode={branchCode} branchName={branchName} embedded />
+        <TunggakanView month={month} mantri={arrearsMantri} setMantri={setArrearsMantri} mantriNames={mantriNames} branchCode={branchCode} branchName={branchName} uploadedDeposits={depositRows} embedded />
       )}
     </div>
   );
@@ -3917,7 +3920,7 @@ function RealisasiView({ month, mantriFilter }: { month: MonthKey; mantriFilter:
   );
 }
 
-type ArrearsBand = "Semua" | "Tucil";
+type ArrearsBand = "Semua" | "Tucil" | "Tusim";
 
 type WarningLetterRecord = {
   id: string;
@@ -3944,6 +3947,7 @@ function TunggakanView({
   mantriNames,
   branchCode,
   branchName,
+  uploadedDeposits,
   embedded = false,
 }: {
   month: MonthKey;
@@ -3952,6 +3956,7 @@ function TunggakanView({
   mantriNames: string[];
   branchCode: string;
   branchName: string;
+  uploadedDeposits: UploadedDi319Row[];
   embedded?: boolean;
 }) {
   const [arrearsBand, setArrearsBand] = useState<ArrearsBand>("Semua");
@@ -3970,11 +3975,26 @@ function TunggakanView({
     signerName: "",
     signerTitle: "Kepala Unit",
   });
-  const allRows = getArrearsRows(month);
-  const matchesBand = (total: number, band: ArrearsBand) =>
+  const depositPeriods = [...new Set(uploadedDeposits.map((item) => item.period))].sort();
+  const depositPeriod = depositPeriods.filter((period) => period <= month).at(-1) ?? depositPeriods.at(-1);
+  const savingsByCif = new Map<string, { balance: number; accounts: Set<string> }>();
+  uploadedDeposits.filter((item) => item.period === depositPeriod).forEach((item) => {
+    const cif = String(item.cif ?? "").trim().toUpperCase();
+    if (!cif) return;
+    const current = savingsByCif.get(cif) ?? { balance: 0, accounts: new Set<string>() };
+    current.balance += Math.max(0, Number(item.balance) || 0);
+    if (item.savingsAccount) current.accounts.add(item.savingsAccount);
+    savingsByCif.set(cif, current);
+  });
+  const allRows = getArrearsRows(month).map((item) => {
+    const savings = savingsByCif.get(String(item.cif ?? "").trim().toUpperCase());
+    return { ...item, savingsBalance: savings?.balance ?? 0, savingsAccountCount: savings?.accounts.size ?? 0 };
+  });
+  const matchesBand = (item: (typeof allRows)[number], band: ArrearsBand) =>
     band === "Semua" ||
-    (band === "Tucil" && total < 100_000);
-  const segmentedRows = allRows.filter((item) => matchesBand(item.totalArrears, arrearsBand));
+    (band === "Tucil" && item.totalArrears < 100_000) ||
+    (band === "Tusim" && item.savingsBalance > 0);
+  const segmentedRows = allRows.filter((item) => matchesBand(item, arrearsBand));
   const rows = segmentedRows.filter((item) => mantri === "Semua" || item.mantri === mantri);
   const mantriRecap = [...segmentedRows.reduce((map, item) => {
     const current = map.get(item.mantri) ?? { mantri: item.mantri, debtors: new Set<string>(), outstanding: 0 };
@@ -3986,7 +4006,7 @@ function TunggakanView({
     .map((item) => ({ ...item, debtorCount: item.debtors.size }))
     .sort((a, b) => b.outstanding - a.outstanding);
   const pagination = useTablePagination(rows, `${month}-${arrearsBand}-${mantri}-${rows.length}`);
-  const exportHeaders = ["No Rekening", "Nama Debitur", "Mantri", "Outstanding", "Kolektibilitas", "Total Tunggakan (Pokok + Bunga)"];
+  const exportHeaders = ["No Rekening", "Nama Debitur", "Mantri", "Outstanding", "Kolektibilitas", "Total Tunggakan (Pokok + Bunga)", "Saldo Simpanan", "Kategori"];
   const exportData = rows.map((item) => [
     item.accountNumber,
     item.debtorName,
@@ -3994,6 +4014,8 @@ function TunggakanView({
     item.outstanding,
     classifyQuality(item, month),
     item.totalArrears,
+    item.savingsBalance,
+    [item.totalArrears < 100_000 ? "Tucil" : "", item.savingsBalance > 0 ? "Tusim" : ""].filter(Boolean).join(", "),
   ]);
   const warningHistoryByAccount = new Map<string, WarningLetterRecord[]>();
   warningLetters.forEach((item) => {
@@ -4332,6 +4354,7 @@ function TunggakanView({
             <Select value={arrearsBand} onChange={(event) => setArrearsBand(event.target.value as ArrearsBand)} className="min-w-48">
               <option value="Semua">Semua Tunggakan</option>
               <option value="Tucil">Tucil (di bawah Rp100 ribu)</option>
+              <option value="Tusim">Tusim (memiliki saldo simpanan)</option>
             </Select>
           </Field>
           <Field label="Filter Mantri">
@@ -4351,7 +4374,7 @@ function TunggakanView({
       </div>
       {rows.length ? (
         <>
-          <TableShell minWidth="min-w-[1240px]">
+          <TableShell minWidth="min-w-[1480px]">
             <thead>
               <tr>
                 <Th>No Rekening</Th>
@@ -4360,6 +4383,8 @@ function TunggakanView({
                 <Th>Outstanding</Th>
                 <Th>Kolektibilitas</Th>
                 <Th>Total Tunggakan (Pokok + Bunga)</Th>
+                <Th>Saldo Simpanan</Th>
+                <Th>Kategori</Th>
                 <Th>Status SP</Th>
                 <Th>Aksi</Th>
               </tr>
@@ -4375,6 +4400,8 @@ function TunggakanView({
                     <Td>{formatCurrency(item.outstanding)}</Td>
                     <Td><QualityBadge bucket={classifyQuality(item, month)} /></Td>
                     <Td className="font-black text-rose-700">{formatCurrency(item.totalArrears)}</Td>
+                    <Td><div className="min-w-36"><p className={cn("font-black", item.savingsBalance > 0 ? "text-emerald-700" : "text-muted-foreground")}>{item.savingsBalance > 0 ? formatCurrency(item.savingsBalance) : "-"}</p>{item.savingsAccountCount ? <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{formatNumber(item.savingsAccountCount)} rekening simpanan</p> : null}</div></Td>
+                    <Td><div className="flex min-w-max flex-wrap gap-1.5">{item.totalArrears < 100_000 ? <Badge className="border-0 bg-orange-100 text-[#b54b00]">Tucil</Badge> : null}{item.savingsBalance > 0 ? <Badge className="border-0 bg-emerald-100 text-emerald-700">Tusim</Badge> : null}{item.totalArrears >= 100_000 && !item.savingsBalance ? <span className="text-muted-foreground">-</span> : null}</div></Td>
                     <Td>
                       {warningHistory.length ? (
                         <div className="flex min-w-max flex-col gap-1.5">
@@ -4521,6 +4548,8 @@ type UploadedDi319Row = {
   debtorName: string;
   mantri: string;
   savingsAccount: string;
+  balance: number;
+  availableBalance: number;
   blockedAtStart: number;
   currentBlocked: number;
   installmentFromBlocked: number;

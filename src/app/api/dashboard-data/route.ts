@@ -64,6 +64,8 @@ export async function GET(request: Request) {
       debtorName: item.debtorName,
       mantri: item.mantri,
       savingsAccount: item.savingsAccount,
+      balance: item.balance,
+      availableBalance: item.availableBalance,
       blockedAtStart: item.blockedAtStart,
       currentBlocked: item.currentBlocked,
       installmentFromBlocked: item.installmentFromBlocked,

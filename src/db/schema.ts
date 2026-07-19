@@ -116,7 +116,8 @@ export const depositRecords = pgTable("deposit_records", {
   id: text("id").primaryKey(), uploadId: text("upload_id").notNull().references(() => uploadRecords.id, { onDelete: "cascade" }), branchCode: text("branch_code").notNull(),
   sourceKey: text("source_key").notNull().default("di319"), period: text("period").notNull(), cif: text("cif").notNull().default(""),
   loanAccountNumber: text("loan_account_number").notNull().default(""), debtorName: text("debtor_name").notNull().default(""), mantri: text("mantri").notNull().default(""),
-  savingsAccount: text("savings_account").notNull().default(""), blockedAtStart: money("blocked_at_start").notNull().default(0), currentBlocked: money("current_blocked").notNull().default(0),
+  savingsAccount: text("savings_account").notNull().default(""), balance: money("balance").notNull().default(0), availableBalance: money("available_balance").notNull().default(0),
+  blockedAtStart: money("blocked_at_start").notNull().default(0), currentBlocked: money("current_blocked").notNull().default(0),
   installmentFromBlocked: money("installment_from_blocked").notNull().default(0), mutationDate: text("mutation_date").notNull().default(""), status: text("status").notNull(), createdAt: dateTime("created_at").notNull(),
 }, (table) => [uniqueIndex("deposit_records_branch_period_savings_unique").on(table.branchCode, table.period, table.cif, table.savingsAccount), index("deposit_records_branch_period_idx").on(table.branchCode, table.period)]);
 
