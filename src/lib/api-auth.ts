@@ -8,6 +8,11 @@ type ApiSessionOptions = {
   allowSuperAdminWrite?: boolean;
 };
 
+const globalForActivity = globalThis as unknown as { briToolActivityTouches?: Map<string, number> };
+const activityTouches = globalForActivity.briToolActivityTouches ?? new Map<string, number>();
+if (process.env.NODE_ENV !== "production") globalForActivity.briToolActivityTouches = activityTouches;
+const activityTouchIntervalMs = 60_000;
+
 export async function requireApiSession(request: Request, options: ApiSessionOptions = {}) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) {
@@ -39,6 +44,17 @@ export async function requireApiSession(request: Request, options: ApiSessionOpt
       response: NextResponse.json({ ok: false, message: "SuperAdmin hanya memiliki akses pemantauan. Pengolahan data dilakukan oleh Admin unit kerja." }, { status: 403 }),
     };
   }
-  await db.update(user).set({ lastActiveAt: new Date(), updatedAt: new Date() }).where(eq(user.id, session.user.id));
+  const now = Date.now();
+  const lastTouch = activityTouches.get(session.user.id) ?? 0;
+  if (now - lastTouch >= activityTouchIntervalMs) {
+    activityTouches.set(session.user.id, now);
+    try {
+      const activeAt = new Date(now);
+      await db.update(user).set({ lastActiveAt: activeAt, updatedAt: activeAt }).where(eq(user.id, session.user.id));
+    } catch (error) {
+      activityTouches.delete(session.user.id);
+      throw error;
+    }
+  }
   return { session, response: null };
 }

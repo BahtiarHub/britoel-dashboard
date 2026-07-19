@@ -16,21 +16,51 @@ export async function GET(request: Request) {
   const requestedBranch = String(url.searchParams.get("branch") ?? ownBranch);
   const branchCode = guard.session.user.role === "SuperAdmin" && /^\d{4}$/.test(requestedBranch) ? requestedBranch : ownBranch;
 
-  const rows = await db.select().from(loanRecords).where(eq(loanRecords.branchCode, branchCode)).orderBy(loanRecords.period, loanRecords.accountNumber);
-  const mantriAssignments = await db.select().from(loanMantriAssignments).where(eq(loanMantriAssignments.branchCode, branchCode));
-  const deposits = await db.select().from(depositRecords).where(eq(depositRecords.branchCode, branchCode)).orderBy(depositRecords.period, depositRecords.loanAccountNumber);
-  const nominativeCkpn = await db.select().from(nominativeCkpnRecords).where(eq(nominativeCkpnRecords.branchCode, branchCode)).orderBy(nominativeCkpnRecords.period, nominativeCkpnRecords.accountNumber);
-  const loanResolutions = await db.select().from(missingLoanResolutions).where(eq(missingLoanResolutions.branchCode, branchCode)).orderBy(missingLoanResolutions.period, missingLoanResolutions.accountNumber);
-  const forecasts = await db.select().from(ckpnForecasts).where(eq(ckpnForecasts.branchCode, branchCode)).orderBy(ckpnForecasts.period, ckpnForecasts.accountNumber);
-  const branchProfile = (await db.select().from(branchProfiles).where(eq(branchProfiles.branchCode, branchCode)).limit(1))[0];
-  const latestUploads = await db.select({
-    id: uploadRecords.id,
-    sourceKey: uploadRecords.sourceKey,
-    sourceName: uploadRecords.sourceName,
-    fileName: uploadRecords.fileName,
-    rowCount: uploadRecords.rowCount,
-    createdAt: uploadRecords.createdAt,
-  }).from(uploadRecords).where(and(eq(uploadRecords.branchCode, branchCode), eq(uploadRecords.status, "Berhasil"))).orderBy(desc(uploadRecords.createdAt)).limit(20);
+  if (url.searchParams.get("section") === "deposits") {
+    const deposits = await db.select().from(depositRecords)
+      .where(eq(depositRecords.branchCode, branchCode))
+      .orderBy(depositRecords.period, depositRecords.loanAccountNumber);
+
+    return NextResponse.json({
+      ok: true,
+      branchCode,
+      di319: deposits.map((item) => ({
+        period: item.period,
+        cif: item.cif,
+        loanAccountNumber: item.loanAccountNumber,
+        debtorName: item.debtorName,
+        mantri: item.mantri,
+        savingsAccount: item.savingsAccount,
+        balance: item.balance,
+        availableBalance: item.availableBalance,
+        blockedAtStart: item.blockedAtStart,
+        currentBlocked: item.currentBlocked,
+        installmentFromBlocked: item.installmentFromBlocked,
+        mutationDate: item.mutationDate,
+        status: item.status,
+      })),
+    });
+  }
+
+  const [rows, mantriAssignments, nominativeCkpn, loanResolutions, forecasts, branchProfilesForUker, latestUploads] = await Promise.all([
+    db.select().from(loanRecords).where(eq(loanRecords.branchCode, branchCode)).orderBy(loanRecords.period, loanRecords.accountNumber),
+    db.select().from(loanMantriAssignments).where(eq(loanMantriAssignments.branchCode, branchCode)),
+    db.select().from(nominativeCkpnRecords).where(eq(nominativeCkpnRecords.branchCode, branchCode)).orderBy(nominativeCkpnRecords.period, nominativeCkpnRecords.accountNumber),
+    db.select().from(missingLoanResolutions).where(eq(missingLoanResolutions.branchCode, branchCode)).orderBy(missingLoanResolutions.period, missingLoanResolutions.accountNumber),
+    db.select().from(ckpnForecasts).where(eq(ckpnForecasts.branchCode, branchCode)).orderBy(ckpnForecasts.period, ckpnForecasts.accountNumber),
+    db.select().from(branchProfiles).where(eq(branchProfiles.branchCode, branchCode)).limit(1),
+    ["Admin", "SuperAdmin"].includes(guard.session.user.role ?? "")
+      ? db.select({
+        id: uploadRecords.id,
+        sourceKey: uploadRecords.sourceKey,
+        sourceName: uploadRecords.sourceName,
+        fileName: uploadRecords.fileName,
+        rowCount: uploadRecords.rowCount,
+        createdAt: uploadRecords.createdAt,
+      }).from(uploadRecords).where(and(eq(uploadRecords.branchCode, branchCode), eq(uploadRecords.status, "Berhasil"))).orderBy(desc(uploadRecords.createdAt)).limit(20)
+      : Promise.resolve([]),
+  ]);
+  const branchProfile = branchProfilesForUker[0];
 
   const periods = [...new Set(rows.map((item) => item.period))].sort();
   const mantriAssignmentByAccount = new Map(mantriAssignments.map((item) => [item.accountNumber.replace(/\D/g, ""), item]));
@@ -67,21 +97,6 @@ export async function GET(request: Request) {
       interestArrears: item.interestArrears,
     };
     }),
-    di319: deposits.map((item) => ({
-      period: item.period,
-      cif: item.cif,
-      loanAccountNumber: item.loanAccountNumber,
-      debtorName: item.debtorName,
-      mantri: item.mantri,
-      savingsAccount: item.savingsAccount,
-      balance: item.balance,
-      availableBalance: item.availableBalance,
-      blockedAtStart: item.blockedAtStart,
-      currentBlocked: item.currentBlocked,
-      installmentFromBlocked: item.installmentFromBlocked,
-      mutationDate: item.mutationDate,
-      status: item.status,
-    })),
     nominativeCkpn: nominativeCkpn.map((item) => ({
       period: item.period,
       accountNumber: item.accountNumber,
@@ -100,6 +115,6 @@ export async function GET(request: Request) {
       accountNumber: item.accountNumber,
       targetCollectibility: item.targetCollectibility,
     })),
-    uploads: ["Admin", "SuperAdmin"].includes(guard.session.user.role ?? "") ? latestUploads : [],
+    uploads: latestUploads,
   });
 }

@@ -15,12 +15,14 @@ export async function GET(request: Request) {
   try {
     const branchScoped = guard.session.user.role !== "SuperAdmin";
     const activeBranchCode = guard.session.user.branchCode ?? "8014";
-    const rows = branchScoped
-      ? await db.select().from(brimenCustomers).where(eq(brimenCustomers.branchCode, activeBranchCode)).orderBy(desc(brimenCustomers.updatedAt))
-      : await db.select().from(brimenCustomers).orderBy(desc(brimenCustomers.updatedAt));
-    const creditRows = branchScoped
-      ? await db.select().from(loanRecords).where(and(eq(loanRecords.branchCode, activeBranchCode), eq(loanRecords.sourceKey, "lw321-terbaru"))).orderBy(desc(loanRecords.period))
-      : await db.select().from(loanRecords).where(eq(loanRecords.sourceKey, "lw321-terbaru")).orderBy(desc(loanRecords.period));
+    const [rows, creditRows] = await Promise.all([
+      branchScoped
+        ? db.select().from(brimenCustomers).where(eq(brimenCustomers.branchCode, activeBranchCode)).orderBy(desc(brimenCustomers.updatedAt))
+        : db.select().from(brimenCustomers).orderBy(desc(brimenCustomers.updatedAt)),
+      branchScoped
+        ? db.select().from(loanRecords).where(and(eq(loanRecords.branchCode, activeBranchCode), eq(loanRecords.sourceKey, "lw321-terbaru"))).orderBy(desc(loanRecords.period))
+        : db.select().from(loanRecords).where(eq(loanRecords.sourceKey, "lw321-terbaru")).orderBy(desc(loanRecords.period)),
+    ]);
     const latestPeriodByBranch = new Map<string, string>();
     creditRows.forEach((row) => { if (!latestPeriodByBranch.has(row.branchCode)) latestPeriodByBranch.set(row.branchCode, row.period); });
     const latestCreditRows = creditRows.filter((row) => row.period === latestPeriodByBranch.get(row.branchCode));

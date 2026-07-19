@@ -1179,6 +1179,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
   const [di319Rows, setDi319Rows] = useState<UploadedDi319Row[]>([]);
   const [latestUploadAt, setLatestUploadAt] = useState<string>();
   const initializedBrimenBranch = useRef<string | undefined>(undefined);
+  const loadedDepositBranch = useRef<string | undefined>(undefined);
+  const loadedBrimenLoanBranch = useRef<string | undefined>(undefined);
+  const loadedAuditBranch = useRef<string | undefined>(undefined);
 
   async function loadDashboardData() {
     try {
@@ -1194,7 +1197,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         Array.isArray(payload.missingLoanResolutions) ? payload.missingLoanResolutions : [],
         Array.isArray(payload.ckpnForecasts) ? payload.ckpnForecasts : [],
       );
-      setDi319Rows(Array.isArray(payload.di319) ? payload.di319 : []);
       const latestUpload = Array.isArray(payload.uploads) ? payload.uploads[0] : undefined;
       setLatestUploadAt(latestUpload?.createdAt ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(latestUpload.createdAt)) : undefined);
       if (payload.source === "upload" && Array.isArray(payload.data) && payload.data.length) {
@@ -1212,7 +1214,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       setLoanDataVersion((current) => current + 1);
     } catch {
       restoreMockLoanData();
-      setDi319Rows([]);
       setLatestUploadAt(undefined);
       setLoanDataSource("mock");
       setLoanDataVersion((current) => current + 1);
@@ -1240,44 +1241,92 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         initializedBrimenBranch.current = activeBranchCode;
       }
 
-      const loanResponse = await fetch("/api/brimen/loans?history=1", { cache: "no-store" });
-      const loanPayload = await loanResponse.json();
-      if (loanResponse.ok && loanPayload.ok) {
-        setBrimenLoans(loanPayload.data ?? []);
-      }
     } catch {
       setBrimenStatus("Data BRIMEN belum bisa dimuat.");
     }
   }
 
+  async function loadBrimenLoans(force = false) {
+    if (!force && loadedBrimenLoanBranch.current === activeBranchCode) return;
+    try {
+      const response = await fetch("/api/brimen/loans?history=1", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) return;
+      setBrimenLoans(payload.data ?? []);
+      loadedBrimenLoanBranch.current = activeBranchCode;
+    } catch {
+      // Riwayat pinjam tetap dapat dicoba kembali saat Dashboard Operasional dibuka lagi.
+    }
+  }
+
+  async function loadDepositData(force = false) {
+    if (!force && loadedDepositBranch.current === activeBranchCode) return;
+    try {
+      const response = await fetch(`/api/dashboard-data?branch=${encodeURIComponent(activeBranchCode)}&section=deposits`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) return;
+      setDi319Rows(Array.isArray(payload.di319) ? payload.di319 : []);
+      loadedDepositBranch.current = activeBranchCode;
+    } catch {
+      // Data simpanan dimuat ulang saat menu yang membutuhkannya dibuka kembali.
+    }
+  }
+
+  async function loadAuditData(force = false) {
+    if (!force && loadedAuditBranch.current === activeBranchCode) return;
+    try {
+      const response = await fetch("/api/audit", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) return;
+      setBackendAuditEntries((payload.data ?? []).map((item: { id: string; actor?: string; action: string; entity: string; detail?: string; createdAt: string; branchCode?: string }) => ({
+        id: item.id,
+        time: new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt)),
+        actor: item.actor || "Sistem BRI Tool",
+        action: item.action.replaceAll("_", " "),
+        detail: item.detail || item.entity,
+        category: item.entity.includes("upload") ? "Upload" : item.entity.includes("whatsapp") ? "Kredit" : "BRIMEN",
+        branchCode: item.branchCode,
+      })));
+      loadedAuditBranch.current = activeBranchCode;
+    } catch {
+      // Audit bukan data utama, sehingga kegagalannya tidak menghambat dashboard.
+    }
+  }
+
   useEffect(() => {
+    loadedDepositBranch.current = undefined;
+    loadedBrimenLoanBranch.current = undefined;
+    loadedAuditBranch.current = undefined;
+    setDi319Rows([]);
+    setBrimenLoans([]);
+    setBackendAuditEntries([]);
     loadBrimen();
     loadDashboardData();
-    fetch("/api/audit", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (!payload.ok) return;
-        setBackendAuditEntries((payload.data ?? []).map((item: { id: string; actor?: string; action: string; entity: string; detail?: string; createdAt: string; branchCode?: string }) => ({
-          id: item.id,
-          time: new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt)),
-          actor: item.actor || "Sistem BRI Tool",
-          action: item.action.replaceAll("_", " "),
-          detail: item.detail || item.entity,
-          category: item.entity.includes("upload") ? "Upload" : item.entity.includes("whatsapp") ? "Kredit" : "BRIMEN",
-          branchCode: item.branchCode,
-        })));
-      })
-      .catch(() => undefined);
   }, [activeBranchCode, session.user.id]);
+
+  useEffect(() => {
+    if (activeMenu === "brimen") void loadBrimenLoans();
+  }, [activeMenu, activeBranchCode]);
+
+  useEffect(() => {
+    if (activeMenu === "mantri" && (mantriView === "kualitas" || mantriView === "di319")) void loadDepositData();
+  }, [activeMenu, mantriView, activeBranchCode]);
+
+  useEffect(() => {
+    if (activeControlPanel === "audit") void loadAuditData();
+  }, [activeControlPanel, activeBranchCode]);
 
   useEffect(() => {
     const refresh = () => {
       loadDashboardData();
       loadBrimen();
+      loadedDepositBranch.current = undefined;
+      if (activeMenu === "mantri" && (mantriView === "kualitas" || mantriView === "di319")) void loadDepositData(true);
+      if (activeMenu === "brimen") void loadBrimenLoans(true);
     };
     window.addEventListener("britoel-data-uploaded", refresh);
     return () => window.removeEventListener("britoel-data-uploaded", refresh);
-  }, [activeBranchCode, session.user.id]);
+  }, [activeBranchCode, session.user.id, activeMenu, mantriView]);
 
   useEffect(() => {
     const role = session.user.role as UserRole | undefined;
@@ -1535,6 +1584,7 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         qualityFilter={globalQuality}
         setQualityFilter={setGlobalQuality}
         mantriFilter={globalMantri}
+        setMantriFilter={setGlobalMantri}
         productFilter={globalProduct}
         arrearsMantri={arrearsMantri}
         setArrearsMantri={setArrearsMantri}
@@ -1636,7 +1686,9 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         setProcessForm={setBrimenProcessForm}
         actionMessage={brimenActionMessage}
         setActionMessage={setBrimenActionMessage}
-        reload={loadBrimen}
+        reload={async () => {
+          await Promise.all([loadBrimen(), loadBrimenLoans(true)]);
+        }}
         currentUser={{
           name: session.user.name,
           username: session.user.displayUsername ?? session.user.username ?? session.user.name,
@@ -3389,6 +3441,17 @@ const kualitasColumnOptions: ColumnOption[] = [
   { key: "deltaCkpn", label: "Delta CKPN" },
 ];
 
+const newQualityColumnOptions: ColumnOption[] = [
+  { key: "account", label: "No Rekening" },
+  { key: "name", label: "Nama Debitur" },
+  { key: "mantri", label: "Mantri" },
+  { key: "outstanding", label: "Outstanding Bulan Lalu" },
+  { key: "nextPayment", label: "Next Payment Date" },
+  { key: "previous", label: "Kolek Bulan Lalu" },
+  { key: "latest", label: "Kolek Terbaru" },
+  { key: "movement", label: "Status Perubahan" },
+];
+
 type QualityHubTab = "kualitas" | "new-sml" | "new-npl" | "tunggakan";
 
 function KualitasView({
@@ -3396,6 +3459,7 @@ function KualitasView({
   qualityFilter,
   setQualityFilter,
   mantriFilter,
+  setMantriFilter,
   productFilter,
   arrearsMantri,
   setArrearsMantri,
@@ -3408,6 +3472,7 @@ function KualitasView({
   qualityFilter: string;
   setQualityFilter: (value: string) => void;
   mantriFilter: string;
+  setMantriFilter: (value: string) => void;
   productFilter: string;
   arrearsMantri: string;
   setArrearsMantri: (value: string) => void;
@@ -3458,11 +3523,11 @@ function KualitasView({
         </div>
       </nav>
       {activeTab === "kualitas" ? (
-        <KualitasTableView month={month} qualityFilter={qualityFilter} setQualityFilter={setQualityFilter} mantriFilter={mantriFilter} productFilter={productFilter} />
+        <KualitasTableView month={month} qualityFilter={qualityFilter} setQualityFilter={setQualityFilter} mantriFilter={mantriFilter} setMantriFilter={setMantriFilter} mantriNames={mantriNames} productFilter={productFilter} />
       ) : activeTab === "new-sml" ? (
-        <NewQualityView month={month} quality="SML" />
+        <NewQualityView month={month} quality="SML" mantriNames={mantriNames} />
       ) : activeTab === "new-npl" ? (
-        <NewQualityView month={month} quality="NPL" />
+        <NewQualityView month={month} quality="NPL" mantriNames={mantriNames} />
       ) : (
         <TunggakanView month={month} mantri={arrearsMantri} setMantri={setArrearsMantri} mantriNames={mantriNames} branchCode={branchCode} branchName={branchName} uploadedDeposits={depositRows} embedded />
       )}
@@ -3470,18 +3535,56 @@ function KualitasView({
   );
 }
 
-function NewQualityView({ month, quality }: { month: MonthKey; quality: "SML" | "NPL" }) {
+function NewQualityView({ month, quality, mantriNames }: { month: MonthKey; quality: "SML" | "NPL"; mantriNames: string[] }) {
+  const [mantriFilter, setMantriFilter] = useState("Semua");
+  const [collectibilityFilter, setCollectibilityFilter] = useState("Semua");
+  const [qualitySearch, setQualitySearch] = useState("");
+  const deferredQualitySearch = useDeferredValue(qualitySearch);
+  const { visibleColumns, toggleColumn } = usePersistentColumns(`britoel-columns-new-${quality.toLowerCase()}-v1`, newQualityColumnOptions);
+  const visible = (key: string) => visibleColumns.includes(key);
   const summary = getSummary(month);
-  const rows = (quality === "SML" ? summary.newSml : summary.newNpl).map((item) => {
-    const latestRow = getCompareSnapshot(month, item.accountNumber);
-    const latestBucket: DisplayQuality = latestRow
-      ? classifyQuality(latestRow, month)
-      : getMissingLoanDisplayStatus(month, item);
-    return { ...item, latestBucket, latestMovement: getQualityMovement(item.targetBucket, latestBucket) };
-  }).sort((left, right) =>
-    compareDateAsc(left.nextPaymentDate, right.nextPaymentDate) || left.accountNumber.localeCompare(right.accountNumber),
-  );
-  const pagination = useTablePagination(rows, `${month}-new-${quality}-${rows.length}`);
+  const baseRows = useMemo(() => (quality === "SML" ? summary.newSml : summary.newNpl).map((item) => {
+      const latestRow = getCompareSnapshot(month, item.accountNumber);
+      const latestBucket: DisplayQuality = latestRow
+        ? classifyQuality(latestRow, month)
+        : getMissingLoanDisplayStatus(month, item);
+      return { ...item, latestBucket, latestMovement: getQualityMovement(item.targetBucket, latestBucket) };
+    }), [month, quality, summary]);
+  const rows = useMemo(() => {
+    const searchValue = deferredQualitySearch.trim().toLowerCase();
+    return baseRows.filter((item) => {
+      const searchMatch = !searchValue ||
+        item.accountNumber.toLowerCase().includes(searchValue) ||
+        item.debtorName.toLowerCase().includes(searchValue) ||
+        item.mantri.toLowerCase().includes(searchValue) ||
+        item.description.toLowerCase().includes(searchValue) ||
+        getProductType(item.description, item.loanType).toLowerCase().includes(searchValue);
+      const isRegularQuality = !["Lunas", "PH", "Perlu Konfirmasi"].includes(item.latestBucket);
+      const collectibilityMatch = collectibilityFilter === "Semua" ||
+        (collectibilityFilter === "PL" && isRegularQuality && isPl(item.latestBucket as QualityBucket)) ||
+        (collectibilityFilter === "NPL" && isRegularQuality && isNpl(item.latestBucket as QualityBucket)) ||
+        item.latestBucket === collectibilityFilter;
+      return searchMatch && collectibilityMatch && (mantriFilter === "Semua" || item.mantri === mantriFilter);
+    }).sort((left, right) =>
+      compareDateAsc(left.nextPaymentDate, right.nextPaymentDate) || left.accountNumber.localeCompare(right.accountNumber),
+    );
+  }, [baseRows, collectibilityFilter, deferredQualitySearch, mantriFilter]);
+  const pagination = useTablePagination(rows, `${month}-new-${quality}-${mantriFilter}-${collectibilityFilter}-${deferredQualitySearch}-${rows.length}`);
+  const exportHeaders = newQualityColumnOptions.filter((column) => visible(column.key)).map((column) => column.label);
+  const exportData = rows.map((item) => {
+    const values: Record<string, string | number> = {
+      account: item.accountNumber,
+      name: item.debtorName,
+      mantri: item.mantri,
+      outstanding: item.outstanding,
+      nextPayment: dateLabel(item.nextPaymentDate),
+      previous: item.targetBucket,
+      latest: item.latestBucket,
+      movement: item.latestMovement,
+    };
+    return visibleColumns.map((key) => values[key]);
+  });
+  const latestCollectibilityOptions = [...qualityOptions, "Lunas", "PH", "Perlu Konfirmasi"];
 
   return (
     <div className="space-y-4">
@@ -3491,13 +3594,41 @@ function NewQualityView({ month, quality }: { month: MonthKey; quality: "SML" | 
           <h2 className="mt-1 text-lg font-black text-[#00529c]">Nominatif New {quality}</h2>
           <p className="mt-1 text-xs text-muted-foreground">Kriteria dari {getMonthLabel(getPreviousMonth(month, 2) ?? month)} ke {getMonthLabel(getPreviousMonth(month) ?? month)}. Posisi tabel membandingkan bulan lalu dengan data terbaru.</p>
         </div>
-        <Badge className={cn("w-fit border-0 px-3 py-1.5", quality === "SML" ? "bg-orange-100 text-[#b54b00]" : "bg-rose-100 text-rose-700")}>{formatNumber(rows.length)} rekening</Badge>
+        <Badge className={cn("w-fit border-0 px-3 py-1.5", quality === "SML" ? "bg-orange-100 text-[#b54b00]" : "bg-rose-100 text-rose-700")}>{formatNumber(rows.length)} dari {formatNumber(baseRows.length)} rekening</Badge>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-[minmax(190px,0.65fr)_minmax(220px,0.75fr)_minmax(280px,1.15fr)_auto] lg:items-end">
+        <Field label="Filter Mantri">
+          <Select value={mantriFilter} onChange={(event) => setMantriFilter(event.target.value)} className="w-full">
+            <option value="Semua">Semua Mantri</option>
+            {mantriNames.map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </Field>
+        <Field label="Filter Kolektibilitas Terbaru">
+          <Select value={collectibilityFilter} onChange={(event) => setCollectibilityFilter(event.target.value)} className="w-full">
+            {latestCollectibilityOptions.map((option) => <option key={option} value={option}>{option === "Semua" ? "Semua Kolektibilitas" : option}</option>)}
+          </Select>
+        </Field>
+        <Field label={`Cari Nominatif New ${quality}`}>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#00529c]" />
+            <Input value={qualitySearch} onChange={(event) => setQualitySearch(event.target.value)} placeholder="No rekening, nama, mantri, atau produk..." className="pl-9" />
+          </div>
+        </Field>
+        <div className="lg:justify-self-end">
+          <TableTools
+            columns={newQualityColumnOptions}
+            visibleColumns={visibleColumns}
+            onToggleColumn={toggleColumn}
+            onExportCsv={() => exportRowsCsv(`new-${quality.toLowerCase()}-${month}.csv`, exportHeaders, exportData)}
+            onExportXls={() => exportRowsXls(`new-${quality.toLowerCase()}-${month}.xls`, exportHeaders, exportData)}
+          />
+        </div>
       </div>
       {rows.length ? (
         <>
-          <TableShell minWidth="min-w-[850px]">
-            <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th><Th>Kolek Terbaru</Th><Th>Status Perubahan</Th></tr></thead>
-            <tbody>{pagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.targetBucket} /></Td><Td><QualityBadge bucket={item.latestBucket} /></Td><Td><MovementBadge movement={item.latestMovement} /></Td></tr>)}</tbody>
+          <TableShell minWidth="min-w-[980px]">
+            <thead><tr>{visible("account") ? <Th>No Rekening</Th> : null}{visible("name") ? <Th>Nama Debitur</Th> : null}{visible("mantri") ? <Th>Mantri</Th> : null}{visible("outstanding") ? <Th>Outstanding Bulan Lalu</Th> : null}{visible("nextPayment") ? <Th>Next Payment Date</Th> : null}{visible("previous") ? <Th>Kolek Bulan Lalu</Th> : null}{visible("latest") ? <Th>Kolek Terbaru</Th> : null}{visible("movement") ? <Th>Status Perubahan</Th> : null}</tr></thead>
+            <tbody>{pagination.pagedRows.map((item) => <tr key={item.accountNumber}>{visible("account") ? <Td className="font-medium text-[#00529c]">{item.accountNumber}</Td> : null}{visible("name") ? <Td className="font-semibold">{item.debtorName}</Td> : null}{visible("mantri") ? <Td>{item.mantri}</Td> : null}{visible("outstanding") ? <Td>{formatCurrency(item.outstanding)}</Td> : null}{visible("nextPayment") ? <Td>{dateLabel(item.nextPaymentDate)}</Td> : null}{visible("previous") ? <Td><QualityBadge bucket={item.targetBucket} /></Td> : null}{visible("latest") ? <Td><QualityBadge bucket={item.latestBucket} /></Td> : null}{visible("movement") ? <Td><MovementBadge movement={item.latestMovement} /></Td> : null}</tr>)}</tbody>
           </TableShell>
           <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
         </>
@@ -3511,12 +3642,16 @@ function KualitasTableView({
   qualityFilter,
   setQualityFilter,
   mantriFilter,
+  setMantriFilter,
+  mantriNames,
   productFilter,
 }: {
   month: MonthKey;
   qualityFilter: string;
   setQualityFilter: (value: string) => void;
   mantriFilter: string;
+  setMantriFilter: (value: string) => void;
+  mantriNames: string[];
   productFilter: string;
 }) {
   const [qualitySearch, setQualitySearch] = useState("");
@@ -3627,9 +3762,15 @@ function KualitasTableView({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-[minmax(240px,0.8fr)_minmax(280px,1fr)_auto] md:items-end">
+      <div className="grid gap-3 lg:grid-cols-[minmax(190px,0.65fr)_minmax(240px,0.8fr)_minmax(280px,1.15fr)_auto] lg:items-end">
+        <Field label="Filter Mantri">
+          <Select value={mantriFilter} onChange={(event) => setMantriFilter(event.target.value)} className="w-full">
+            <option value="Semua">Semua Mantri</option>
+            {mantriNames.map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </Field>
         <Field label={`Filter Kolektibilitas Bulan Lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)}`}>
-          <Select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="min-w-64">
+          <Select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="w-full">
             {qualityOptions.map((option) => (
               <option key={option} value={option}>{option}</option>
             ))}
@@ -3646,7 +3787,7 @@ function KualitasTableView({
             />
           </div>
         </Field>
-        <div className="md:justify-self-end">
+        <div className="lg:justify-self-end">
           <TableTools
             columns={kualitasColumnOptions}
             visibleColumns={visibleColumns}
