@@ -121,6 +121,7 @@ import {
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import { hasLoanMantri } from "@/lib/loan-mantri";
+import { hasBrimenGuarantee, hasBrimenGuaranteeDetail, hasBrimenGuaranteeReference } from "@/lib/brimen-guarantee";
 
 const sidebarItems: {
   key: MenuKey;
@@ -491,12 +492,8 @@ function getBrimenStatusLabel(status?: BrimenCustomer["status"], row?: Pick<Brim
   return status;
 }
 
-function hasBrimenGuarantee(row: Pick<BrimenCustomer, "brimenJaminan" | "guarantee">) {
-  return [row.brimenJaminan, row.guarantee].some((value) => Boolean(value && value.trim() && value.trim() !== "-"));
-}
-
 function needsBrimenCompletion(row: BrimenCustomer) {
-  return !row.address?.trim() || !row.brimenBerkas?.trim() || (hasBrimenGuarantee(row) && !row.brimenJaminan?.trim());
+  return !row.address?.trim() || !row.brimenBerkas?.trim() || (hasBrimenGuaranteeDetail(row) && !hasBrimenGuaranteeReference(row.brimenJaminan));
 }
 
 function getBrimenRowTone(row: BrimenCustomer) {

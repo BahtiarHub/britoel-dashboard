@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { auditLogs, brimenCustomers, covenanceRecords, loanRecords } from "@/db/schema";
 import { newId, normalizeCustomer, parsePlafond } from "@/lib/brimen-db";
+import { hasBrimenGuarantee } from "@/lib/brimen-guarantee";
 import { requireApiSession } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
     });
     const brimenOnlyRows = normalizedBrimenRows.filter((customer) => !matchedBrimenKeys.has(`${customer.branchCode}:${customer.accountNumber.replace(/\D/g, "")}`));
     const data = [...latestData, ...brimenOnlyRows];
-    const withGuarantee = data.filter((row) => row.brimenJaminan || row.guarantee).length;
+    const withGuarantee = data.filter(hasBrimenGuarantee).length;
     const withoutArchive = data.filter((row) => !row.brimenBerkas).length;
     const borrowed = data.filter((row) => row.status === "Dipinjam").length;
     const statusCounts = new Map<string, number>();
