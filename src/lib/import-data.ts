@@ -482,7 +482,7 @@ export function mapDepositRows(rawRows: RawRow[], period: string) {
       blockedAtStart,
       currentBlocked,
       installmentFromBlocked,
-      mutationDate: toIsoDate(pick(row, depositAliases.mutationDate)) || `${period}-01`,
+      mutationDate: toIsoDate(pick(row, depositAliases.mutationDate)) || toIsoDate(pick(row, aliases.period)) || `${period}-01`,
       status,
     });
   });

@@ -24,6 +24,7 @@ async function main() {
         const result = await db.update(depositRecords).set({
           balance: row.balance,
           availableBalance: row.availableBalance,
+          mutationDate: row.mutationDate,
         }).where(and(
           eq(depositRecords.branchCode, branchCode),
           eq(depositRecords.period, period),

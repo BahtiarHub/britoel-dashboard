@@ -3978,8 +3978,13 @@ function TunggakanView({
   });
   const depositPeriods = [...new Set(uploadedDeposits.map((item) => item.period))].sort();
   const depositPeriod = depositPeriods.filter((period) => period <= month).at(-1) ?? depositPeriods.at(-1);
-  const depositPeriodDate = depositPeriod
-    ? new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(Number(depositPeriod.slice(0, 4)), Number(depositPeriod.slice(5, 7)), 0))
+  const depositPositionDate = uploadedDeposits
+    .filter((item) => item.period === depositPeriod && /^\d{4}-\d{2}-\d{2}$/.test(item.mutationDate))
+    .map((item) => item.mutationDate)
+    .sort()
+    .at(-1);
+  const depositPeriodDate = depositPositionDate
+    ? new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(`${depositPositionDate}T00:00:00`))
     : undefined;
   const savingsByCif = new Map<string, { accounts: Map<string, number> }>();
   uploadedDeposits.filter((item) => item.period === depositPeriod).forEach((item) => {
