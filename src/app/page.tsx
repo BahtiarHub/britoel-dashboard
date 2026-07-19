@@ -143,7 +143,7 @@ type MantriViewKey =
   | "wa";
 
 const mantriTabs: { key: MantriViewKey; label: string; icon: React.ElementType }[] = [
-  { key: "ringkasan", label: "Ringkasan Kredit", icon: LayoutDashboard },
+  { key: "ringkasan", label: "Risalah Kredit", icon: LayoutDashboard },
   { key: "nominatif", label: "Nominatif Nasabah", icon: ClipboardList },
   { key: "kualitas", label: "Nominatif Kualitas", icon: Layers3 },
   { key: "rekap", label: "Rekap Mantri", icon: BarChart3 },
@@ -2943,6 +2943,36 @@ function RingkasanView({
   const previousSummary = getSummary(previousMonth ?? month);
   const yearEndMonth = getYearEndComparisonMonth(month);
   const yearEndSummary = getSummary(yearEndMonth);
+  const creditSnapshots = getCreditSnapshots(month);
+  const countDebtors = (rows: LoanSnapshot[]) => new Set(
+    rows.map((item) => item.cif?.trim() || item.debtorName.trim().toUpperCase() || item.accountNumber),
+  ).size;
+  const productRecaps = [
+    {
+      label: "Kupedes",
+      description: "Kupedes dan Kupedes Rakyat",
+      rows: creditSnapshots.filter((item) => getProductType(item.description, item.loanType).startsWith("Kupedes")),
+      tone: "blue",
+    },
+    {
+      label: "KUR",
+      description: "Seluruh produk KUR",
+      rows: creditSnapshots.filter((item) => getProductType(item.description, item.loanType).startsWith("KUR")),
+      tone: "orange",
+    },
+  ].map((product) => {
+    const smlRows = product.rows.filter((item) => isSml(classifyQuality(item, month)));
+    const nplRows = product.rows.filter((item) => isNpl(classifyQuality(item, month)));
+    return {
+      ...product,
+      os: product.rows.reduce((total, item) => total + item.outstanding, 0),
+      debtors: countDebtors(product.rows),
+      sml: smlRows.reduce((total, item) => total + item.outstanding, 0),
+      smlDebtors: countDebtors(smlRows),
+      npl: nplRows.reduce((total, item) => total + item.outstanding, 0),
+      nplDebtors: countDebtors(nplRows),
+    };
+  });
   const trendCards = [
     { label: "OS", current: summary.totalOs, debtorCount: summary.totalDebtorCount, mtd: summary.totalOs - previousSummary.totalOs, ytd: summary.totalOs - yearEndSummary.totalOs, risk: false, tone: "blue", icon: Banknote },
     { label: "SML", current: summary.smlOs, debtorCount: summary.smlDebtorCount, mtd: summary.smlOs - previousSummary.smlOs, ytd: summary.smlOs - yearEndSummary.smlOs, risk: true, tone: "orange", icon: AlertTriangle },
@@ -2964,7 +2994,7 @@ function RingkasanView({
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Ringkasan Portofolio"
+        title="Risalah Kredit"
         description={`Ikhtisar kualitas kredit, OS, realisasi, dan dampak CKPN untuk ${getMonthLabel(month)}.`}
         icon={LayoutDashboard}
       />
@@ -3003,6 +3033,45 @@ function RingkasanView({
           );
         })}
       </div>
+
+      <section className="space-y-3" aria-labelledby="product-recap-title">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase text-[#f37021]">Komposisi Portofolio</p>
+            <h2 id="product-recap-title" className="mt-1 text-lg font-black text-[#00529c]">Rekap Berdasarkan Jenis Pinjaman</h2>
+          </div>
+          <p className="text-xs font-semibold text-muted-foreground">Posisi {getMonthLabel(month)}</p>
+        </div>
+        <div className="grid gap-3 xl:grid-cols-2">
+          {productRecaps.map((product) => (
+            <div key={product.label} className="bri-card overflow-hidden rounded-lg border border-[#d7e3ef] bg-white">
+              <div className={cn("h-1", product.tone === "blue" ? "bg-[#00529c]" : "bg-[#f37021]")} />
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-3 border-b border-[#e3edf6] pb-3">
+                  <div>
+                    <h3 className="text-base font-black text-[#004077]">{product.label}</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{product.description}</p>
+                  </div>
+                  <span className={cn("rounded-md px-2.5 py-1 text-xs font-black", product.tone === "blue" ? "bg-sky-50 text-[#00529c]" : "bg-orange-50 text-[#b54b00]")}>{formatNumber(product.debtors)} debitur</span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 divide-y divide-[#e3edf6] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                  {[
+                    { label: "OS", value: product.os, debtors: product.debtors, color: "text-[#00529c]" },
+                    { label: "SML", value: product.sml, debtors: product.smlDebtors, color: "text-[#b54b00]" },
+                    { label: "NPL", value: product.npl, debtors: product.nplDebtors, color: "text-rose-700" },
+                  ].map((metric) => (
+                    <div key={metric.label} className="px-1 py-3 first:pt-0 last:pb-0 sm:px-3 sm:py-0 sm:first:pl-0 sm:last:pr-0">
+                      <p className="text-[11px] font-black uppercase text-muted-foreground">{metric.label}</p>
+                      <p className={cn("mt-1 text-base font-black", metric.color)}>{formatCurrency(metric.value)}</p>
+                      <p className="mt-1 text-xs font-semibold text-muted-foreground">{formatNumber(metric.debtors)} debitur</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="SML %" value={formatPercent(summary.smlPercent)} helper={`${formatNumber(summary.smlDebtorCount)} debitur posisi terbaru`} tone="warning" icon={LineChart} />
@@ -4548,7 +4617,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
     })
     .filter(({ daysUntilDue }) => daysUntilDue >= 0 && daysUntilDue < 5)
     .sort((a, b) => a.daysUntilDue - b.daysUntilDue || a.item.nextPaymentDate.localeCompare(b.item.nextPaymentDate))
-    .map(({ item, daysUntilDue }) => {
+    .map(({ item }) => {
       const previous = reminderPreviousMonth ? getCompareSnapshot(reminderPreviousMonth, item.accountNumber) : undefined;
       return {
       id: `reminder-${item.accountNumber}`,
@@ -4558,7 +4627,7 @@ function WhatsappCampaignView({ month }: { month: MonthKey }) {
       mantri: item.mantri,
       dueDate: item.nextPaymentDate,
       previousQuality: previous && reminderPreviousMonth ? classifyQuality(previous, reminderPreviousMonth) : "-" as const,
-      detail: `${daysUntilDue === 0 ? "Hari ini" : `${daysUntilDue} hari lagi`} | ${dateLabel(item.nextPaymentDate)}`,
+      detail: dateLabel(item.nextPaymentDate),
       optIn: true,
     };
     });
