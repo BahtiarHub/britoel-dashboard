@@ -137,7 +137,6 @@ type MantriViewKey =
   | "kualitas"
   | "rekap"
   | "realisasi"
-  | "tunggakan"
   | "ckpn"
   | "di319"
   | "wa";
@@ -148,7 +147,6 @@ const mantriTabs: { key: MantriViewKey; label: string; icon: React.ElementType }
   { key: "kualitas", label: "Nominatif Kualitas", icon: Layers3 },
   { key: "rekap", label: "Rekap Mantri", icon: BarChart3 },
   { key: "realisasi", label: "Realisasi", icon: TrendingUp },
-  { key: "tunggakan", label: "Tunggakan", icon: AlertTriangle },
   { key: "ckpn", label: "Prognosa CKPN", icon: PieChartIcon },
   { key: "di319", label: "Monitoring Simpanan", icon: Banknote },
   { key: "wa", label: "WA Blast", icon: MessageCircle },
@@ -160,7 +158,6 @@ const mantriTabTones: Record<MantriViewKey, string> = {
   kualitas: "bg-emerald-600 text-white border-emerald-600/20 shadow-[0_10px_18px_rgba(5,150,105,0.20)]",
   rekap: "bg-sky-600 text-white border-sky-600/20 shadow-[0_10px_18px_rgba(2,132,199,0.20)]",
   realisasi: "bg-teal-600 text-white border-teal-600/20 shadow-[0_10px_18px_rgba(13,148,136,0.20)]",
-  tunggakan: "bg-amber-500 text-white border-amber-500/20 shadow-[0_10px_18px_rgba(245,158,11,0.20)]",
   ckpn: "bg-rose-600 text-white border-rose-600/20 shadow-[0_10px_18px_rgba(225,29,72,0.20)]",
   di319: "bg-indigo-600 text-white border-indigo-600/20 shadow-[0_10px_18px_rgba(79,70,229,0.20)]",
   wa: "bg-emerald-600 text-white border-emerald-600/20 shadow-[0_10px_18px_rgba(5,150,105,0.20)]",
@@ -1472,7 +1469,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
     { id: "nominatif", label: "Cari Nominatif Nasabah", description: "Buka tabel rekening pinjaman", icon: ClipboardList, action: () => openMantriTab("nominatif") },
     { id: "quality", label: "Lihat Perubahan Kualitas", description: "Upgrade, downgrade, dan tetap", icon: Layers3, action: () => openMantriTab("kualitas") },
     { id: "ckpn", label: "Buka Prognosa CKPN", description: "Simulasi dampak perubahan kolektibilitas", icon: PieChartIcon, action: () => openMantriTab("ckpn") },
-    { id: "tunggakan", label: "Buka Data Tunggakan", description: "Tunggakan pokok dan bunga dari LW321 terbaru", icon: AlertTriangle, action: () => openMantriTab("tunggakan") },
     { id: "di319", label: "Buka Monitoring Simpanan", description: "Blokiran simpanan dan setoran akhir periode", icon: Banknote, action: () => openMantriTab("di319") },
     { id: "wa-campaign", label: "Buka WA Blast", description: "Penawaran suplesi dan pengingat jatuh tempo", icon: MessageCircle, action: () => openMantriTab("wa") },
     { id: "covenance", label: "Buka Covenance Day", description: "Agenda dan tenggat operasional", icon: CalendarDays, action: () => { setBrimenFilter("Covenance Day"); openMenu("brimen"); setActiveControlPanel("none"); } },
@@ -1506,6 +1502,11 @@ function DashboardApp({ session }: { session: DashboardSession }) {
         setQualityFilter={setGlobalQuality}
         mantriFilter={globalMantri}
         productFilter={globalProduct}
+        arrearsMantri={arrearsMantri}
+        setArrearsMantri={setArrearsMantri}
+        mantriNames={mantriNames}
+        branchCode={activeBranchCode}
+        branchName={activeBranchName}
       />
     ),
     rekap: (
@@ -1519,7 +1520,6 @@ function DashboardApp({ session }: { session: DashboardSession }) {
       />
     ),
     realisasi: <RealisasiView month={selectedMonth} mantriFilter={globalMantri} />,
-    tunggakan: <TunggakanView month={selectedMonth} mantri={arrearsMantri} setMantri={setArrearsMantri} mantriNames={mantriNames} branchCode={activeBranchCode} branchName={activeBranchName} />,
     ckpn: (
       <CkpnView
         month={selectedMonth}
@@ -2757,7 +2757,6 @@ function DashboardMantriView({
     kualitas: "Perbandingan kolektibilitas bulan lalu dengan posisi terbaru.",
     rekap: `${rekap.length} mantri dengan rincian OS dan delta pencapaian.`,
     realisasi: `${realisasi.reduce((total, item) => total + item.count, 0)} rekening realisasi bulan ini.`,
-    tunggakan: `${arrears.length} rekening memiliki tunggakan pokok atau bunga pada posisi terbaru.`,
     ckpn: `${getPrognosaCkpnRows(month).filter((item) => item.targetCollectibility).length} rekening telah diisi kolektibilitas prognosanya.`,
     di319: "Monitoring pinjaman tanpa blokiran dan setoran yang menggunakan dana blokiran.",
     wa: "Kampanye penawaran suplesi dan pengingat setoran menjelang jatuh tempo.",
@@ -2795,7 +2794,7 @@ function DashboardMantriView({
       value: `${arrears.length} rekening`,
       helper: formatCurrency(arrears.reduce((total, item) => total + item.totalArrears, 0)),
       tone: "warning",
-      action: "tunggakan",
+      action: "kualitas",
     },
   ];
 
@@ -2858,7 +2857,7 @@ function DashboardMantriView({
         <div className="mb-2 rounded-md border border-[#d7e3ef] bg-[#fffaf6] px-3 py-2 sm:hidden">
           <p className="text-xs font-black uppercase text-[#f37021]">Fitur Utama Pinjaman</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-9">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-8">
         {mantriTabs.map((item) => {
           const Icon = item.icon;
           return (
@@ -2937,7 +2936,6 @@ function RingkasanView({
   summary: ReturnType<typeof getSummary>;
   onOpenMenu: (menu: MantriViewKey) => void;
 }) {
-  const [newQualityMenu, setNewQualityMenu] = useState<"SML" | "NPL">("SML");
   const ckpnRows = getCkpnRows(month);
   const previousMonth = getPreviousMonth(month);
   const previousSummary = getSummary(previousMonth ?? month);
@@ -2978,19 +2976,6 @@ function RingkasanView({
     { label: "SML", current: summary.smlOs, debtorCount: summary.smlDebtorCount, mtd: summary.smlOs - previousSummary.smlOs, ytd: summary.smlOs - yearEndSummary.smlOs, risk: true, tone: "orange", icon: AlertTriangle },
     { label: "NPL", current: summary.nplOs, debtorCount: summary.nplDebtorCount, mtd: summary.nplOs - previousSummary.nplOs, ytd: summary.nplOs - yearEndSummary.nplOs, risk: true, tone: "red", icon: ArrowDownRight },
   ] as const;
-  const selectedNewRows = (newQualityMenu === "SML" ? summary.newSml : summary.newNpl).map((item) => {
-    const latestRow = getCompareSnapshot(month, item.accountNumber);
-    const latestBucket: DisplayQuality = latestRow
-      ? classifyQuality(latestRow, month)
-      : getMissingLoanDisplayStatus(month, item);
-    return {
-      ...item,
-      latestBucket,
-      latestMovement: getQualityMovement(item.targetBucket, latestBucket),
-    };
-  });
-  const newRowsPagination = useTablePagination(selectedNewRows, `${month}-${newQualityMenu}-${selectedNewRows.length}`);
-
   return (
     <div className="space-y-6">
       <SectionHeader
@@ -3080,33 +3065,11 @@ function RingkasanView({
         <MetricCard label="Portofolio PUMK" value={formatCurrency(summary.pumkOs)} helper={`${summary.pumkCount} rekening LN_TYPE 5G, terpisah dari rekap kredit`} icon={BriefcaseBusiness} />
       </div>
 
-      <div className="bri-card rounded-lg border border-[#d7e3ef] bg-white p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="text-xs font-black uppercase text-[#f37021]">Pergerakan Baru</p><h2 className="mt-1 text-lg font-black text-[#00529c]">Nominatif New SML & New NPL</h2><p className="mt-1 text-xs text-muted-foreground">Kriteria dihitung dari {getMonthLabel(getPreviousMonth(month, 2) ?? month)} ke {getMonthLabel(getPreviousMonth(month) ?? month)}. Tabel menampilkan posisi bulan lalu dan terbaru.</p></div>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setNewQualityMenu("SML")} className={cn("flex min-w-[140px] items-center justify-between rounded-md border px-3 py-2 text-sm font-black", newQualityMenu === "SML" ? "border-[#f37021] bg-[#fff7ed] text-[#b54b00]" : "border-[#d7e3ef] bg-white text-muted-foreground")}><span>New SML</span><span className="rounded-full bg-white px-2 py-0.5 text-xs">{summary.newSml.length}</span></button>
-            <button type="button" onClick={() => setNewQualityMenu("NPL")} className={cn("flex min-w-[140px] items-center justify-between rounded-md border px-3 py-2 text-sm font-black", newQualityMenu === "NPL" ? "border-rose-500 bg-rose-50 text-rose-700" : "border-[#d7e3ef] bg-white text-muted-foreground")}><span>New NPL</span><span className="rounded-full bg-white px-2 py-0.5 text-xs">{summary.newNpl.length}</span></button>
-          </div>
-        </div>
-        <div className="mt-4">
-          {selectedNewRows.length ? (
-            <>
-              <TableShell minWidth="min-w-[850px]">
-                <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th><Th>Kolek Terbaru</Th><Th>Status Perubahan</Th></tr></thead>
-                <tbody>{newRowsPagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.targetBucket} /></Td><Td><QualityBadge bucket={item.latestBucket} /></Td><Td><MovementBadge movement={item.latestMovement} /></Td></tr>)}</tbody>
-              </TableShell>
-              <PaginationControls page={newRowsPagination.page} pageSize={newRowsPagination.pageSize} totalItems={selectedNewRows.length} onPageChange={newRowsPagination.setPage} onPageSizeChange={newRowsPagination.setPageSize} />
-            </>
-          ) : <EmptyState title={`Tidak ada New ${newQualityMenu}`} description={`Belum ada rekening yang masuk kategori New ${newQualityMenu} pada ${getMonthLabel(month)}.`} icon={CheckCircle2} />}
-        </div>
-      </div>
-
       <PortfolioGrowthChart month={month} title="Tren OS, SML, dan NPL" />
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2">
         <Button variant="outline" onClick={() => onOpenMenu("kualitas")}>Lihat Nominatif Kualitas</Button>
         <Button variant="outline" onClick={() => onOpenMenu("ckpn")}>Lihat Dampak CKPN</Button>
-        <Button variant="outline" onClick={() => onOpenMenu("tunggakan")}>Lihat Data Tunggakan</Button>
       </div>
     </div>
   );
@@ -3315,7 +3278,120 @@ const kualitasColumnOptions: ColumnOption[] = [
   { key: "deltaCkpn", label: "Delta CKPN" },
 ];
 
+type QualityHubTab = "kualitas" | "new-sml" | "new-npl" | "tunggakan";
+
 function KualitasView({
+  month,
+  qualityFilter,
+  setQualityFilter,
+  mantriFilter,
+  productFilter,
+  arrearsMantri,
+  setArrearsMantri,
+  mantriNames,
+  branchCode,
+  branchName,
+}: {
+  month: MonthKey;
+  qualityFilter: string;
+  setQualityFilter: (value: string) => void;
+  mantriFilter: string;
+  productFilter: string;
+  arrearsMantri: string;
+  setArrearsMantri: (value: string) => void;
+  mantriNames: string[];
+  branchCode: string;
+  branchName: string;
+}) {
+  const [activeTab, setActiveTab] = useState<QualityHubTab>("kualitas");
+  const summary = getSummary(month);
+  const tabs: { key: QualityHubTab; label: string; count?: number; icon: React.ElementType; tone: string }[] = [
+    { key: "kualitas", label: "Nominatif Kualitas", icon: Layers3, tone: "text-[#00529c] bg-sky-50" },
+    { key: "new-sml", label: "New SML", count: summary.newSml.length, icon: AlertTriangle, tone: "text-[#b54b00] bg-orange-50" },
+    { key: "new-npl", label: "New NPL", count: summary.newNpl.length, icon: ArrowDownRight, tone: "text-rose-700 bg-rose-50" },
+    { key: "tunggakan", label: "Tunggakan", count: getArrearsRows(month).length, icon: FileText, tone: "text-amber-800 bg-amber-50" },
+  ];
+  const descriptions: Record<QualityHubTab, string> = {
+    kualitas: `Perubahan status dari ${getMonthLabel(getPreviousMonth(month) ?? month)} ke ${getMonthLabel(month)} beserta delta CKPN.`,
+    "new-sml": "Rekening yang masuk kategori New SML beserta kolektibilitas bulan lalu dan terbaru.",
+    "new-npl": "Rekening yang masuk kategori New NPL beserta kolektibilitas bulan lalu dan terbaru.",
+    tunggakan: "Tunggakan pokok dan bunga dari LW321 terbaru, termasuk pengelolaan Surat Peringatan.",
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader title="Nominatif Kualitas" description={descriptions[activeTab]} icon={Layers3} />
+      <nav className="surface-panel overflow-x-auto p-2" aria-label="Kategori nominatif kualitas">
+        <div className="grid min-w-[720px] grid-cols-4 gap-2">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const selected = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  "flex min-h-14 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-black transition",
+                  selected ? "border-[#00529c] bg-[#00529c] text-white shadow-[inset_0_-3px_0_#f37021]" : "border-transparent bg-white text-[#004077] hover:border-[#b8d8f2] hover:bg-[#f8fbfe]",
+                )}
+              >
+                <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-md", selected ? "bg-white/15 text-white" : tab.tone)}><Icon className="h-4 w-4" /></span>
+                <span className="whitespace-nowrap">{tab.label}</span>
+                {typeof tab.count === "number" ? <span className={cn("rounded-full px-2 py-0.5 text-[10px]", selected ? "bg-white/15 text-white" : "bg-[#eaf3fb] text-[#00529c]")}>{formatNumber(tab.count)}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+      {activeTab === "kualitas" ? (
+        <KualitasTableView month={month} qualityFilter={qualityFilter} setQualityFilter={setQualityFilter} mantriFilter={mantriFilter} productFilter={productFilter} />
+      ) : activeTab === "new-sml" ? (
+        <NewQualityView month={month} quality="SML" />
+      ) : activeTab === "new-npl" ? (
+        <NewQualityView month={month} quality="NPL" />
+      ) : (
+        <TunggakanView month={month} mantri={arrearsMantri} setMantri={setArrearsMantri} mantriNames={mantriNames} branchCode={branchCode} branchName={branchName} embedded />
+      )}
+    </div>
+  );
+}
+
+function NewQualityView({ month, quality }: { month: MonthKey; quality: "SML" | "NPL" }) {
+  const summary = getSummary(month);
+  const rows = (quality === "SML" ? summary.newSml : summary.newNpl).map((item) => {
+    const latestRow = getCompareSnapshot(month, item.accountNumber);
+    const latestBucket: DisplayQuality = latestRow
+      ? classifyQuality(latestRow, month)
+      : getMissingLoanDisplayStatus(month, item);
+    return { ...item, latestBucket, latestMovement: getQualityMovement(item.targetBucket, latestBucket) };
+  });
+  const pagination = useTablePagination(rows, `${month}-new-${quality}-${rows.length}`);
+
+  return (
+    <div className="space-y-4">
+      <div className="surface-panel flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className={cn("text-xs font-black uppercase", quality === "SML" ? "text-[#b54b00]" : "text-rose-700")}>Pergerakan Baru</p>
+          <h2 className="mt-1 text-lg font-black text-[#00529c]">Nominatif New {quality}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Kriteria dari {getMonthLabel(getPreviousMonth(month, 2) ?? month)} ke {getMonthLabel(getPreviousMonth(month) ?? month)}. Posisi tabel membandingkan bulan lalu dengan data terbaru.</p>
+        </div>
+        <Badge className={cn("w-fit border-0 px-3 py-1.5", quality === "SML" ? "bg-orange-100 text-[#b54b00]" : "bg-rose-100 text-rose-700")}>{formatNumber(rows.length)} rekening</Badge>
+      </div>
+      {rows.length ? (
+        <>
+          <TableShell minWidth="min-w-[850px]">
+            <thead><tr><Th>No Rekening</Th><Th>Nama Debitur</Th><Th>Mantri</Th><Th>Outstanding Bulan Lalu</Th><Th>Kolek Bulan Lalu</Th><Th>Kolek Terbaru</Th><Th>Status Perubahan</Th></tr></thead>
+            <tbody>{pagination.pagedRows.map((item) => <tr key={item.accountNumber}><Td className="font-medium text-[#00529c]">{item.accountNumber}</Td><Td className="font-semibold">{item.debtorName}</Td><Td>{item.mantri}</Td><Td>{formatCurrency(item.outstanding)}</Td><Td><QualityBadge bucket={item.targetBucket} /></Td><Td><QualityBadge bucket={item.latestBucket} /></Td><Td><MovementBadge movement={item.latestMovement} /></Td></tr>)}</tbody>
+          </TableShell>
+          <PaginationControls page={pagination.page} pageSize={pagination.pageSize} totalItems={rows.length} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+        </>
+      ) : <EmptyState title={`Tidak ada New ${quality}`} description={`Belum ada rekening yang masuk kategori New ${quality} pada ${getMonthLabel(month)}.`} icon={CheckCircle2} />}
+    </div>
+  );
+}
+
+function KualitasTableView({
   month,
   qualityFilter,
   setQualityFilter,
@@ -3434,11 +3510,6 @@ function KualitasView({
 
   return (
     <div className="space-y-4">
-      <SectionHeader
-        title="Nominatif per Kualitas"
-        description={`Perubahan status dihitung dari kolektibilitas bulan lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)} ke posisi terbaru ${getMonthLabel(sourceMonth)}.`}
-        icon={Layers3}
-      />
       <div className="grid gap-3 md:grid-cols-[minmax(240px,0.8fr)_minmax(280px,1fr)_auto] md:items-end">
         <Field label={`Filter Kolektibilitas Bulan Lalu ${getMonthLabel(comparisonMonth ?? sourceMonth)}`}>
           <Select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="min-w-64">
@@ -3873,6 +3944,7 @@ function TunggakanView({
   mantriNames,
   branchCode,
   branchName,
+  embedded = false,
 }: {
   month: MonthKey;
   mantri: string;
@@ -3880,6 +3952,7 @@ function TunggakanView({
   mantriNames: string[];
   branchCode: string;
   branchName: string;
+  embedded?: boolean;
 }) {
   const [arrearsBand, setArrearsBand] = useState<ArrearsBand>("Semua");
   const [warningLetters, setWarningLetters] = useState<WarningLetterRecord[]>([]);
@@ -4212,11 +4285,13 @@ function TunggakanView({
 
   return (
     <div className="space-y-4">
-      <SectionHeader
-        title="Tunggakan"
-        description={`Rekening dengan tunggakan pokok atau bunga berdasarkan LW321 terbaru posisi ${getMonthLabel(month)}.`}
-        icon={AlertTriangle}
-      />
+      {!embedded ? (
+        <SectionHeader
+          title="Tunggakan"
+          description={`Rekening dengan tunggakan pokok atau bunga berdasarkan LW321 terbaru posisi ${getMonthLabel(month)}.`}
+          icon={AlertTriangle}
+        />
+      ) : null}
       <section className="surface-panel p-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
