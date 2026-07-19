@@ -4051,6 +4051,7 @@ function TunggakanView({
 }) {
   const [arrearsBand, setArrearsBand] = useState<ArrearsBand>("Semua");
   const [arrearsQuality, setArrearsQuality] = useState("Semua");
+  const [productionYear, setProductionYear] = useState("Semua");
   const [warningLetters, setWarningLetters] = useState<WarningLetterRecord[]>([]);
   const [warningCustomer, setWarningCustomer] = useState<ReturnType<typeof getArrearsRows>[number]>();
   const [completedWarning, setCompletedWarning] = useState<WarningLetterRecord>();
@@ -4096,6 +4097,10 @@ function TunggakanView({
       tusimAccountCount: tusimAccounts.length,
     };
   });
+  const productionYears = [...new Set(allRows
+    .map((item) => item.realizedDate.slice(0, 4))
+    .filter((year) => /^\d{4}$/.test(year)))]
+    .sort((left, right) => Number(right) - Number(left));
   const matchesBand = (item: (typeof allRows)[number], band: ArrearsBand) =>
     band === "Semua" ||
     (band === "Tucil" && item.totalArrears < 100_000) ||
@@ -4111,10 +4116,12 @@ function TunggakanView({
   });
   const qualityRows = segmentedRows.filter((item) => {
     const bucket = classifyQuality(item, month);
-    return arrearsQuality === "Semua" ||
+    const qualityMatch = arrearsQuality === "Semua" ||
       (arrearsQuality === "PL" && isPl(bucket)) ||
       (arrearsQuality === "NPL" && isNpl(bucket)) ||
       bucket === arrearsQuality;
+    const productionYearMatch = productionYear === "Semua" || item.realizedDate.startsWith(`${productionYear}-`);
+    return qualityMatch && productionYearMatch;
   });
   const rows = qualityRows.filter((item) => mantri === "Semua" || item.mantri === mantri);
   const mantriRecap = [...qualityRows.reduce((map, item) => {
@@ -4126,7 +4133,7 @@ function TunggakanView({
   }, new Map<string, { mantri: string; debtors: Set<string>; outstanding: number }>()).values()]
     .map((item) => ({ ...item, debtorCount: item.debtors.size }))
     .sort((a, b) => b.outstanding - a.outstanding);
-  const pagination = useTablePagination(rows, `${month}-${arrearsBand}-${arrearsQuality}-${mantri}-${rows.length}`);
+  const pagination = useTablePagination(rows, `${month}-${arrearsBand}-${arrearsQuality}-${productionYear}-${mantri}-${rows.length}`);
   const exportHeaders = ["No Rekening", "Nama Debitur", "Mantri", "Outstanding", "Kolektibilitas", "Total Tunggakan (Pokok + Bunga)", "No Rekening Simpanan", "Saldo per Rekening Simpanan", "Total Saldo Simpanan", "Kategori"];
   const exportData = rows.map((item) => [
     item.accountNumber,
@@ -4472,7 +4479,7 @@ function TunggakanView({
         </div>
       </section>
       <div className="surface-panel flex flex-col gap-3 p-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
           <Field label="Filter Tunggakan">
             <Select value={arrearsBand} onChange={(event) => setArrearsBand(event.target.value as ArrearsBand)} className="min-w-48">
               <option value="Semua">Semua Tunggakan</option>
@@ -4488,6 +4495,12 @@ function TunggakanView({
           <Field label="Filter Kolektibilitas">
             <Select value={arrearsQuality} onChange={(event) => setArrearsQuality(event.target.value)} className="min-w-52">
               {qualityOptions.map((item) => <option key={item} value={item}>{item === "Semua" ? "Semua Kolektibilitas" : item}</option>)}
+            </Select>
+          </Field>
+          <Field label="Tahun Produksi">
+            <Select value={productionYear} onChange={(event) => setProductionYear(event.target.value)} className="min-w-44">
+              <option value="Semua">Semua Tahun</option>
+              {productionYears.map((year) => <option key={year} value={year}>{year}</option>)}
             </Select>
           </Field>
         </div>
