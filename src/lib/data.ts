@@ -739,7 +739,7 @@ export function getCreditSnapshots(month: MonthKey) {
 export function getProductType(description: string, loanType?: string): ProductType {
   if (loanType?.trim().toUpperCase() === "5G") return "PUMK";
   const value = description.toLowerCase();
-  if (value.includes("kur kpp")) return "KUR KPP";
+  if (/(^|[^a-z0-9])kpp([^a-z0-9]|$)/.test(value)) return "KUR KPP";
   if (value.includes("kur mikro")) return "KUR Mikro";
   if (value.includes("kupedes rakyat")) return "Kupedes Rakyat";
   if (value.includes("kupedes")) return "Kupedes";
