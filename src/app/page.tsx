@@ -434,6 +434,14 @@ function compareDateAsc(left: string, right: string) {
   return leftTime - rightTime;
 }
 
+function compareDayOfMonthAsc(left: string, right: string) {
+  const leftDay = Number(left.split("-").at(-1));
+  const rightDay = Number(right.split("-").at(-1));
+  if (!Number.isFinite(leftDay)) return Number.isFinite(rightDay) ? 1 : 0;
+  if (!Number.isFinite(rightDay)) return -1;
+  return leftDay - rightDay;
+}
+
 function QualityBadge({ bucket }: { bucket: QualityBucket | "KL/D" | string }) {
   const variant =
     bucket === "Lancar" || bucket === "Lunas"
@@ -3542,7 +3550,7 @@ function KualitasTableView({
         (mantriFilter === "Semua" || item.mantri === mantriFilter) &&
         (productFilter === "Semua" || getProductType(item.description, item.loanType) === productFilter);
     }).sort((left, right) =>
-      compareDateAsc(left.nextPaymentDate, right.nextPaymentDate) || left.accountNumber.localeCompare(right.accountNumber),
+      compareDayOfMonthAsc(left.nextPaymentDate, right.nextPaymentDate) || left.accountNumber.localeCompare(right.accountNumber),
     );
   }, [baseRows, deferredQualitySearch, mantriFilter, productFilter, qualityFilter]);
   const filteredOutstanding = rows.reduce((total, item) => total + item.outstanding, 0);
