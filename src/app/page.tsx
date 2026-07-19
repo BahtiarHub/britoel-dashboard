@@ -15,6 +15,7 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -4856,13 +4857,65 @@ function QuickCountSheetDialog({
   );
 }
 
+type QuickRiskPosition = { sml: number; npl: number };
+
+function getQuickRiskPosition(row?: ReturnType<typeof getMantriRecap>[number]): QuickRiskPosition {
+  if (!row) return { sml: 0, npl: 0 };
+  return {
+    sml: row.SML1.os + row.SML2.os + row.SML3.os,
+    npl: row.KL.os + row.Diragukan.os + row.Macet.os,
+  };
+}
+
+function QuickRiskPositionCell({ position }: { position: QuickRiskPosition }) {
+  return (
+    <div className="min-w-[190px] space-y-1.5">
+      <div className="flex items-center justify-between gap-3 rounded-md bg-[#fff7ed] px-2.5 py-1.5">
+        <span className="text-[10px] font-black uppercase text-[#b54b00]">SML</span>
+        <span className="font-bold text-[#b54b00]">{formatCurrency(position.sml)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-3 rounded-md bg-rose-50 px-2.5 py-1.5">
+        <span className="text-[10px] font-black uppercase text-rose-700">NPL</span>
+        <span className="font-bold text-rose-700">{formatCurrency(position.npl)}</span>
+      </div>
+    </div>
+  );
+}
+
+function QuickRiskDeltaCell({ delta }: { delta: QuickRiskPosition }) {
+  return (
+    <div className="min-w-[190px] space-y-1.5">
+      {(["sml", "npl"] as const).map((key) => {
+        const value = delta[key];
+        return (
+          <div key={key} className={cn(
+            "flex items-center justify-between gap-3 rounded-md border px-2.5 py-1.5",
+            value < 0 && "border-emerald-200 bg-emerald-50 text-emerald-700",
+            value > 0 && "border-rose-200 bg-rose-50 text-rose-700",
+            !value && "border-slate-200 bg-slate-50 text-slate-600",
+          )}>
+            <span className="text-[10px] font-black uppercase">{key}</span>
+            <span className="flex items-center gap-1 font-bold">
+              {value > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : null}
+              {value < 0 ? <ArrowDownRight className="h-3.5 w-3.5" /> : null}
+              {value > 0 ? "+" : ""}{formatCurrency(value)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function QuickCountView({ month }: { month: MonthKey }) {
   const [selectedQualities, setSelectedQualities] = useState<string[]>([...quickCountQualities]);
+  const [qualityDropdownOpen, setQualityDropdownOpen] = useState(false);
   const [mantriFilter, setMantriFilter] = useState("Semua");
   const [copyMessage, setCopyMessage] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetRows, setSheetRows] = useState<QuickCountSheetRow[]>([{ ...emptyQuickCountSheetRow }]);
   const [loadedSheetKey, setLoadedSheetKey] = useState("");
+  const qualityDropdownRef = useRef<HTMLDivElement | null>(null);
   const sheetStorageKey = `bri-tool-cektung-${month}`;
 
   useEffect(() => {
@@ -4880,6 +4933,15 @@ function QuickCountView({ month }: { month: MonthKey }) {
     if (loadedSheetKey !== sheetStorageKey) return;
     window.localStorage.setItem(sheetStorageKey, JSON.stringify(sheetRows));
   }, [loadedSheetKey, sheetRows, sheetStorageKey]);
+
+  useEffect(() => {
+    if (!qualityDropdownOpen) return;
+    function closeDropdown(event: PointerEvent) {
+      if (!qualityDropdownRef.current?.contains(event.target as Node)) setQualityDropdownOpen(false);
+    }
+    document.addEventListener("pointerdown", closeDropdown);
+    return () => document.removeEventListener("pointerdown", closeDropdown);
+  }, [qualityDropdownOpen]);
 
   const allRows = getArrearsRows(month).map((item) => ({ ...item, quality: classifyQuality(item, month) }));
   const mantriNames = [...new Set(allRows.map((item) => item.mantri || "Belum Ada Mantri"))].sort();
@@ -4905,19 +4967,35 @@ function QuickCountView({ month }: { month: MonthKey }) {
   const nplOs = nplRows.reduce((total, item) => total + item.outstanding, 0);
   const totalArrears = rows.reduce((total, item) => total + item.totalArrears, 0);
   const resolvedRows = rows.filter((item) => isResolved(item.accountNumber));
-  const mantriRecap = [...rows.reduce((map, item) => {
-    const mantri = item.mantri || "Belum Ada Mantri";
-    const current = map.get(mantri) ?? { mantri, debtors: new Set<string>(), smlOs: 0, nplOs: 0, arrears: 0, resolved: 0 };
-    current.debtors.add(item.cif?.trim() || item.debtorName.trim().toUpperCase() || item.accountNumber);
-    if (isSml(item.quality)) current.smlOs += item.outstanding;
-    if (isNpl(item.quality)) current.nplOs += item.outstanding;
-    current.arrears += item.totalArrears;
-    if (isResolved(item.accountNumber)) current.resolved += 1;
-    map.set(mantri, current);
-    return map;
-  }, new Map<string, { mantri: string; debtors: Set<string>; smlOs: number; nplOs: number; arrears: number; resolved: number }>()).values()]
-    .map((item) => ({ ...item, debtorCount: item.debtors.size }))
-    .sort((left, right) => right.arrears - left.arrears);
+  const previousMonth = getPreviousMonth(month);
+  const yearEndComparisonMonth = getYearEndComparisonMonth(month);
+  const previousRecap = new Map((previousMonth ? getMantriRecap(previousMonth) : []).map((item) => [item.mantri || "Belum Ada Mantri", item]));
+  const yearEndRecap = new Map(getMantriRecap(yearEndComparisonMonth).map((item) => [item.mantri || "Belum Ada Mantri", item]));
+  const quickMantriRecap = getMantriRecap(month)
+    .map((item) => {
+      const mantri = item.mantri || "Belum Ada Mantri";
+      const latest = getQuickRiskPosition(item);
+      const previous = getQuickRiskPosition(previousRecap.get(mantri));
+      const yearEnd = getQuickRiskPosition(yearEndRecap.get(mantri));
+      return {
+        mantri,
+        latest,
+        previous,
+        yearEnd,
+        ytd: { sml: latest.sml - yearEnd.sml, npl: latest.npl - yearEnd.npl },
+        mtd: { sml: latest.sml - previous.sml, npl: latest.npl - previous.npl },
+      };
+    })
+    .filter((item) => mantriFilter === "Semua" || item.mantri === mantriFilter)
+    .sort((left, right) => right.latest.sml + right.latest.npl - (left.latest.sml + left.latest.npl));
+  const recapPagination = useTablePagination(quickMantriRecap, `${month}-${mantriFilter}-quick-recap-${quickMantriRecap.length}`);
+  const selectedQualityLabel = selectedQualities.length === quickCountQualities.length
+    ? "Semua Kolektibilitas"
+    : selectedQualities.length === 0
+      ? "Pilih Kolektibilitas"
+      : selectedQualities.length <= 2
+        ? selectedQualities.join(", ")
+        : `${selectedQualities.length} Kolektibilitas`;
 
   function toggleQuality(quality: string) {
     setSelectedQualities((current) => current.includes(quality)
@@ -4948,31 +5026,44 @@ function QuickCountView({ month }: { month: MonthKey }) {
         <MetricCard label="SML Terfilter" value={formatCurrency(smlOs)} helper={`${formatNumber(smlRows.length)} rekening`} tone="warning" icon={AlertTriangle} />
         <MetricCard label="NPL Terfilter" value={formatCurrency(nplOs)} helper={`${formatNumber(nplRows.length)} rekening`} tone="danger" icon={ArrowDownRight} />
         <MetricCard label="Total Tunggakan" value={formatCurrency(totalArrears)} helper={`${formatNumber(rows.length)} rekening`} icon={Banknote} />
-        <MetricCard label="Potensi Tunggakan Hilang" value={`${formatNumber(resolvedRows.length)} rekening`} helper="Sisa tagihan hasil cektung nol" tone="success" icon={CheckCircle2} />
+        <MetricCard label="Tunggakan Bayar" value={`${formatNumber(resolvedRows.length)} rekening`} helper="Sisa tagihan hasil cektung nol" tone="success" icon={CheckCircle2} />
       </div>
 
       <section className="surface-panel space-y-3 p-3 sm:p-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-xs font-black uppercase text-[#00529c]">Filter Kolektibilitas</p>
-              <button type="button" onClick={() => setSelectedQualities(selectedQualities.length === quickCountQualities.length ? [] : [...quickCountQualities])} className="text-xs font-bold text-[#f37021]">
-                {selectedQualities.length === quickCountQualities.length ? "Kosongkan" : "Pilih Semua"}
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {quickCountQualities.map((quality) => {
-                const checked = selectedQualities.includes(quality);
-                const count = allRows.filter((item) => item.quality === quality).length;
-                return (
-                  <label key={quality} className={cn("flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-xs font-black transition", checked ? "border-[#00529c] bg-[#eaf3fb] text-[#00529c]" : "border-[#d7e3ef] bg-white text-muted-foreground")}>
-                    <input type="checkbox" checked={checked} onChange={() => toggleQuality(quality)} className="h-4 w-4 accent-[#00529c]" />
-                    <span>{quality}</span>
-                    <span className={cn("rounded px-1.5 py-0.5 text-[10px]", checked ? "bg-white text-[#00529c]" : "bg-[#eef3f7]")}>{formatNumber(count)}</span>
-                  </label>
-                );
-              })}
-            </div>
+          <div ref={qualityDropdownRef} className="relative w-full sm:w-80">
+            <p className="mb-1.5 text-xs font-black uppercase text-[#00529c]">Filter Kolektibilitas</p>
+            <button
+              type="button"
+              aria-expanded={qualityDropdownOpen}
+              onClick={() => setQualityDropdownOpen((current) => !current)}
+              className="flex h-10 w-full items-center justify-between gap-3 rounded-md border border-[#b8cee0] bg-white px-3 text-left text-sm font-bold text-[#004077] shadow-sm hover:border-[#00529c]"
+            >
+              <span className="truncate">{selectedQualityLabel}</span>
+              <ChevronDown className={cn("h-4 w-4 shrink-0 transition", qualityDropdownOpen && "rotate-180")} />
+            </button>
+            {qualityDropdownOpen ? (
+              <div className="absolute left-0 top-full z-50 mt-2 w-full overflow-hidden rounded-md border border-[#b8cee0] bg-white shadow-[0_18px_45px_rgba(0,47,86,0.18)]">
+                <div className="flex items-center justify-between border-b border-[#d7e3ef] bg-[#f8fbfe] px-3 py-2">
+                  <span className="text-[10px] font-black uppercase text-[#00529c]">Pilih Lebih Dari Satu</span>
+                  <button type="button" onClick={() => setSelectedQualities(selectedQualities.length === quickCountQualities.length ? [] : [...quickCountQualities])} className="text-xs font-bold text-[#f37021]">
+                    {selectedQualities.length === quickCountQualities.length ? "Kosongkan" : "Pilih Semua"}
+                  </button>
+                </div>
+                <div className="max-h-72 overflow-y-auto p-2">
+                  {quickCountQualities.map((quality) => {
+                    const checked = selectedQualities.includes(quality);
+                    const count = allRows.filter((item) => item.quality === quality).length;
+                    return (
+                      <label key={quality} className={cn("flex cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 py-2 text-sm transition hover:bg-[#f2f7fb]", checked && "bg-[#eaf3fb] text-[#00529c]")}>
+                        <span className="flex items-center gap-2 font-bold"><input type="checkbox" checked={checked} onChange={() => toggleQuality(quality)} className="h-4 w-4 accent-[#00529c]" />{quality}</span>
+                        <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-black text-[#00529c]">{formatNumber(count)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <Field label="Mantri">
@@ -4989,13 +5080,18 @@ function QuickCountView({ month }: { month: MonthKey }) {
       </section>
 
       <section className="surface-panel overflow-hidden">
-        <div className="border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3">
+        <div className="flex flex-col gap-2 border-b border-[#d7e3ef] bg-[#f8fbfe] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="font-black text-[#00529c]">Rekap Quick Count per Mantri</h3>
+          <div className="flex flex-wrap gap-2 text-[10px] font-bold text-muted-foreground">
+            <span>YTD: vs {getMonthLabel(yearEndComparisonMonth)}</span>
+            <span>MTD: vs {getMonthLabel(previousMonth ?? month)}</span>
+          </div>
         </div>
-        <TableShell minWidth="min-w-[900px]">
-          <thead><tr><Th>Mantri</Th><Th>Debitur</Th><Th>OS SML</Th><Th>OS NPL</Th><Th>Total Tunggakan</Th><Th>Potensi Hilang</Th></tr></thead>
-          <tbody>{mantriRecap.map((item) => <tr key={item.mantri}><Td className="font-bold text-[#00529c]">{item.mantri}</Td><Td>{formatNumber(item.debtorCount)}</Td><Td className="font-bold text-amber-700">{formatCurrency(item.smlOs)}</Td><Td className="font-bold text-rose-700">{formatCurrency(item.nplOs)}</Td><Td>{formatCurrency(item.arrears)}</Td><Td><Badge variant={item.resolved ? "success" : "outline"}>{formatNumber(item.resolved)} rekening</Badge></Td></tr>)}</tbody>
+        <TableShell minWidth="min-w-[1250px]">
+          <thead><tr><Th>Mantri</Th><Th>Posisi Akhir Tahun</Th><Th>Posisi Bulan Lalu</Th><Th>Posisi Terbaru</Th><Th>Delta YTD</Th><Th>Delta MTD</Th></tr></thead>
+          <tbody>{recapPagination.pagedRows.map((item) => <tr key={item.mantri}><Td className="font-bold text-[#00529c]">{item.mantri}</Td><Td><QuickRiskPositionCell position={item.yearEnd} /></Td><Td><QuickRiskPositionCell position={item.previous} /></Td><Td><QuickRiskPositionCell position={item.latest} /></Td><Td><QuickRiskDeltaCell delta={item.ytd} /></Td><Td><QuickRiskDeltaCell delta={item.mtd} /></Td></tr>)}</tbody>
         </TableShell>
+        <PaginationControls page={recapPagination.page} pageSize={recapPagination.pageSize} totalItems={quickMantriRecap.length} onPageChange={recapPagination.setPage} onPageSizeChange={recapPagination.setPageSize} />
       </section>
 
       {rows.length ? (
