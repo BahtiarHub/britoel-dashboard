@@ -9,13 +9,21 @@ export type StoredObjectInfo = {
 };
 
 const storageBucket = process.env.SUPABASE_STORAGE_BUCKET ?? "britoel-private";
-const localStorageRoot = path.join(process.cwd(), "data", "uploads");
+const storageDriver = (process.env.STORAGE_DRIVER ?? "auto").toLowerCase();
+const configuredLocalRoot = process.env.LOCAL_STORAGE_ROOT?.trim();
+const localStorageRoot = configuredLocalRoot
+  ? path.resolve(process.cwd(), configuredLocalRoot)
+  : path.join(process.cwd(), "data", "uploads");
 let supabaseClient: SupabaseClient | undefined;
 let bucketPromise: Promise<void> | undefined;
 
 function storageClient() {
+  if (storageDriver === "local") return undefined;
   const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (storageDriver === "supabase" && (!url || !serviceRoleKey)) {
+    throw new Error("STORAGE_DRIVER=supabase memerlukan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY.");
+  }
   if (!url || !serviceRoleKey) return undefined;
   supabaseClient ??= createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -56,6 +64,10 @@ function localPath(key: string) {
 
 export function usesSupabaseStorage() {
   return Boolean(storageClient());
+}
+
+export function storageBackend() {
+  return usesSupabaseStorage() ? "supabase" as const : "local" as const;
 }
 
 export async function putStoredObject(key: string, bytes: Uint8Array, contentType = "application/octet-stream") {

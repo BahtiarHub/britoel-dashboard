@@ -2,7 +2,35 @@
 
 Dashboard monitoring pinjaman dan operasional BRIMEN berbasis Next.js, Tailwind CSS, shadcn/ui, Drizzle ORM, PostgreSQL, dan Better Auth.
 
-## Menjalankan Lokal
+## Mode Lokal Privat
+
+Mode ini menyimpan database PostgreSQL dan seluruh file upload di komputer
+sendiri. Tidak diperlukan Supabase dan data tidak dikirim ke layanan database
+atau storage eksternal.
+
+Komputer pengembangan ini sudah memakai PostgreSQL portable di `data/postgres-runtime`
+dengan cluster persisten di `data/postgres-cluster`. Jalankan:
+
+```powershell
+corepack pnpm local:setup
+corepack pnpm local:db:start
+corepack pnpm db:migrate
+corepack pnpm dev
+```
+
+Perintah pengelolaan harian:
+
+```powershell
+corepack pnpm local:db:status
+corepack pnpm local:db:stop
+corepack pnpm local:backup
+```
+
+File disimpan di `data/uploads`. Backup bertanggal disimpan di `data/backups`
+dan memuat dump PostgreSQL beserta seluruh file upload. Folder database, upload,
+backup, dan environment tidak pernah dimasukkan ke Git.
+
+## Menjalankan Lokal Manual
 
 1. Siapkan database PostgreSQL kosong, misalnya `bri_tool`.
 2. Salin `.env.example` menjadi `.env.local`, lalu isi `DATABASE_URL`, rahasia Better Auth, dan akun SuperAdmin.
@@ -37,7 +65,26 @@ corepack pnpm start
 
 Database, file upload, file environment, serta log server tidak disimpan dalam Git.
 
-## Produksi Supabase (Singapore)
+## Deployment Mandiri dengan Docker
+
+Kode aplikasi tetap dapat dideploy tanpa menggunakan database cloud. Deployment
+Docker menjalankan Next.js dan PostgreSQL dalam dua container, sedangkan data
+database serta file upload berada pada volume persisten milik server.
+
+1. Salin `.env.docker.example` menjadi `.env`.
+2. Ganti `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, dan `SEED_ADMIN_PASSWORD`.
+3. Jalankan `docker compose up -d --build`.
+4. Buka `http://127.0.0.1:3000`.
+
+Container setup menerapkan migrasi Drizzle dan membuat akun SuperAdmin awal
+sebelum server dimulai. Port database dan aplikasi hanya terikat ke `127.0.0.1` secara default.
+Untuk akses jaringan kantor, gunakan reverse proxy HTTPS atau ubah binding
+secara sadar setelah firewall disiapkan.
+
+## Opsional: Produksi Supabase (Singapore)
+
+Bagian ini tidak digunakan dalam mode lokal privat. Simpan sebagai jalur migrasi
+masa depan hanya bila penggunaan layanan cloud sudah mendapatkan izin.
 
 Gunakan project Supabase berbayar di region Singapore. Supabase menyediakan dua
 koneksi database yang dipakai berbeda:
